@@ -228,16 +228,25 @@ function Login({ loading, onSubmit }: { loading: boolean; onSubmit: (event: Form
 }
 
 function Sidebar({ page, operationalCount, onNavigate, onLogout, open, onClose }: { page: Page; operationalCount: number; onNavigate: (page: Page) => void; onLogout: () => void; open: boolean; onClose: () => void }) {
+  const [moduleOpen, setModuleOpen] = useState(false);
   const item = (name: Page, count?: number) => <button onClick={() => onNavigate(name)} className={`nav-item ${page === name ? "active" : ""}`}><span className={name === "Pendências" ? "nav-dot" : "nav-line"} />{name}{count !== undefined && <b>{count}</b>}</button>;
   return <>
     {open && <button className="mobile-backdrop" onClick={onClose} aria-label="Fechar navegação" />}
     <aside className={`sidebar ${open ? "sidebar-open" : ""}`}>
       <div><div className="sidebar-brand"><div className="brand-mark">LR</div><div><strong>Locações</strong><span>Módulo 1</span></div></div>
         <nav aria-label="Navegação principal">
-          <p className="nav-label">Operação</p>{item("Pendências", operationalCount)}
-          <p className="nav-label nav-space">Estrutura</p>{item("Carteiras")}{item("Imóveis")}{item("Unidades")}{item("Locatários")}
-          <p className="nav-label nav-space">Locação</p>{item("Contratos")}{item("Cobranças")}
-          <p className="nav-label nav-space">Financeiro</p>{item("Despesas / Contas a Pagar")}
+          <p className="nav-label">Módulos</p>
+          <button className={`module-toggle ${moduleOpen ? "open" : ""}`} onClick={() => setModuleOpen((current) => !current)} aria-expanded={moduleOpen} aria-controls="module-1-pages">
+            <span className="module-number">01</span>
+            <span className="module-copy"><strong>Módulo 1</strong><small>Locações e recebíveis</small></span>
+            <span className="module-chevron" aria-hidden="true" />
+          </button>
+          {moduleOpen && <div className="module-pages" id="module-1-pages">
+            <p className="nav-label module-section">Operação</p>{item("Pendências", operationalCount)}
+            <p className="nav-label module-section">Estrutura</p>{item("Carteiras")}{item("Imóveis")}{item("Unidades")}{item("Locatários")}
+            <p className="nav-label module-section">Locação</p>{item("Contratos")}{item("Cobranças")}
+            <p className="nav-label module-section">Financeiro</p>{item("Despesas / Contas a Pagar")}
+          </div>}
         </nav>
       </div>
       <div className="sidebar-account"><div className="avatar">AD</div><div><strong>Administrativo</strong><span>Acesso único</span></div><button onClick={onLogout}>Sair</button></div>
