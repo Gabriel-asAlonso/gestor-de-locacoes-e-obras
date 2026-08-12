@@ -229,13 +229,13 @@ function Login({ loading, onSubmit }: { loading: boolean; onSubmit: (event: Form
 
 function Sidebar({ page, operationalCount, onNavigate, onLogout, open, onClose }: { page: Page; operationalCount: number; onNavigate: (page: Page) => void; onLogout: () => void; open: boolean; onClose: () => void }) {
   const [openTheme, setOpenTheme] = useState<string | null>("Operação");
-  const groups: Array<{ name: string; pages: Array<{ name: Page; count?: number }> }> = [
-    { name: "Operação", pages: [{ name: "Pendências", count: operationalCount }] },
-    { name: "Estrutura", pages: [{ name: "Carteiras" }, { name: "Imóveis" }, { name: "Unidades" }, { name: "Locatários" }] },
-    { name: "Locação", pages: [{ name: "Contratos" }, { name: "Cobranças" }] },
-    { name: "Financeiro", pages: [{ name: "Despesas / Contas a Pagar" }] },
+  const groups: Array<{ name: string; description: string; pages: Array<{ name: Page; count?: number }> }> = [
+    { name: "Operação", description: "Acompanhamento diário", pages: [{ name: "Pendências", count: operationalCount }] },
+    { name: "Estrutura", description: "Cadastros e patrimônio", pages: [{ name: "Carteiras" }, { name: "Imóveis" }, { name: "Unidades" }, { name: "Locatários" }] },
+    { name: "Locação", description: "Contratos e recebíveis", pages: [{ name: "Contratos" }, { name: "Cobranças" }] },
+    { name: "Financeiro", description: "Obrigações financeiras", pages: [{ name: "Despesas / Contas a Pagar" }] },
   ];
-  const item = (name: Page, count?: number) => <button onClick={() => onNavigate(name)} className={`nav-item ${page === name ? "active" : ""}`}><span className={name === "Pendências" ? "nav-dot" : "nav-line"} />{name}{count !== undefined && <b>{count}</b>}</button>;
+  const item = (name: Page, count?: number) => <button onClick={() => onNavigate(name)} className={`nav-item ${page === name ? "active" : ""}`}><span className="nav-node" aria-hidden="true" /><span className="nav-item-label">{name}</span>{count !== undefined && <b>{count}</b>}</button>;
   return <>
     {open && <button className="mobile-backdrop" onClick={onClose} aria-label="Fechar navegação" />}
     <aside className={`sidebar ${open ? "sidebar-open" : ""}`}>
@@ -248,7 +248,8 @@ function Sidebar({ page, operationalCount, onNavigate, onLogout, open, onClose }
             const regionId = `sidebar-theme-${index}`;
             return <section className="theme-group" key={group.name}>
               <button className={`theme-toggle ${expanded ? "open" : ""} ${hasActivePage ? "has-active-page" : ""}`} onClick={() => setOpenTheme(expanded ? null : group.name)} aria-expanded={expanded} aria-controls={regionId}>
-                <span>{group.name}</span><span className="theme-chevron" aria-hidden="true" />
+                <span className="theme-identity"><span className="theme-marker" aria-hidden="true" /><span className="theme-copy"><strong>{group.name}</strong><small>{group.description}</small></span></span>
+                <span className="theme-chevron-shell" aria-hidden="true"><span className="theme-chevron" /></span>
               </button>
               {expanded && <div className="theme-pages" id={regionId}>{group.pages.map((entry) => <div key={entry.name}>{item(entry.name, entry.count)}</div>)}</div>}
             </section>;
