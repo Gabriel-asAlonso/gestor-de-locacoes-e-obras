@@ -4,7 +4,8 @@ import type { ReactNode } from "react";
 import { FormEvent, useMemo, useState } from "react";
 
 type Status = "Vencida" | "Em aberto" | "Próxima" | "Parcial" | "Recebida";
-type Page = "Pendências" | "Carteiras" | "Imóveis" | "Unidades" | "Locatários" | "Contratos" | "Cobranças";
+type ExpenseStatus = "Pendente" | "Pago" | "Vencido";
+type Page = "Pendências" | "Carteiras" | "Imóveis" | "Unidades" | "Locatários" | "Contratos" | "Cobranças" | "Despesas / Contas a Pagar";
 type FormKind = "portfolio" | "property" | "unit" | "tenant" | "contract" | "charge" | null;
 type ChargeItem = { name: string; dueDate: string; amount: number; received: number };
 type Charge = {
@@ -29,6 +30,17 @@ type Contract = {
   due: number;
   adjustment: string;
   charges: string[];
+};
+type Expense = {
+  id: string;
+  supplier: string;
+  description: string;
+  category: string;
+  amount: number;
+  dueDate: string;
+  dueIso: string;
+  paidDate: string | null;
+  status: ExpenseStatus;
 };
 
 const portfolios = [
@@ -92,6 +104,15 @@ const charges: Charge[] = [
   ] },
 ];
 
+const expenses: Expense[] = [
+  { id: "PAG-0031", supplier: "Energia Azul Distribuição", description: "Energia elétrica · Centro Empresarial Nexo", category: "Utilidades", amount: 1840.70, dueDate: "09 ago 2026", dueIso: "2026-08-09", paidDate: null, status: "Vencido" },
+  { id: "PAG-0032", supplier: "Condomínio Empresarial Nexo", description: "Cota condominial · agosto/2026", category: "Condomínio", amount: 2460, dueDate: "12 ago 2026", dueIso: "2026-08-12", paidDate: null, status: "Pendente" },
+  { id: "PAG-0033", supplier: "Manutenção Nova Chave", description: "Revisão preventiva do portão de acesso", category: "Manutenção", amount: 780, dueDate: "15 ago 2026", dueIso: "2026-08-15", paidDate: null, status: "Pendente" },
+  { id: "PAG-0034", supplier: "Prefeitura Municipal", description: "IPTU · parcela 08/10", category: "Tributos", amount: 1340, dueDate: "20 ago 2026", dueIso: "2026-08-20", paidDate: null, status: "Pendente" },
+  { id: "PAG-0028", supplier: "Seguradora Farol", description: "Apólice patrimonial · parcela 04/06", category: "Seguros", amount: 2250, dueDate: "05 ago 2026", dueIso: "2026-08-05", paidDate: "04 ago 2026", status: "Pago" },
+  { id: "PAG-0027", supplier: "Conecta Telecom", description: "Internet corporativa · julho/2026", category: "Telecom", amount: 389.90, dueDate: "02 ago 2026", dueIso: "2026-08-02", paidDate: "01 ago 2026", status: "Pago" },
+];
+
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const chargeTotal = (charge: Charge) => charge.items.reduce((sum, item) => sum + item.amount, 0);
 const receivedTotal = (charge: Charge) => charge.items.reduce((sum, item) => sum + item.received, 0);
@@ -109,8 +130,10 @@ export default function Home() {
   const [search, setSearch] = useState("");
   const [portfolioFilter, setPortfolioFilter] = useState("Todas as carteiras");
   const [statusFilter, setStatusFilter] = useState("Todas");
+  const [categoryFilter, setCategoryFilter] = useState("Todas as categorias");
   const [selectedCharge, setSelectedCharge] = useState<Charge | null>(null);
   const [selectedContract, setSelectedContract] = useState<Contract | null>(null);
+  const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null);
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [form, setForm] = useState<FormKind>(null);
   const [toast, setToast] = useState("");
@@ -123,6 +146,11 @@ export default function Home() {
     const matchesSearch = !query || [charge.id, charge.contract, charge.property, charge.tenant, charge.competence, ...charge.units, ...charge.items.map((item) => item.name)].some((value) => value.toLowerCase().includes(query));
     return matchesSearch && (statusFilter === "Todas" || charge.status === statusFilter) && (portfolioFilter === "Todas as carteiras" || charge.portfolio === portfolioFilter);
   }), [baseCharges, portfolioFilter, search, statusFilter]);
+  const filteredExpenses = useMemo(() => expenses.filter((expense) => {
+    const query = search.trim().toLowerCase();
+    const matchesSearch = !query || [expense.id, expense.supplier, expense.description, expense.category].some((value) => value.toLowerCase().includes(query));
+    return matchesSearch && (statusFilter === "Todas" || expense.status === statusFilter) && (categoryFilter === "Todas as categorias" || expense.category === categoryFilter);
+  }), [categoryFilter, search, statusFilter]);
 
   const notify = (message: string) => {
     setToast(message);
@@ -133,6 +161,7 @@ export default function Home() {
     setSearch("");
     setPortfolioFilter("Todas as carteiras");
     setStatusFilter("Todas");
+    setCategoryFilter("Todas as categorias");
     setMenuOpen(false);
   };
   const login = (event: FormEvent) => {
@@ -169,10 +198,12 @@ export default function Home() {
         {page === "Unidades" && <UnitsPage search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} onNew={() => setForm("unit")} />}
         {page === "Locatários" && <TenantsPage search={search} setSearch={setSearch} onNew={() => setForm("tenant")} />}
         {page === "Contratos" && <ContractsPage search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} onNew={() => setForm("contract")} onOpen={setSelectedContract} />}
+        {page === "Despesas / Contas a Pagar" && <ExpensesPage rows={filteredExpenses} search={search} setSearch={setSearch} statusFilter={statusFilter} setStatusFilter={setStatusFilter} categoryFilter={categoryFilter} setCategoryFilter={setCategoryFilter} onOpen={setSelectedExpense} />}
       </div>
     </section>
     {selectedCharge && <ChargeDrawer charge={selectedCharge} onClose={() => setSelectedCharge(null)} onReceipt={() => setReceiptOpen(true)} />}
     {selectedContract && <ContractDrawer contract={selectedContract} onClose={() => setSelectedContract(null)} onCharge={() => { setSelectedContract(null); setForm("charge"); }} />}
+    {selectedExpense && <ExpenseDrawer expense={selectedExpense} onClose={() => setSelectedExpense(null)} />}
     {receiptOpen && selectedCharge && <ReceiptModal charge={selectedCharge} onClose={() => setReceiptOpen(false)} onSave={saveReceipt} />}
     {form && <EntityForm kind={form} onClose={() => setForm(null)} onSave={saveForm} />}
     {toast && <div className="toast" role="status"><span>✓</span>{toast}</div>}
@@ -206,6 +237,7 @@ function Sidebar({ page, operationalCount, onNavigate, onLogout, open, onClose }
           <p className="nav-label">Operação</p>{item("Pendências", operationalCount)}
           <p className="nav-label nav-space">Estrutura</p>{item("Carteiras")}{item("Imóveis")}{item("Unidades")}{item("Locatários")}
           <p className="nav-label nav-space">Locação</p>{item("Contratos")}{item("Cobranças")}
+          <p className="nav-label nav-space">Financeiro</p>{item("Despesas / Contas a Pagar")}
         </nav>
       </div>
       <div className="sidebar-account"><div className="avatar">AD</div><div><strong>Administrativo</strong><span>Acesso único</span></div><button onClick={onLogout}>Sair</button></div>
@@ -213,8 +245,8 @@ function Sidebar({ page, operationalCount, onNavigate, onLogout, open, onClose }
   </>;
 }
 
-function PageHeading({ eyebrow, title, description, action, onAction }: { eyebrow: string; title: string; description: string; action: string; onAction: () => void }) {
-  return <section className="page-heading"><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p>{description}</p></div><button className="primary-button" onClick={onAction}>{action}</button></section>;
+function PageHeading({ eyebrow, title, description, action, onAction }: { eyebrow: string; title: string; description: string; action?: string; onAction?: () => void }) {
+  return <section className="page-heading"><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p>{description}</p></div>{action && onAction && <button className="primary-button" onClick={onAction}>{action}</button>}</section>;
 }
 
 function SearchBar({ value, onChange, placeholder }: { value: string; onChange: (value: string) => void; placeholder: string }) {
@@ -240,6 +272,42 @@ function ChargesPage({ page, charges: rows, total, search, setSearch, portfolioF
     <TableSection toolbar={<><SearchBar value={search} onChange={setSearch} placeholder="Buscar por contrato, unidade, locatário ou item" /><PortfolioFilter value={portfolioFilter} onChange={setPortfolioFilter} /><select aria-label="Filtrar por situação" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option>Todas</option><option>Vencida</option><option>Em aberto</option><option>Próxima</option><option>Parcial</option><option>Recebida</option></select></>} footer={<><span>{rows.length} de {total} cobranças</span><span>Inclusão e baixa manuais</span></>}>
       <table><thead><tr><th>Cobrança</th><th>Contrato / unidades</th><th>Locatário</th><th>Competência</th><th>Composição</th><th>Total</th><th>Saldo</th><th>Situação</th><th /></tr></thead><tbody>{rows.map((charge) => <tr key={charge.id} onClick={() => onOpen(charge)} tabIndex={0} onKeyDown={(event) => event.key === "Enter" && onOpen(charge)}><td><strong>{charge.id}</strong><small>{charge.portfolio}</small></td><td><strong>{charge.contract}</strong><small>{charge.property}</small><UnitPills values={charge.units} /></td><td>{charge.tenant}</td><td>{charge.competence}</td><td>{charge.items.length} {charge.items.length === 1 ? "item" : "itens"}<small>{charge.items.map((item) => item.name).join(" · ")}</small></td><td>{brl.format(chargeTotal(charge))}</td><td><strong>{brl.format(chargeBalance(charge))}</strong></td><td><StatusBadge status={charge.status} /></td><td><button className="row-action" aria-label={`Abrir ${charge.id}`}>Abrir</button></td></tr>)}</tbody></table>{rows.length === 0 && <EmptyState />}
     </TableSection>
+  </>;
+}
+
+function ExpenseStatusBadge({ status }: { status: ExpenseStatus }) {
+  return <span className={`status status-${status.toLowerCase()}`}><i />{status}</span>;
+}
+
+function expenseTiming(expense: Expense) {
+  if (expense.status === "Vencido") return "3 dias em atraso";
+  if (expense.dueIso === "2026-08-12") return "Vence hoje";
+  if (expense.dueIso === "2026-08-15") return "Em 3 dias";
+  return "";
+}
+
+function ExpensesPage({ rows, search, setSearch, statusFilter, setStatusFilter, categoryFilter, setCategoryFilter, onOpen }: { rows: Expense[]; search: string; setSearch: (value: string) => void; statusFilter: string; setStatusFilter: (value: string) => void; categoryFilter: string; setCategoryFilter: (value: string) => void; onOpen: (expense: Expense) => void }) {
+  const totalPayable = expenses.filter((expense) => expense.status !== "Pago").reduce((sum, expense) => sum + expense.amount, 0);
+  const totalOverdue = expenses.filter((expense) => expense.status === "Vencido").reduce((sum, expense) => sum + expense.amount, 0);
+  const totalPaid = expenses.filter((expense) => expense.status === "Pago").reduce((sum, expense) => sum + expense.amount, 0);
+  const nextDue = expenses.filter((expense) => expense.status === "Pendente" && expense.dueIso <= "2026-08-19").length;
+  const categories = Array.from(new Set(expenses.map((expense) => expense.category)));
+  return <>
+    <PageHeading eyebrow="Controle financeiro operacional" title="Despesas / Contas a Pagar" description="Acompanhe obrigações financeiras, vencimentos e pagamentos em uma única visão." />
+    <section className="summary-strip payable-summary">
+      <div><span>Total a pagar</span><strong>{brl.format(totalPayable)}</strong><small>4 contas em aberto</small></div>
+      <div className="summary-overdue"><span>Total vencido</span><strong>{brl.format(totalOverdue)}</strong><small>1 conta exige atenção</small></div>
+      <div><span>Total pago</span><strong>{brl.format(totalPaid)}</strong><small>2 contas quitadas</small></div>
+      <div><span>Próximos vencimentos</span><strong>{nextDue}</strong><small>Até 19 de agosto</small></div>
+    </section>
+    <TableSection toolbar={<><SearchBar value={search} onChange={setSearch} placeholder="Buscar por fornecedor, descrição ou conta" /><select aria-label="Filtrar contas por status" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option>Todas</option><option>Pendente</option><option>Pago</option><option>Vencido</option></select><select aria-label="Filtrar contas por categoria" value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}><option>Todas as categorias</option>{categories.map((category) => <option key={category}>{category}</option>)}</select></>} footer={<><span>{rows.length} de {expenses.length} contas</span><span>Valores demonstrativos</span></>}>
+      <table className="expense-table"><thead><tr><th>Conta</th><th>Fornecedor / beneficiário</th><th>Descrição</th><th>Categoria</th><th>Vencimento</th><th>Pagamento</th><th>Valor</th><th>Status</th><th /></tr></thead><tbody>{rows.map((expense) => {
+        const timing = expenseTiming(expense);
+        const rowClass = expense.status === "Vencido" ? "expense-overdue" : timing ? "expense-due-soon" : "";
+        return <tr className={rowClass} key={expense.id} onClick={() => onOpen(expense)} tabIndex={0} onKeyDown={(event) => event.key === "Enter" && onOpen(expense)}><td><strong>{expense.id}</strong></td><td><strong>{expense.supplier}</strong></td><td>{expense.description}</td><td><span className="category-label">{expense.category}</span></td><td><strong>{expense.dueDate}</strong>{timing && <small className={expense.status === "Vencido" ? "timing-overdue" : "timing-soon"}>{timing}</small>}</td><td>{expense.paidDate ?? "—"}</td><td><strong>{brl.format(expense.amount)}</strong></td><td><ExpenseStatusBadge status={expense.status} /></td><td><button className="row-action" aria-label={`Abrir ${expense.id}`}>Abrir</button></td></tr>;
+      })}</tbody></table>{rows.length === 0 && <EmptyState />}
+    </TableSection>
+    <InfoNote text="A forma de pagamento não foi incluída porque esse campo não está definido na documentação aprovada." />
   </>;
 }
 
@@ -276,6 +344,11 @@ function ChargeDrawer({ charge, onClose, onReceipt }: { charge: Charge; onClose:
 
 function ContractDrawer({ contract, onClose, onCharge }: { contract: Contract; onClose: () => void; onCharge: () => void }) {
   return <div className="drawer-layer" role="dialog" aria-modal="true" aria-label="Detalhes do contrato"><button className="drawer-backdrop" onClick={onClose} /><aside className="drawer"><header className="drawer-header"><div><p className="eyebrow">Contrato ativo</p><h2>{contract.id}</h2></div><button className="close-button" onClick={onClose}>×</button></header><div className="drawer-body"><section className="balance-panel"><span>Aluguel base</span><strong>{brl.format(contract.rent)}</strong><small>Vencimento no dia {contract.due}</small></section><dl className="detail-list"><div><dt>Carteira</dt><dd>{contract.portfolio}</dd></div><div><dt>Imóvel</dt><dd>{contract.property}</dd></div><div><dt>Unidades vinculadas</dt><dd><UnitPills values={contract.units} /></dd></div><div><dt>Locatário</dt><dd>{contract.tenant}</dd></div><div><dt>Vigência</dt><dd>{contract.period}</dd></div><div><dt>Mês de reajuste</dt><dd>{contract.adjustment}</dd></div><div><dt>Itens previstos</dt><dd><UnitPills values={contract.charges} /></dd></div></dl><InfoNote text="Salvar ou consultar o contrato não cria competências automaticamente." /></div><footer className="drawer-footer"><button className="secondary-button" onClick={onClose}>Fechar</button><button className="primary-button" onClick={onCharge}>Criar cobrança</button></footer></aside></div>;
+}
+
+function ExpenseDrawer({ expense, onClose }: { expense: Expense; onClose: () => void }) {
+  const timing = expenseTiming(expense);
+  return <div className="drawer-layer" role="dialog" aria-modal="true" aria-label="Detalhes da conta a pagar"><button className="drawer-backdrop" onClick={onClose} /><aside className="drawer"><header className="drawer-header"><div><p className="eyebrow">Conta a pagar</p><h2>{expense.id}</h2></div><button className="close-button" onClick={onClose}>×</button></header><div className="drawer-body"><div className="contract-identity"><ExpenseStatusBadge status={expense.status} />{timing && <span className={expense.status === "Vencido" ? "drawer-overdue-text" : "drawer-due-text"}>{timing}</span>}</div><section className={`balance-panel expense-balance ${expense.status === "Vencido" ? "expense-balance-overdue" : ""}`}><span>Valor da conta</span><strong>{brl.format(expense.amount)}</strong><small>{expense.status === "Pago" ? "Conta quitada" : `Vence ${expense.dueDate}`}</small></section><section className="expense-supplier"><span>Fornecedor / beneficiário</span><strong>{expense.supplier}</strong><p>{expense.description}</p></section><dl className="detail-list expense-details"><div><dt>Categoria</dt><dd>{expense.category}</dd></div><div><dt>Vencimento</dt><dd>{expense.dueDate}</dd></div><div><dt>Data de pagamento</dt><dd>{expense.paidDate ?? "Ainda não pago"}</dd></div><div><dt>Status</dt><dd>{expense.status}</dd></div></dl>{expense.status === "Vencido" && <aside className="expense-alert"><span>!</span><div><strong>Pagamento em atraso</strong><p>Esta conta está vencida e precisa de acompanhamento.</p></div></aside>}{expense.status === "Pendente" && timing && <aside className="expense-alert expense-alert-soon"><span>•</span><div><strong>Vencimento próximo</strong><p>Priorize a conferência desta obrigação financeira.</p></div></aside>}</div><footer className="drawer-footer"><button className="primary-button" onClick={onClose}>Concluir consulta</button></footer></aside></div>;
 }
 
 function ReceiptModal({ charge, onClose, onSave }: { charge: Charge; onClose: () => void; onSave: (event: FormEvent) => void }) {

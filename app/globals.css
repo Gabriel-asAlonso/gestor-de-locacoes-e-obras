@@ -95,6 +95,9 @@ td small { display:block;margin-top:4px;color:#87909f;font-size:10px; }
 .status-proxima { color:#1c63be;background:#edf5ff; }
 .status-em-aberto { color:#526070;background:#f0f2f5; }
 .status-recebida { color:#237651;background:#eaf8f1; }
+.status-vencido { color:#a63e49;background:#fff0f1; }
+.status-pendente { color:#9b641d;background:#fff6e8; }
+.status-pago { color:#237651;background:#eaf8f1; }
 .row-action { padding:6px 8px;color:var(--blue);border:0;background:transparent;font-size:11px;font-weight:700; }
 .table-footer { height:49px;padding:0 17px;display:flex;justify-content:space-between;align-items:center;color:#838d9b;font-size:10px; }
 .empty-state { min-height:320px;display:grid;place-items:center;align-content:center;gap:8px;text-align:center;color:var(--muted); }
@@ -199,6 +202,35 @@ td small { display:block;margin-top:4px;color:#87909f;font-size:10px; }
 .item-index { display:grid;place-items:center;width:26px;height:26px;margin-bottom:7px;color:#788596;background:#edf0f4;border-radius:50%;font-size:9px;font-weight:750; }
 .builder-total { display:flex;align-items:center;justify-content:flex-end;gap:18px;padding-top:15px;color:#6e7989;font-size:11px; }
 .builder-total strong { color:#18212d;font-size:17px; }
+
+.payable-summary .summary-overdue { background:#fffafa;box-shadow:inset 0 3px 0 #d9848c; }
+.payable-summary .summary-overdue strong { color:#9d3f48; }
+.expense-table { min-width:1000px; }
+.expense-table td:nth-child(3) { max-width:250px;overflow:hidden;text-overflow:ellipsis; }
+.expense-table tbody tr { box-shadow:inset 3px 0 0 transparent; }
+.expense-table tbody tr.expense-overdue { background:#fffafa;box-shadow:inset 3px 0 0 #cf7780; }
+.expense-table tbody tr.expense-overdue:hover,.expense-table tbody tr.expense-overdue:focus { background:#fff5f5; }
+.expense-table tbody tr.expense-due-soon { background:#fffdf8;box-shadow:inset 3px 0 0 #d6a758; }
+.expense-table tbody tr.expense-due-soon:hover,.expense-table tbody tr.expense-due-soon:focus { background:#fffaf0; }
+.category-label { display:inline-flex;padding:5px 8px;color:#526071;background:#f0f3f7;border-radius:4px;font-size:9px;font-weight:680; }
+.timing-overdue { color:#b04d57; }
+.timing-soon { color:#a36b1e; }
+.drawer-overdue-text { color:#ae4751;font-weight:680; }
+.drawer-due-text { color:#9c6a22;font-weight:680; }
+.expense-balance { margin-top:22px; }
+.expense-balance-overdue { background:#fff5f5;border-left-color:#bd525d; }
+.expense-supplier { margin:25px 0 5px;padding-bottom:22px;border-bottom:1px solid #edf0f4; }
+.expense-supplier>span { color:#818b9a;font-size:10px;text-transform:uppercase;letter-spacing:.06em; }
+.expense-supplier strong { display:block;margin-top:8px;color:#202731;font-size:16px; }
+.expense-supplier p { margin:7px 0 0;color:#687283;font-size:12px;line-height:1.5; }
+.expense-details { margin-top:5px; }
+.expense-alert { margin-top:25px;padding:15px;display:flex;align-items:flex-start;gap:12px;color:#764048;background:#fff5f5;border:1px solid #f0d8db; }
+.expense-alert>span { display:grid;place-items:center;flex:0 0 23px;width:23px;height:23px;border-radius:50%;color:#fff;background:#bc5962;font-size:11px;font-weight:800; }
+.expense-alert strong { font-size:12px; }
+.expense-alert p { margin:4px 0 0;color:#8e6066;font-size:10px;line-height:1.45; }
+.expense-alert-soon { color:#745724;background:#fffbf1;border-color:#eee1c2; }
+.expense-alert-soon>span { background:#c6953f; }
+.expense-alert-soon p { color:#897450; }
 
 @media (max-width:1000px) { .summary-strip { grid-template-columns:1fr 1fr; }.summary-strip>div:nth-child(2){border-right:0}.summary-strip>div:nth-child(-n+2){border-bottom:1px solid var(--line)} }
 @media (max-width:760px) {
