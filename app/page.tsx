@@ -248,7 +248,7 @@ function Sidebar({ page, operationalCount, onNavigate, onLogout, open, onClose }
             const regionId = `sidebar-theme-${index}`;
             return <section className="theme-group" key={group.name}>
               <button className={`theme-toggle ${expanded ? "open" : ""} ${hasActivePage ? "has-active-page" : ""}`} onClick={() => setOpenTheme(expanded ? null : group.name)} aria-expanded={expanded} aria-controls={regionId}>
-                <span className="theme-identity"><span className="theme-marker" aria-hidden="true" /><span className="theme-copy"><strong>{group.name}</strong><small>{group.description}</small></span></span>
+                <span className="theme-identity"><span className="theme-copy"><strong>{group.name}</strong><small>{group.description}</small></span></span>
                 <span className="theme-chevron-shell" aria-hidden="true"><span className="theme-chevron" /></span>
               </button>
               {expanded && <div className="theme-pages" id={regionId}>{group.pages.map((entry) => <div key={entry.name}>{item(entry.name, entry.count)}</div>)}</div>}
