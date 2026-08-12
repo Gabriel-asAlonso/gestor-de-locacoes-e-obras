@@ -3,209 +3,68 @@
 import { FormEvent, useMemo, useState } from "react";
 
 type Status = "Vencida" | "Em aberto" | "Próxima" | "Parcial" | "Recebida";
+type Page = "Pendências" | "Imóveis / Módulos" | "Locatários" | "Contratos" | "Cobranças";
+type FormKind = "property" | "tenant" | "contract" | "charge" | null;
+type Charge = { id:string;contract:string;property:string;tenant:string;competence:string;dueDate:string;amount:number;received:number;status:Status };
 
-type Charge = {
-  id: string;
-  contract: string;
-  property: string;
-  tenant: string;
-  competence: string;
-  dueDate: string;
-  dueDateISO: string;
-  amount: number;
-  received: number;
-  status: Status;
-};
-
-const charges: Charge[] = [
-  { id: "COB-0084", contract: "CTR-014", property: "Sala 03 · Centro", tenant: "Ateliê Norte", competence: "07/2026", dueDate: "10 ago 2026", dueDateISO: "2026-08-10", amount: 3200, received: 0, status: "Vencida" },
-  { id: "COB-0086", contract: "CTR-021", property: "Loja 02 · Galeria", tenant: "Café Brisa", competence: "08/2026", dueDate: "12 ago 2026", dueDateISO: "2026-08-12", amount: 4850, received: 2000, status: "Parcial" },
-  { id: "COB-0087", contract: "CTR-009", property: "Sala 11 · Centro", tenant: "Instituto Horizonte", competence: "08/2026", dueDate: "14 ago 2026", dueDateISO: "2026-08-14", amount: 2900, received: 0, status: "Próxima" },
-  { id: "COB-0088", contract: "CTR-018", property: "Módulo B · Anexo", tenant: "Oficina Sete", competence: "08/2026", dueDate: "15 ago 2026", dueDateISO: "2026-08-15", amount: 1750, received: 0, status: "Próxima" },
-  { id: "COB-0079", contract: "CTR-004", property: "Loja 01 · Galeria", tenant: "Casa Amora", competence: "07/2026", dueDate: "05 ago 2026", dueDateISO: "2026-08-05", amount: 6100, received: 0, status: "Vencida" },
+const charges:Charge[] = [
+  {id:"COB-0084",contract:"CTR-014",property:"Sala 03 · Centro",tenant:"Ateliê Norte",competence:"07/2026",dueDate:"10 ago 2026",amount:3200,received:0,status:"Vencida"},
+  {id:"COB-0086",contract:"CTR-021",property:"Loja 02 · Galeria",tenant:"Café Brisa",competence:"08/2026",dueDate:"12 ago 2026",amount:4850,received:2000,status:"Parcial"},
+  {id:"COB-0087",contract:"CTR-009",property:"Sala 11 · Centro",tenant:"Instituto Horizonte",competence:"08/2026",dueDate:"14 ago 2026",amount:2900,received:0,status:"Próxima"},
+  {id:"COB-0088",contract:"CTR-018",property:"Módulo B · Anexo",tenant:"Oficina Sete",competence:"08/2026",dueDate:"15 ago 2026",amount:1750,received:0,status:"Próxima"},
+  {id:"COB-0079",contract:"CTR-004",property:"Loja 01 · Galeria",tenant:"Casa Amora",competence:"07/2026",dueDate:"05 ago 2026",amount:6100,received:0,status:"Vencida"},
+  {id:"COB-0078",contract:"CTR-012",property:"Sala 07 · Centro",tenant:"Estúdio Alma",competence:"07/2026",dueDate:"08 ago 2026",amount:2400,received:2400,status:"Recebida"},
 ];
+const properties=[{id:"IMO-001",name:"Sala 03",description:"Centro"},{id:"IMO-002",name:"Loja 02",description:"Galeria"},{id:"IMO-003",name:"Sala 11",description:"Centro"},{id:"IMO-004",name:"Módulo B",description:"Anexo"},{id:"IMO-005",name:"Loja 01",description:"Galeria"}];
+const tenants=[{id:"LOC-018",name:"Ateliê Norte",contracts:1},{id:"LOC-021",name:"Café Brisa",contracts:1},{id:"LOC-009",name:"Instituto Horizonte",contracts:1},{id:"LOC-014",name:"Oficina Sete",contracts:1},{id:"LOC-004",name:"Casa Amora",contracts:1}];
+const contracts=[{id:"CTR-014",property:"Sala 03 · Centro",tenant:"Ateliê Norte",period:"01 fev 2026 — 31 jan 2027",rent:3200,due:10},{id:"CTR-021",property:"Loja 02 · Galeria",tenant:"Café Brisa",period:"01 jun 2026 — 31 mai 2027",rent:4850,due:12},{id:"CTR-009",property:"Sala 11 · Centro",tenant:"Instituto Horizonte",period:"15 mar 2026 — 14 mar 2027",rent:2900,due:14},{id:"CTR-018",property:"Módulo B · Anexo",tenant:"Oficina Sete",period:"01 ago 2026 — 31 jul 2027",rent:1750,due:15}];
+const brl=new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"});
 
-const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+function StatusBadge({status}:{status:Status}) { const name=status.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(" ","-");return <span className={`status status-${name}`}><i/>{status}</span>; }
 
-function StatusBadge({ status }: { status: Status }) {
-  const normalized = status.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(" ", "-");
-  return <span className={`status status-${normalized}`}><i />{status}</span>;
+export default function Home(){
+  const [authenticated,setAuthenticated]=useState(false),[loading,setLoading]=useState(false);
+  const [page,setPage]=useState<Page>("Pendências"),[search,setSearch]=useState(""),[statusFilter,setStatusFilter]=useState("Todas");
+  const [selected,setSelected]=useState<Charge|null>(null),[receiptOpen,setReceiptOpen]=useState(false),[form,setForm]=useState<FormKind>(null),[toast,setToast]=useState("");
+  const operational=charges.filter(c=>c.status!=="Recebida");
+  const shownCharges=page==="Pendências"?operational:charges;
+  const filtered=useMemo(()=>shownCharges.filter(c=>{const t=search.trim().toLowerCase();return(!t||[c.id,c.contract,c.property,c.tenant,c.competence].some(v=>v.toLowerCase().includes(t)))&&(statusFilter==="Todas"||c.status===statusFilter)}),[page,search,statusFilter]);
+  const notify=(message:string)=>{setToast(message);window.setTimeout(()=>setToast(""),3600)};
+  const changePage=(next:Page)=>{setPage(next);setSearch("");setStatusFilter("Todas")};
+  const login=(e:FormEvent)=>{e.preventDefault();setLoading(true);window.setTimeout(()=>{setAuthenticated(true);setLoading(false)},650)};
+  const saveReceipt=(e:FormEvent)=>{e.preventDefault();setReceiptOpen(false);setSelected(null);notify("Recebimento registrado. Saldo e histórico atualizados.")};
+  const saveForm=(e:FormEvent)=>{e.preventDefault();setForm(null);notify("Cadastro salvo neste ambiente demonstrativo.")};
+
+  if(!authenticated)return <main className="login-page"><section className="login-brand"><div className="brand-mark brand-mark-light">LR</div><div className="login-copy"><p className="eyebrow eyebrow-light">Módulo 1</p><h1>Locações<br/>& recebíveis</h1><p>Controle operacional claro para contratos, cobranças e recebimentos.</p></div><div className="login-footer"><span/> Operação centralizada</div></section><section className="login-panel"><form className="login-form" onSubmit={login}><div className="login-heading"><p className="eyebrow">Acesso administrativo</p><h2>Bem-vinda.</h2><p>Entre para acompanhar as pendências do módulo.</p></div><label>E-mail<input type="email" defaultValue="administrativo@exemplo.com.br" required/></label><label>Senha<input type="password" defaultValue="demonstracao" required/></label><button className="primary-button login-button" disabled={loading}>{loading?<><span className="spinner"/> Preparando ambiente</>:"Acessar demonstração"}</button><p className="demo-note">Ambiente demonstrativo com dados simulados.</p></form></section></main>;
+
+  return <main className="app-shell">
+    <aside className="sidebar"><div><div className="sidebar-brand"><div className="brand-mark">LR</div><div><strong>Locações</strong><span>Módulo 1</span></div></div><nav aria-label="Navegação principal"><p className="nav-label">Operação</p><button onClick={()=>changePage("Pendências")} className={`nav-item ${page==="Pendências"?"active":""}`}><span className="nav-dot"/>Pendências <b>{operational.length}</b></button><p className="nav-label nav-space">Cadastros</p><button onClick={()=>changePage("Imóveis / Módulos")} className={`nav-item ${page==="Imóveis / Módulos"?"active":""}`}><span className="nav-line"/>Imóveis / Módulos</button><button onClick={()=>changePage("Locatários")} className={`nav-item ${page==="Locatários"?"active":""}`}><span className="nav-line"/>Locatários</button><p className="nav-label nav-space">Locação</p><button onClick={()=>changePage("Contratos")} className={`nav-item ${page==="Contratos"?"active":""}`}><span className="nav-line"/>Contratos</button><button onClick={()=>changePage("Cobranças")} className={`nav-item ${page==="Cobranças"?"active":""}`}><span className="nav-line"/>Cobranças</button></nav></div><div className="sidebar-account"><div className="avatar">AD</div><div><strong>Administrativo</strong><span>Acesso único</span></div><button onClick={()=>setAuthenticated(false)}>Sair</button></div></aside>
+    <section className="workspace"><header className="topbar"><div><span className="breadcrumb">{page==="Pendências"?"Operação":"Módulo 1"} /</span> {page}</div><div className="topbar-context"><span className="context-dot"/> Dados simulados</div></header><div className="content">{page==="Pendências"||page==="Cobranças"?<ChargesPage page={page} filtered={filtered} total={shownCharges.length} search={search} setSearch={setSearch} statusFilter={statusFilter} setStatusFilter={setStatusFilter} onOpen={setSelected} onNew={()=>setForm("charge")}/>:page==="Imóveis / Módulos"?<PropertiesPage search={search} setSearch={setSearch} onNew={()=>setForm("property")}/>:page==="Locatários"?<TenantsPage search={search} setSearch={setSearch} onNew={()=>setForm("tenant")}/>:<ContractsPage search={search} setSearch={setSearch} onNew={()=>setForm("contract")} onCharge={()=>setForm("charge")}/>}</div></section>
+    {selected&&<ChargeDrawer charge={selected} onClose={()=>setSelected(null)} onReceipt={()=>setReceiptOpen(true)}/>} 
+    {receiptOpen&&selected&&<ReceiptModal charge={selected} onClose={()=>setReceiptOpen(false)} onSave={saveReceipt}/>} 
+    {form&&<EntityForm kind={form} onClose={()=>setForm(null)} onSave={saveForm}/>} 
+    {toast&&<div className="toast" role="status"><span>✓</span>{toast}</div>}
+  </main>;
 }
 
-export default function Home() {
-  const [authenticated, setAuthenticated] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("Todas");
-  const [selected, setSelected] = useState<Charge | null>(null);
-  const [receiptOpen, setReceiptOpen] = useState(false);
-  const [toast, setToast] = useState("");
+function PageHeading({eyebrow,title,description,action,onAction}:{eyebrow:string;title:string;description:string;action:string;onAction:()=>void}){return <section className="page-heading"><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p>{description}</p></div><button className="primary-button" onClick={onAction}>{action}</button></section>}
+function SearchBar({value,onChange,placeholder}:{value:string;onChange:(v:string)=>void;placeholder:string}){return <div className="search-field"><span aria-hidden="true"/><input aria-label="Buscar" placeholder={placeholder} value={value} onChange={e=>onChange(e.target.value)}/></div>}
 
-  const filtered = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    return charges.filter((charge) => {
-      const matchesTerm = !term || [charge.id, charge.contract, charge.property, charge.tenant, charge.competence]
-        .some((value) => value.toLowerCase().includes(term));
-      const matchesStatus = statusFilter === "Todas" || charge.status === statusFilter;
-      return matchesTerm && matchesStatus;
-    });
-  }, [search, statusFilter]);
+function ChargesPage({page,filtered,total,search,setSearch,statusFilter,setStatusFilter,onOpen,onNew}:{page:Page;filtered:Charge[];total:number;search:string;setSearch:(v:string)=>void;statusFilter:string;setStatusFilter:(v:string)=>void;onOpen:(c:Charge)=>void;onNew:()=>void}){
+  const pending=charges.filter(c=>c.status!=="Recebida").reduce((s,c)=>s+c.amount-c.received,0);
+  return <><PageHeading eyebrow={page==="Pendências"?"12 de agosto de 2026":"Consulta operacional"} title={page} description={page==="Pendências"?"Acompanhe o que exige ação e registre recebimentos sem sair do contexto.":"Localize cobranças, confira saldos e consulte o histórico de recebimentos."} action="Nova cobrança" onAction={onNew}/>{page==="Pendências"&&<section className="summary-strip"><div><span>Saldo pendente</span><strong>{brl.format(pending)}</strong><small>5 cobranças em acompanhamento</small></div><div><span>Vencidas</span><strong>2</strong><small>{brl.format(9300)} em aberto</small></div><div><span>Próximas do vencimento</span><strong>2</strong><small>Até 15 de agosto</small></div><div><span>Com baixa parcial</span><strong>1</strong><small>{brl.format(2850)} de saldo</small></div></section>}<section className="table-section"><div className="table-toolbar"><SearchBar value={search} onChange={setSearch} placeholder="Buscar por imóvel, locatário ou contrato"/><select aria-label="Filtrar por situação" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}><option>Todas</option><option>Vencida</option><option>Em aberto</option><option>Próxima</option><option>Parcial</option><option>Recebida</option></select><button className="secondary-button">Período</button></div><div className="table-wrap"><table><thead><tr><th>Cobrança</th><th>Imóvel / locatário</th><th>Competência</th><th>Vencimento</th><th>Valor</th><th>Saldo</th><th>Situação</th><th/></tr></thead><tbody>{filtered.map(c=><tr key={c.id} onClick={()=>onOpen(c)} tabIndex={0} onKeyDown={e=>e.key==="Enter"&&onOpen(c)}><td><strong>{c.id}</strong><small>{c.contract}</small></td><td><strong>{c.property}</strong><small>{c.tenant}</small></td><td>{c.competence}</td><td>{c.dueDate}</td><td>{brl.format(c.amount)}</td><td><strong>{brl.format(c.amount-c.received)}</strong></td><td><StatusBadge status={c.status}/></td><td><button className="row-action" aria-label={`Abrir ${c.id}`}>Abrir</button></td></tr>)}</tbody></table>{filtered.length===0&&<div className="empty-state"><span>0</span><h3>Nenhum resultado</h3><p>Ajuste a busca ou os filtros aplicados.</p></div>}</div><div className="table-footer"><span>{filtered.length} de {total} cobranças</span><span>Página 1 de 1</span></div></section></>
+}
 
-  function handleLogin(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setLoading(true);
-    window.setTimeout(() => {
-      setAuthenticated(true);
-      setLoading(false);
-    }, 650);
-  }
+function PropertiesPage({search,setSearch,onNew}:{search:string;setSearch:(v:string)=>void;onNew:()=>void}){const rows=properties.filter(p=>(p.name+p.description+p.id).toLowerCase().includes(search.toLowerCase()));return <><PageHeading eyebrow="Cadastros essenciais" title="Imóveis / Módulos" description="Identifique os espaços que poderão ser vinculados aos contratos." action="Novo imóvel" onAction={onNew}/><section className="table-section"><div className="table-toolbar"><SearchBar value={search} onChange={setSearch} placeholder="Buscar por identificação ou descrição"/></div><div className="table-wrap"><table className="compact-table"><thead><tr><th>Identificação</th><th>Descrição interna</th><th>Contratos vinculados</th><th/></tr></thead><tbody>{rows.map((p,i)=><tr key={p.id}><td><strong>{p.name}</strong><small>{p.id}</small></td><td>{p.description}</td><td>{i<4?"1 contrato":"Nenhum contrato"}</td><td><button className="row-action" onClick={onNew}>Editar</button></td></tr>)}</tbody></table></div><div className="table-footer"><span>{rows.length} imóveis / módulos</span><span>Dados mínimos conforme proposta</span></div></section><InfoNote text="Os campos cadastrais definitivos de imóveis não foram detalhados na proposta. Esta demonstração usa somente identificação e descrição interna."/></>}
+function TenantsPage({search,setSearch,onNew}:{search:string;setSearch:(v:string)=>void;onNew:()=>void}){const rows=tenants.filter(p=>(p.name+p.id).toLowerCase().includes(search.toLowerCase()));return <><PageHeading eyebrow="Cadastros essenciais" title="Locatários" description="Localize os responsáveis vinculados às locações do módulo." action="Novo locatário" onAction={onNew}/><section className="table-section"><div className="table-toolbar"><SearchBar value={search} onChange={setSearch} placeholder="Buscar por nome ou identificação"/></div><div className="table-wrap"><table className="compact-table"><thead><tr><th>Locatário</th><th>Identificação interna</th><th>Contratos vinculados</th><th/></tr></thead><tbody>{rows.map(t=><tr key={t.id}><td><strong>{t.name}</strong></td><td>{t.id}</td><td>{t.contracts} contrato</td><td><button className="row-action" onClick={onNew}>Editar</button></td></tr>)}</tbody></table></div><div className="table-footer"><span>{rows.length} locatários</span><span>Consulta operacional</span></div></section><InfoNote text="CPF/CNPJ, telefone, endereço e e-mail não foram definidos como requisitos oficiais. A interface permanece preparada para a validação desses campos."/></>}
+function ContractsPage({search,setSearch,onNew,onCharge}:{search:string;setSearch:(v:string)=>void;onNew:()=>void;onCharge:()=>void}){const rows=contracts.filter(c=>(c.id+c.property+c.tenant).toLowerCase().includes(search.toLowerCase()));return <><PageHeading eyebrow="Locações" title="Contratos" description="Consulte vigência, valor do aluguel, vencimento e vínculos da locação." action="Novo contrato" onAction={onNew}/><section className="table-section"><div className="table-toolbar"><SearchBar value={search} onChange={setSearch} placeholder="Buscar por contrato, imóvel ou locatário"/><button className="secondary-button">Vigência</button></div><div className="table-wrap"><table><thead><tr><th>Contrato</th><th>Imóvel / locatário</th><th>Vigência</th><th>Aluguel</th><th>Vencimento</th><th/></tr></thead><tbody>{rows.map(c=><tr key={c.id}><td><strong>{c.id}</strong></td><td><strong>{c.property}</strong><small>{c.tenant}</small></td><td>{c.period}</td><td><strong>{brl.format(c.rent)}</strong></td><td>Dia {c.due}</td><td><button className="row-action" onClick={onCharge}>Criar cobrança</button></td></tr>)}</tbody></table></div><div className="table-footer"><span>{rows.length} contratos</span><span>Cobranças são incluídas manualmente</span></div></section><InfoNote text="Salvar um contrato não gera cobranças. Cada competência deve ser incluída manualmente na área de Cobranças, como definido no Módulo 1."/></>}
+function InfoNote({text}:{text:string}){return <aside className="info-note"><span>i</span><p>{text}</p></aside>}
 
-  function registerReceipt(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setReceiptOpen(false);
-    setSelected(null);
-    setToast("Recebimento registrado. Saldo e histórico foram atualizados.");
-    window.setTimeout(() => setToast(""), 4200);
-  }
-
-  if (!authenticated) {
-    return (
-      <main className="login-page">
-        <section className="login-brand" aria-label="Apresentação do sistema">
-          <div className="brand-mark brand-mark-light">LR</div>
-          <div className="login-copy">
-            <p className="eyebrow eyebrow-light">Módulo 1</p>
-            <h1>Locações<br />& recebíveis</h1>
-            <p>Controle operacional claro para contratos, cobranças e recebimentos.</p>
-          </div>
-          <div className="login-footer"><span /> Operação centralizada</div>
-        </section>
-
-        <section className="login-panel">
-          <form className="login-form" onSubmit={handleLogin}>
-            <div className="login-heading">
-              <p className="eyebrow">Acesso administrativo</p>
-              <h2>Bem-vinda.</h2>
-              <p>Entre para acompanhar as pendências do módulo.</p>
-            </div>
-            <label>E-mail<input type="email" defaultValue="administrativo@exemplo.com.br" required /></label>
-            <label>Senha<input type="password" defaultValue="demonstracao" required /></label>
-            <button className="primary-button login-button" type="submit" disabled={loading}>
-              {loading ? <><span className="spinner" /> Preparando ambiente</> : "Acessar demonstração"}
-            </button>
-            <p className="demo-note">Ambiente demonstrativo com dados simulados.</p>
-          </form>
-        </section>
-      </main>
-    );
-  }
-
-  const outstanding = charges.reduce((total, charge) => total + (charge.amount - charge.received), 0);
-
-  return (
-    <main className="app-shell">
-      <aside className="sidebar">
-        <div>
-          <div className="sidebar-brand">
-            <div className="brand-mark">LR</div>
-            <div><strong>Locações</strong><span>Módulo 1</span></div>
-          </div>
-          <nav aria-label="Navegação principal">
-            <p className="nav-label">Operação</p>
-            <button className="nav-item active"><span className="nav-dot" />Pendências <b>{charges.length}</b></button>
-          </nav>
-        </div>
-        <div className="sidebar-account">
-          <div className="avatar">AD</div>
-          <div><strong>Administrativo</strong><span>Acesso único</span></div>
-          <button onClick={() => setAuthenticated(false)} aria-label="Sair">Sair</button>
-        </div>
-      </aside>
-
-      <section className="workspace">
-        <header className="topbar">
-          <div><span className="breadcrumb">Operação /</span> Pendências</div>
-          <div className="topbar-context"><span className="context-dot" /> Dados atualizados agora</div>
-        </header>
-
-        <div className="content">
-          <section className="page-heading">
-            <div>
-              <p className="eyebrow">12 de agosto de 2026</p>
-              <h1>Pendências</h1>
-              <p>Acompanhe o que exige ação e registre recebimentos sem sair do contexto.</p>
-            </div>
-            <button className="primary-button">Nova cobrança</button>
-          </section>
-
-          <section className="summary-strip" aria-label="Resumo operacional">
-            <div><span>Saldo pendente</span><strong>{brl.format(outstanding)}</strong><small>5 cobranças em acompanhamento</small></div>
-            <div><span>Vencidas</span><strong>2</strong><small>{brl.format(9300)} em aberto</small></div>
-            <div><span>Próximas do vencimento</span><strong>2</strong><small>Até 15 de agosto</small></div>
-            <div><span>Com baixa parcial</span><strong>1</strong><small>{brl.format(2850)} de saldo</small></div>
-          </section>
-
-          <section className="table-section">
-            <div className="table-toolbar">
-              <div className="search-field"><span aria-hidden="true" /><input aria-label="Buscar pendências" placeholder="Buscar por imóvel, locatário ou contrato" value={search} onChange={(event) => setSearch(event.target.value)} /></div>
-              <select aria-label="Filtrar por situação" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option>Todas</option><option>Vencida</option><option>Em aberto</option><option>Próxima</option><option>Parcial</option></select>
-              <button className="secondary-button">Mais filtros</button>
-            </div>
-
-            <div className="table-wrap">
-              <table>
-                <thead><tr><th>Cobrança</th><th>Imóvel / locatário</th><th>Competência</th><th>Vencimento</th><th>Valor</th><th>Saldo</th><th>Situação</th><th><span className="sr-only">Ações</span></th></tr></thead>
-                <tbody>
-                  {filtered.map((charge) => (
-                    <tr key={charge.id} onClick={() => setSelected(charge)} tabIndex={0} onKeyDown={(event) => event.key === "Enter" && setSelected(charge)}>
-                      <td><strong>{charge.id}</strong><small>{charge.contract}</small></td>
-                      <td><strong>{charge.property}</strong><small>{charge.tenant}</small></td>
-                      <td>{charge.competence}</td><td>{charge.dueDate}</td><td>{brl.format(charge.amount)}</td><td><strong>{brl.format(charge.amount - charge.received)}</strong></td><td><StatusBadge status={charge.status} /></td>
-                      <td><button className="row-action" aria-label={`Abrir ${charge.id}`}>Abrir</button></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {filtered.length === 0 && <div className="empty-state"><span>0</span><h3>Nenhuma pendência encontrada</h3><p>Ajuste a busca ou remova os filtros aplicados.</p><button className="secondary-button" onClick={() => { setSearch(""); setStatusFilter("Todas"); }}>Limpar filtros</button></div>}
-            </div>
-            <div className="table-footer"><span>{filtered.length} de {charges.length} pendências</span><span>Página 1 de 1</span></div>
-          </section>
-        </div>
-      </section>
-
-      {selected && (
-        <div className="drawer-layer" role="dialog" aria-modal="true" aria-label="Detalhes da cobrança">
-          <button className="drawer-backdrop" onClick={() => setSelected(null)} aria-label="Fechar detalhes" />
-          <aside className="drawer">
-            <header className="drawer-header"><div><p className="eyebrow">Cobrança</p><h2>{selected.id}</h2></div><button className="close-button" onClick={() => setSelected(null)} aria-label="Fechar">×</button></header>
-            <div className="drawer-body">
-              <StatusBadge status={selected.status} />
-              <section className="balance-panel"><span>Saldo atual</span><strong>{brl.format(selected.amount - selected.received)}</strong><small>de {brl.format(selected.amount)}</small></section>
-              <dl className="detail-list">
-                <div><dt>Imóvel / módulo</dt><dd>{selected.property}</dd></div><div><dt>Locatário</dt><dd>{selected.tenant}</dd></div><div><dt>Contrato</dt><dd>{selected.contract}</dd></div><div><dt>Competência</dt><dd>{selected.competence}</dd></div><div><dt>Vencimento</dt><dd>{selected.dueDate}</dd></div>
-              </dl>
-              <section className="history-block"><div className="section-title"><h3>Histórico de recebimentos</h3><span>{selected.received > 0 ? "1 registro" : "Sem registros"}</span></div>
-                {selected.received > 0 ? <div className="history-entry"><i /><div><strong>{brl.format(selected.received)}</strong><span>10 ago 2026 · Pagamento parcial</span></div></div> : <div className="history-empty">Nenhuma baixa registrada nesta cobrança.</div>}
-              </section>
-            </div>
-            <footer className="drawer-footer"><button className="secondary-button" onClick={() => setSelected(null)}>Fechar</button><button className="primary-button" onClick={() => setReceiptOpen(true)}>Registrar recebimento</button></footer>
-          </aside>
-        </div>
-      )}
-
-      {receiptOpen && selected && (
-        <div className="modal-layer" role="dialog" aria-modal="true" aria-label="Registrar recebimento">
-          <button className="drawer-backdrop" onClick={() => setReceiptOpen(false)} aria-label="Fechar" />
-          <form className="receipt-modal" onSubmit={registerReceipt}>
-            <header><div><p className="eyebrow">Baixa manual</p><h2>Registrar recebimento</h2></div><button type="button" className="close-button" onClick={() => setReceiptOpen(false)}>×</button></header>
-            <div className="receipt-summary"><div><span>Valor da cobrança</span><strong>{brl.format(selected.amount)}</strong></div><div><span>Já recebido</span><strong>{brl.format(selected.received)}</strong></div><div><span>Saldo atual</span><strong>{brl.format(selected.amount - selected.received)}</strong></div></div>
-            <div className="form-grid"><label>Data do recebimento<input type="date" defaultValue="2026-08-12" required /></label><label>Valor recebido<input type="number" min="0.01" step="0.01" max={selected.amount - selected.received} defaultValue={selected.amount - selected.received} required /></label><label className="full-field">Observação<textarea placeholder="Ex.: pagamento parcial, complemento..." rows={3} /></label></div>
-            <footer><button type="button" className="secondary-button" onClick={() => setReceiptOpen(false)}>Cancelar</button><button type="submit" className="primary-button">Confirmar recebimento</button></footer>
-          </form>
-        </div>
-      )}
-
-      {toast && <div className="toast" role="status"><span>✓</span>{toast}</div>}
-    </main>
-  );
+function ChargeDrawer({charge,onClose,onReceipt}:{charge:Charge;onClose:()=>void;onReceipt:()=>void}){return <div className="drawer-layer" role="dialog" aria-modal="true" aria-label="Detalhes da cobrança"><button className="drawer-backdrop" onClick={onClose}/><aside className="drawer"><header className="drawer-header"><div><p className="eyebrow">Cobrança</p><h2>{charge.id}</h2></div><button className="close-button" onClick={onClose}>×</button></header><div className="drawer-body"><StatusBadge status={charge.status}/><section className="balance-panel"><span>Saldo atual</span><strong>{brl.format(charge.amount-charge.received)}</strong><small>de {brl.format(charge.amount)}</small></section><dl className="detail-list"><div><dt>Imóvel / módulo</dt><dd>{charge.property}</dd></div><div><dt>Locatário</dt><dd>{charge.tenant}</dd></div><div><dt>Contrato</dt><dd>{charge.contract}</dd></div><div><dt>Competência</dt><dd>{charge.competence}</dd></div><div><dt>Vencimento</dt><dd>{charge.dueDate}</dd></div></dl><section><div className="section-title"><h3>Histórico de recebimentos</h3><span>{charge.received?"1 registro":"Sem registros"}</span></div>{charge.received?<div className="history-entry"><i/><div><strong>{brl.format(charge.received)}</strong><span>10 ago 2026 · Pagamento parcial</span></div></div>:<div className="history-empty">Nenhuma baixa registrada nesta cobrança.</div>}</section></div><footer className="drawer-footer"><button className="secondary-button" onClick={onClose}>Fechar</button>{charge.status!=="Recebida"&&<button className="primary-button" onClick={onReceipt}>Registrar recebimento</button>}</footer></aside></div>}
+function ReceiptModal({charge,onClose,onSave}:{charge:Charge;onClose:()=>void;onSave:(e:FormEvent)=>void}){return <div className="modal-layer" role="dialog" aria-modal="true" aria-label="Registrar recebimento"><button className="drawer-backdrop" onClick={onClose}/><form className="receipt-modal" onSubmit={onSave}><ModalHeader eyebrow="Baixa manual" title="Registrar recebimento" onClose={onClose}/><div className="receipt-summary"><div><span>Valor da cobrança</span><strong>{brl.format(charge.amount)}</strong></div><div><span>Já recebido</span><strong>{brl.format(charge.received)}</strong></div><div><span>Saldo atual</span><strong>{brl.format(charge.amount-charge.received)}</strong></div></div><div className="form-grid"><label>Data do recebimento<input type="date" defaultValue="2026-08-12" required/></label><label>Valor recebido<input type="number" min="0.01" step="0.01" max={charge.amount-charge.received} defaultValue={charge.amount-charge.received} required/></label><label className="full-field">Observação<textarea placeholder="Ex.: pagamento parcial, complemento..." rows={3}/></label></div><ModalFooter onClose={onClose} action="Confirmar recebimento"/></form></div>}
+function ModalHeader({eyebrow,title,onClose}:{eyebrow:string;title:string;onClose:()=>void}){return <header><div><p className="eyebrow">{eyebrow}</p><h2>{title}</h2></div><button type="button" className="close-button" onClick={onClose}>×</button></header>}
+function ModalFooter({onClose,action}:{onClose:()=>void;action:string}){return <footer><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button className="primary-button">{action}</button></footer>}
+function EntityForm({kind,onClose,onSave}:{kind:Exclude<FormKind,null>;onClose:()=>void;onSave:(e:FormEvent)=>void}){
+  const config={property:["Cadastro essencial","Novo imóvel / módulo","Salvar imóvel"],tenant:["Cadastro essencial","Novo locatário","Salvar locatário"],contract:["Locação","Novo contrato","Salvar contrato"],charge:["Inclusão manual","Nova cobrança","Salvar cobrança"]}[kind];
+  return <div className="modal-layer" role="dialog" aria-modal="true" aria-label={config[1]}><button className="drawer-backdrop" onClick={onClose}/><form className="receipt-modal entity-modal" onSubmit={onSave}><ModalHeader eyebrow={config[0]} title={config[1]} onClose={onClose}/><div className="form-grid entity-grid">{kind==="property"&&<><label>Identificação<input placeholder="Ex.: Sala 03" required/></label><label>Descrição interna<input placeholder="Ex.: Centro" required/></label></>}{kind==="tenant"&&<><label className="full-field">Nome / identificação do locatário<input placeholder="Nome utilizado na operação" required/></label><p className="form-help full-field">Os demais dados cadastrais serão definidos com a cliente.</p></>}{kind==="contract"&&<><label>Imóvel / módulo<select required><option>Sala 03 · Centro</option><option>Loja 02 · Galeria</option></select></label><label>Locatário<select required><option>Ateliê Norte</option><option>Café Brisa</option></select></label><label>Início da vigência<input type="date" required/></label><label>Fim da vigência<input type="date" required/></label><label>Valor do aluguel<input type="number" min="0" required/></label><label>Dia de vencimento<input type="number" min="1" max="31" required/></label><label>IPTU <input type="number" min="0" placeholder="Quando aplicável"/></label><label>Condomínio<input type="number" min="0" placeholder="Quando aplicável"/></label><p className="form-help full-field">Este cadastro não gera cobranças automaticamente.</p></>}{kind==="charge"&&<><label className="full-field">Contrato<select required><option>CTR-014 · Sala 03 · Ateliê Norte</option><option>CTR-021 · Loja 02 · Café Brisa</option></select></label><label>Competência<input type="month" required/></label><label>Vencimento<input type="date" required/></label><label className="full-field">Valor da cobrança<input type="number" min="0.01" step="0.01" required/></label><p className="form-help full-field">A cobrança será criada somente para esta competência.</p></>}</div><ModalFooter onClose={onClose} action={config[2]}/></form></div>
 }
