@@ -379,6 +379,10 @@ td small { display:block;margin-top:4px;color:var(--muted-strong);font-size:var(
 .menu-button,.mobile-backdrop { display:none; }
 .wide-drawer { width:min(610px,100%); }
 .contract-identity { display:flex;align-items:center;justify-content:space-between;color:var(--muted);font-size:var(--font-size-xs);line-height:1.45; }
+.contract-edit-policy { margin:4px 0 var(--space-4);padding:15px;display:flex;align-items:flex-start;gap:var(--space-3);color:var(--color-warning-text);background:var(--color-warning-surface);border:1px solid var(--color-warning-border); }
+.contract-edit-policy>span { display:grid;place-items:center;flex:0 0 23px;width:23px;height:23px;border-radius:var(--radius-round);color:var(--color-text-inverse);background:var(--color-warning);font-size:11px;font-weight:800; }
+.contract-edit-policy strong { font-size:var(--font-size-xs);line-height:var(--line-height-normal); }
+.contract-edit-policy p { margin:5px 0 0;color:var(--color-warning-text);font-size:var(--font-size-xs);line-height:var(--line-height-relaxed); }
 .tag-list { display:flex;flex-wrap:wrap;gap:5px;margin-top:6px; }
 .tag-list span { display:inline-flex;padding:5px 8px;color:var(--color-info-text);background:var(--color-info-surface);border:1px solid var(--color-info-border);border-radius:var(--radius-sm);font-size:var(--font-size-xs);line-height:var(--line-height-tight);font-weight:720;letter-spacing:.01em; }
 .detail-list dd .tag-list { margin-top:0; }
