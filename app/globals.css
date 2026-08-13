@@ -400,6 +400,7 @@ td small { display:block;margin-top:4px;color:var(--muted-strong);font-size:var(
 .check-field legend { padding:0 6px;color:#313846;font-size:var(--font-size-xs);font-weight:650; }
 .check-field>label { min-height:var(--control-height);display:inline-flex;grid-auto-flow:column;align-items:center;gap:7px;margin:2px 18px 2px 0;font-size:var(--font-size-xs);line-height:1.45;font-weight:560; }
 .check-field input { width:15px;height:15px;margin:0;accent-color:var(--blue); }
+.selection-hint { margin:7px 0 0;color:var(--color-text-muted);font-size:var(--font-size-xs);font-weight:500;line-height:var(--line-height-normal); }
 .repeatable-block,.charge-builder { margin:4px 0 20px;padding:17px;border:1px solid #e2e6ec;background:#fafbfc; }
 .repeatable-block .section-title,.charge-builder .section-title { margin-bottom:12px; }
 .text-button { min-height:var(--control-height);padding:0 8px;border:0;border-radius:var(--radius-md);background:transparent;color:var(--blue);font-size:var(--font-size-xs);line-height:1.4;font-weight:750; }
