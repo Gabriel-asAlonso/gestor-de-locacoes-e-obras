@@ -1,12 +1,15 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, FormEvent, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 type Status = "Vencida" | "Em aberto" | "Próxima" | "Parcial" | "Recebida";
 type ExpenseStatus = "Pendente" | "Pago" | "Vencido";
 type Page = "Pendências" | "Carteiras" | "Imóveis" | "Unidades" | "Locatários" | "Contratos" | "Cobranças" | "Despesas / Contas a Pagar";
 type FormKind = "portfolio" | "property" | "unit" | "tenant" | "contract" | "charge" | null;
+type ContentState = "ready" | "loading" | "error";
+type ToastMessage = { message: string; reference: string } | null;
+const FilterStateContext = createContext(false);
 type ChargeItem = { name: string; dueDate: string; amount: number; received: number };
 type Charge = {
   id: string;
@@ -290,9 +293,28 @@ export default function Home() {
   const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null);
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [form, setForm] = useState<FormKind>(null);
-  const [toast, setToast] = useState("");
+  const [toast, setToast] = useState<ToastMessage>(null);
+  const [contentState, setContentState] = useState<ContentState>("ready");
+  const [online, setOnline] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+
+  useEffect(() => {
+    const handleOffline = () => { setOnline(false); setContentState("error"); };
+    const handleOnline = () => {
+      setOnline(true);
+      setContentState("loading");
+      window.setTimeout(() => setContentState("ready"), 450);
+    };
+    const initialConnectionCheck = window.setTimeout(() => { if (!navigator.onLine) handleOffline(); }, 0);
+    window.addEventListener("offline", handleOffline);
+    window.addEventListener("online", handleOnline);
+    return () => {
+      window.clearTimeout(initialConnectionCheck);
+      window.removeEventListener("offline", handleOffline);
+      window.removeEventListener("online", handleOnline);
+    };
+  }, []);
 
   const operational = charges.filter((charge) => charge.status !== "Recebida");
   const baseCharges = page === "Pendências" ? operational : charges;
@@ -307,11 +329,12 @@ export default function Home() {
     return matchesSearch && (statusFilter === "Todas" || expense.status === statusFilter) && (categoryFilter === "Todas as categorias" || expense.category === categoryFilter);
   }), [categoryFilter, search, statusFilter]);
 
-  const notify = (message: string) => {
-    setToast(message);
-    window.setTimeout(() => setToast(""), 3600);
+  const notify = (message: string, reference: string) => {
+    setToast({ message, reference });
+    window.setTimeout(() => setToast(null), 4200);
   };
   const changePage = (next: Page) => {
+    if (next !== page) setContentState("loading");
     setPage(next);
     setSearch("");
     setPortfolioFilter("Todas as carteiras");
@@ -319,6 +342,15 @@ export default function Home() {
     setCategoryFilter("Todas as categorias");
     setMenuOpen(false);
     setSidebarCollapsed(true);
+    if (next !== page) window.setTimeout(() => setContentState(navigator.onLine ? "ready" : "error"), 450);
+  };
+  const retryContent = () => {
+    setContentState("loading");
+    window.setTimeout(() => {
+      const connected = navigator.onLine;
+      setOnline(connected);
+      setContentState(connected ? "ready" : "error");
+    }, 650);
   };
   const login = (event: FormEvent) => {
     event.preventDefault();
@@ -329,12 +361,17 @@ export default function Home() {
     event.preventDefault();
     setReceiptOpen(false);
     setSelectedCharge(null);
-    notify("Recebimento demonstrativo registrado e distribuído entre os itens.");
+    notify("Recebimento registrado e distribuído entre os itens.", selectedCharge?.id ?? "COB-DEMO");
   };
   const saveForm = (event: FormEvent) => {
     event.preventDefault();
+    const references: Record<Exclude<FormKind, null>, string> = {
+      portfolio: "CAR-DEMO-003", property: "IMO-DEMO-005", unit: "UNI-DEMO-008",
+      tenant: "LOC-DEMO-022", contract: "CTR-DEMO-022", charge: "COB-DEMO-0089",
+    };
+    const savedReference = form ? references[form] : "REG-DEMO";
     setForm(null);
-    notify("Cadastro salvo somente neste ambiente demonstrativo.");
+    notify("Cadastro salvo neste ambiente demonstrativo.", savedReference);
   };
 
   if (!authenticated) return <Login loading={loading} onSubmit={login} />;
@@ -348,13 +385,18 @@ export default function Home() {
         <div className="topbar-context"><span className="context-dot" /> Dados fictícios</div>
       </header>
       <div className="content">
-        {(page === "Pendências" || page === "Cobranças") && <ChargesPage page={page} charges={filteredCharges} total={baseCharges.length} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} statusFilter={statusFilter} setStatusFilter={setStatusFilter} onOpen={setSelectedCharge} onNew={() => setForm("charge")} />}
-        {page === "Carteiras" && <PortfoliosPage search={search} setSearch={setSearch} onNew={() => setForm("portfolio")} />}
-        {page === "Imóveis" && <PropertiesPage search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} onNew={() => setForm("property")} />}
-        {page === "Unidades" && <UnitsPage search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} onNew={() => setForm("unit")} />}
-        {page === "Locatários" && <TenantsPage search={search} setSearch={setSearch} onNew={() => setForm("tenant")} />}
-        {page === "Contratos" && <ContractsPage search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} onNew={() => setForm("contract")} onOpen={setSelectedContract} />}
-        {page === "Despesas / Contas a Pagar" && <ExpensesPage rows={filteredExpenses} search={search} setSearch={setSearch} statusFilter={statusFilter} setStatusFilter={setStatusFilter} categoryFilter={categoryFilter} setCategoryFilter={setCategoryFilter} onOpen={setSelectedExpense} />}
+        {!online && <ConnectionBanner onRetry={retryContent} />}
+        {contentState === "loading" && <AuthenticatedPageSkeleton />}
+        {contentState === "error" && <SystemError onRetry={retryContent} />}
+        {contentState === "ready" && <FilterStateContext.Provider value={Boolean(search || portfolioFilter !== "Todas as carteiras" || statusFilter !== "Todas" || categoryFilter !== "Todas as categorias")}><>
+          {(page === "Pendências" || page === "Cobranças") && <ChargesPage page={page} charges={filteredCharges} total={baseCharges.length} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} statusFilter={statusFilter} setStatusFilter={setStatusFilter} onOpen={setSelectedCharge} onNew={() => setForm("charge")} />}
+          {page === "Carteiras" && <PortfoliosPage search={search} setSearch={setSearch} onNew={() => setForm("portfolio")} />}
+          {page === "Imóveis" && <PropertiesPage search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} onNew={() => setForm("property")} />}
+          {page === "Unidades" && <UnitsPage search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} onNew={() => setForm("unit")} />}
+          {page === "Locatários" && <TenantsPage search={search} setSearch={setSearch} onNew={() => setForm("tenant")} />}
+          {page === "Contratos" && <ContractsPage search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} onNew={() => setForm("contract")} onOpen={setSelectedContract} />}
+          {page === "Despesas / Contas a Pagar" && <ExpensesPage rows={filteredExpenses} search={search} setSearch={setSearch} statusFilter={statusFilter} setStatusFilter={setStatusFilter} categoryFilter={categoryFilter} setCategoryFilter={setCategoryFilter} onOpen={setSelectedExpense} />}
+        </></FilterStateContext.Provider>}
       </div>
     </section>
     {selectedCharge && <ChargeDrawer charge={selectedCharge} onClose={() => setSelectedCharge(null)} onReceipt={() => setReceiptOpen(true)} />}
@@ -362,7 +404,7 @@ export default function Home() {
     {selectedExpense && <ExpenseDrawer expense={selectedExpense} onClose={() => setSelectedExpense(null)} />}
     {receiptOpen && selectedCharge && <ReceiptModal charge={selectedCharge} onClose={() => setReceiptOpen(false)} onSave={saveReceipt} />}
     {form && <EntityForm kind={form} onClose={() => setForm(null)} onSave={saveForm} />}
-    {toast && <div className="toast" role="status"><span>✓</span>{toast}</div>}
+    {toast && <SuccessToast message={toast} />}
   </main>;
 }
 
@@ -450,11 +492,36 @@ function PortfolioFilter({ value, onChange }: { value: string; onChange: (value:
   return <select aria-label="Filtrar por carteira" value={value} onChange={(event) => onChange(event.target.value)}><option>Todas as carteiras</option>{portfolios.map((portfolio) => <option key={portfolio.id}>{portfolio.name}</option>)}</select>;
 }
 
+function ConnectionBanner({ onRetry }: { onRetry: () => void }) {
+  return <aside className="connection-banner" role="alert"><span aria-hidden="true">!</span><div><strong>Sem conexão</strong><p>Os dados exibidos podem estar desatualizados. Reconecte para continuar salvando.</p></div><button type="button" className="secondary-button" onClick={onRetry}>Tentar novamente</button></aside>;
+}
+
+function SystemError({ onRetry, compact = false }: { onRetry: () => void; compact?: boolean }) {
+  return <section className={`system-error ${compact ? "system-error-compact" : ""}`} role="alert"><span aria-hidden="true">!</span><div><h3>Não foi possível carregar os dados</h3><p>Confira sua conexão e tente novamente. Nenhuma alteração foi perdida.</p></div><button type="button" className="primary-button" onClick={onRetry}>Tentar novamente</button></section>;
+}
+
+function AuthenticatedPageSkeleton() {
+  return <div className="page-skeleton" role="status" aria-live="polite"><span className="sr-only">Carregando conteúdo</span><div className="skeleton-heading"><i /><i /></div><div className="skeleton-cards">{Array.from({ length: 4 }, (_, index) => <i key={index} />)}</div><div className="skeleton-table"><i />{Array.from({ length: 5 }, (_, index) => <span key={index}><b /><b /><b /><b /></span>)}</div></div>;
+}
+
+function SuccessToast({ message }: { message: Exclude<ToastMessage, null> }) {
+  return <div className="toast" role="status" aria-live="polite"><span aria-hidden="true">✓</span><div><strong>{message.message}</strong><small>Referência: {message.reference}</small></div></div>;
+}
+
+function InlineFieldError({ message }: { message: string }) {
+  if (!message) return null;
+  return <p className="inline-field-error" id="entity-form-error" role="alert"><span aria-hidden="true">!</span>{message}</p>;
+}
+
 function TableSection({ toolbar, children, footer }: { toolbar: ReactNode; children: ReactNode; footer: ReactNode }) {
   return <section className="table-section"><div className="table-toolbar">{toolbar}</div><div className="table-wrap">{children}</div><div className="table-footer">{footer}</div></section>;
 }
 
-function EmptyState() { return <div className="empty-state"><span>0</span><h3>Nenhum resultado</h3><p>Ajuste a busca ou os filtros aplicados.</p></div>; }
+function EmptyState({ filtered, entity = "registro" }: { filtered?: boolean; entity?: string }) {
+  const hasActiveFilter = useContext(FilterStateContext);
+  const isFiltered = filtered ?? hasActiveFilter;
+  return <div className="empty-state"><span aria-hidden="true">0</span><h3>{isFiltered ? "Nenhum resultado para estes filtros" : `Nenhum ${entity} cadastrado`}</h3><p>{isFiltered ? "Ajuste ou limpe a busca e os filtros aplicados." : `Quando houver algum ${entity}, ele aparecerá aqui.`}</p></div>;
+}
 function UnitPills({ values }: { values: string[] }) { return <div className="tag-list">{values.map((value) => <span key={value}>{value}</span>)}</div>; }
 
 function ChargesPage({ page, charges: rows, total, search, setSearch, portfolioFilter, setPortfolioFilter, statusFilter, setStatusFilter, onOpen, onNew }: { page: Page; charges: Charge[]; total: number; search: string; setSearch: (value: string) => void; portfolioFilter: string; setPortfolioFilter: (value: string) => void; statusFilter: string; setStatusFilter: (value: string) => void; onOpen: (charge: Charge) => void; onNew: () => void }) {
@@ -570,7 +637,7 @@ function ReceiptModal({ charge, onClose, onSave }: { charge: Charge; onClose: ()
 }
 
 function ModalHeader({ eyebrow, title, onClose }: { eyebrow: string; title: string; onClose: () => void }) { return <header><div><p className="eyebrow">{eyebrow}</p><h2>{title}</h2></div><button type="button" className="close-button" onClick={onClose}>×</button></header>; }
-function ModalFooter({ onClose, action }: { onClose: () => void; action: string }) { return <footer><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button className="primary-button">{action}</button></footer>; }
+function ModalFooter({ onClose, action, pending = false }: { onClose: () => void; action: string; pending?: boolean }) { return <footer><button type="button" className="secondary-button" onClick={onClose} disabled={pending}>Cancelar</button><button className="primary-button" disabled={pending}>{pending ? "Salvando…" : action}</button></footer>; }
 
 function EntityForm({ kind, onClose, onSave }: { kind: Exclude<FormKind, null>; onClose: () => void; onSave: (event: FormEvent) => void }) {
   const config = {
@@ -580,15 +647,44 @@ function EntityForm({ kind, onClose, onSave }: { kind: Exclude<FormKind, null>; 
   const [selectedUnits, setSelectedUnits] = useState<string[]>(["Sala 101"]);
   const [contractItems, setContractItems] = useState(["Aluguel", "IPTU", "Condomínio"]);
   const [chargeItems, setChargeItems] = useState([{ name: "Aluguel", due: "2026-08-10", amount: 3200 }, { name: "IPTU", due: "2026-08-10", amount: 385 }]);
+  const [formError, setFormError] = useState("");
+  const [saving, setSaving] = useState(false);
   const toggleUnit = (unit: string) => setSelectedUnits((current) => current.includes(unit) ? current.filter((value) => value !== unit) : [...current, unit]);
   const addContractItem = () => setContractItems((current) => [...current, "Outro"]);
   const addChargeItem = () => setChargeItems((current) => [...current, { name: "Outro", due: "2026-08-10", amount: 0 }]);
-  return <div className="modal-layer" role="dialog" aria-modal="true" aria-label={config[1]}><button className="drawer-backdrop" onClick={onClose} /><form className="receipt-modal entity-modal" onSubmit={onSave}><ModalHeader eyebrow={config[0]} title={config[1]} onClose={onClose} /><div className="form-grid entity-grid">
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const invalidField = Array.from(event.currentTarget.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>("input, select, textarea")).find((field) => !field.checkValidity());
+    if (invalidField) {
+      const fieldName = invalidField.closest("label")?.childNodes[0]?.textContent?.trim() || "campo obrigatório";
+      invalidField.setAttribute("aria-invalid", "true");
+      invalidField.setAttribute("aria-describedby", "entity-form-error");
+      setFormError(`Revise “${fieldName}” antes de salvar.`);
+      invalidField.focus();
+      return;
+    }
+    if (!navigator.onLine) {
+      setFormError("Não foi possível salvar sem conexão. Reconecte e tente novamente.");
+      return;
+    }
+    setFormError("");
+    setSaving(true);
+    window.setTimeout(() => onSave(event), 450);
+  };
+  const clearFieldError = (event: FormEvent<HTMLFormElement>) => {
+    const field = event.target;
+    if (field instanceof HTMLElement && field.hasAttribute("aria-invalid")) {
+      field.removeAttribute("aria-invalid");
+      field.removeAttribute("aria-describedby");
+    }
+    if (formError) setFormError("");
+  };
+  return <div className="modal-layer" role="dialog" aria-modal="true" aria-label={config[1]}><button className="drawer-backdrop" onClick={onClose} /><form className="receipt-modal entity-modal" noValidate onSubmit={handleSubmit} onInputCapture={clearFieldError}><ModalHeader eyebrow={config[0]} title={config[1]} onClose={onClose} /><InlineFieldError message={formError} /><div className="form-grid entity-grid">
     {kind === "portfolio" && <><label>Nome da carteira<input placeholder="Ex.: Carteira Atlas" required /></label><label>Titular<input placeholder="Razão social ou nome" required /></label><label className="full-field">CPF / CNPJ do titular<input placeholder="Documento fictício nesta demonstração" required /></label></>}
     {kind === "property" && <><label>Carteira<select required>{portfolios.map((portfolio) => <option key={portfolio.id}>{portfolio.name}</option>)}</select></label><label>Nome do imóvel<input placeholder="Ex.: Centro Empresarial" required /></label><label className="full-field">Endereço principal<input placeholder="Logradouro, número e bairro" required /></label></>}
     {kind === "unit" && <><label>Imóvel<select required>{properties.map((property) => <option key={property.id}>{property.name}</option>)}</select></label><label>Identificação da unidade<input placeholder="Ex.: Sala 101" required /></label><label>Área privativa<input placeholder="Ex.: 42 m²" /></label><label>Status inicial<select><option>Disponível</option><option>Ocupada</option></select></label></>}
     {kind === "tenant" && <><label>Tipo<select value={tenantType} onChange={(event) => setTenantType(event.target.value)}><option>PJ</option><option>PF</option></select></label><label>{tenantType === "PJ" ? "Razão social" : "Nome completo"}<input placeholder={tenantType === "PJ" ? "Empresa locatária" : "Pessoa locatária"} required /></label><label className="full-field">{tenantType === "PJ" ? "CNPJ" : "CPF"}<input placeholder={tenantType === "PJ" ? "00.000.000/0000-00" : "000.000.000-00"} required /></label></>}
     {kind === "contract" && <><label>Carteira<select><option>Carteira Atlas</option><option>Carteira Horizonte</option></select></label><label>Imóvel<select><option>Centro Empresarial Nexo</option><option>Complexo Aurora</option></select></label><fieldset className="full-field check-field"><legend>Unidades vinculadas</legend>{["Sala 101", "Sala 102", "Sala 201"].map((unit) => <label key={unit}><input type="checkbox" checked={selectedUnits.includes(unit)} onChange={() => toggleUnit(unit)} />{unit}</label>)}</fieldset><label className="full-field">Locatário<select>{tenants.map((tenant) => <option key={tenant.id}>{tenant.name}</option>)}</select></label><label>Início da vigência<input type="date" required /></label><label>Fim da vigência<input type="date" required /></label><label>Aluguel base<input type="number" min="0" required /></label><label>Dia de vencimento<input type="number" min="1" max="31" required /></label><label>Mês de reajuste<select>{["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"].map((month) => <option key={month}>{month}</option>)}</select></label><div className="full-field repeatable-block"><div className="section-title"><h3>Itens previstos no contrato</h3><button type="button" className="text-button" onClick={addContractItem}>+ Adicionar item</button></div>{contractItems.map((item, index) => <div className="repeatable-row" key={`${item}-${index}`}><input value={item} onChange={(event) => setContractItems((items) => items.map((value, position) => position === index ? event.target.value : value))} /><button type="button" className="remove-button" onClick={() => setContractItems((items) => items.filter((_, position) => position !== index))}>Remover</button></div>)}</div><p className="form-help full-field">Salvar o contrato não cria cobranças automaticamente.</p></>}
     {kind === "charge" && <><label>Contrato<select required>{contracts.map((contract) => <option key={contract.id}>{contract.id} · {contract.tenant}</option>)}</select></label><label>Competência<input type="month" required defaultValue="2026-08" /></label><div className="full-field charge-builder"><div className="section-title"><h3>Itens da cobrança</h3><button type="button" className="text-button" onClick={addChargeItem}>+ Adicionar item</button></div>{chargeItems.map((item, index) => <div className="charge-builder-row" key={index}><span className="item-index">{String(index + 1).padStart(2, "0")}</span><label>Descrição<input value={item.name} onChange={(event) => setChargeItems((items) => items.map((value, position) => position === index ? { ...value, name: event.target.value } : value))} required /></label><label>Vencimento<input type="date" value={item.due} onChange={(event) => setChargeItems((items) => items.map((value, position) => position === index ? { ...value, due: event.target.value } : value))} required /></label><label>Valor<input type="number" min="0.01" step="0.01" value={item.amount} onChange={(event) => setChargeItems((items) => items.map((value, position) => position === index ? { ...value, amount: Number(event.target.value) } : value))} required /></label><button type="button" className="remove-button" onClick={() => setChargeItems((items) => items.filter((_, position) => position !== index))}>Remover</button></div>)}<div className="builder-total"><span>Total previsto</span><strong>{brl.format(chargeItems.reduce((sum, item) => sum + item.amount, 0))}</strong></div></div><p className="form-help full-field">A cobrança será criada manualmente apenas para esta competência.</p></>}
-  </div><ModalFooter onClose={onClose} action={config[2]} /></form></div>;
+  </div><ModalFooter onClose={onClose} action={config[2]} pending={saving} /></form></div>;
 }
