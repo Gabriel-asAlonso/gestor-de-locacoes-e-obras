@@ -141,6 +141,7 @@ export default function Home() {
   const [form, setForm] = useState<FormKind>(null);
   const [toast, setToast] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
 
   const operational = charges.filter((charge) => charge.status !== "Recebida");
   const baseCharges = page === "Pendências" ? operational : charges;
@@ -166,6 +167,7 @@ export default function Home() {
     setStatusFilter("Todas");
     setCategoryFilter("Todas as categorias");
     setMenuOpen(false);
+    setSidebarCollapsed(true);
   };
   const login = (event: FormEvent) => {
     event.preventDefault();
@@ -186,9 +188,9 @@ export default function Home() {
 
   if (!authenticated) return <Login loading={loading} onSubmit={login} />;
 
-  return <main className="app-shell">
-    <Sidebar page={page} operationalCount={operational.length} onNavigate={changePage} onLogout={() => setAuthenticated(false)} open={menuOpen} onClose={() => setMenuOpen(false)} />
-    <section className="workspace">
+  return <main className={`app-shell ${sidebarCollapsed ? "app-shell-sidebar-collapsed" : ""}`}>
+    <Sidebar page={page} operationalCount={operational.length} onNavigate={changePage} onLogout={() => setAuthenticated(false)} open={menuOpen} onClose={() => setMenuOpen(false)} collapsed={sidebarCollapsed} onExpand={() => setSidebarCollapsed(false)} />
+    <section className="workspace" onClick={() => !sidebarCollapsed && setSidebarCollapsed(true)}>
       <header className="topbar">
         <button className="menu-button" onClick={() => setMenuOpen(true)} aria-label="Abrir navegação">☰</button>
         <div><span className="breadcrumb">Módulo 1 /</span> {page}</div>
@@ -230,7 +232,16 @@ function Login({ loading, onSubmit }: { loading: boolean; onSubmit: (event: Form
   </main>;
 }
 
-function Sidebar({ page, operationalCount, onNavigate, onLogout, open, onClose }: { page: Page; operationalCount: number; onNavigate: (page: Page) => void; onLogout: () => void; open: boolean; onClose: () => void }) {
+function SidebarGlyph({ name }: { name: string }) {
+  const glyphs: Record<string, string> = {
+    "Operação": "clipboard", "Estrutura": "structure", "Locação": "key", "Financeiro": "finance",
+    "Pendências": "schedule", "Carteiras": "briefcase", "Imóveis": "building", "Unidades": "door",
+    "Locatários": "users", "Contratos": "document", "Cobranças": "income", "Despesas / Contas a Pagar": "payable",
+  };
+  return <span className={`sidebar-glyph glyph-${glyphs[name] ?? "document"}`} aria-hidden="true"><span /></span>;
+}
+
+function Sidebar({ page, operationalCount, onNavigate, onLogout, open, onClose, collapsed, onExpand }: { page: Page; operationalCount: number; onNavigate: (page: Page) => void; onLogout: () => void; open: boolean; onClose: () => void; collapsed: boolean; onExpand: () => void }) {
   const [openTheme, setOpenTheme] = useState<string | null>("Operação");
   const groups: Array<{ name: string; description: string; pages: Array<{ name: Page; count?: number }> }> = [
     { name: "Operação", description: "Acompanhamento diário", pages: [{ name: "Pendências", count: operationalCount }] },
@@ -238,28 +249,40 @@ function Sidebar({ page, operationalCount, onNavigate, onLogout, open, onClose }
     { name: "Locação", description: "Contratos e recebíveis", pages: [{ name: "Contratos" }, { name: "Cobranças" }] },
     { name: "Financeiro", description: "Obrigações financeiras", pages: [{ name: "Despesas / Contas a Pagar" }] },
   ];
-  const item = (name: Page, count?: number) => <button onClick={() => onNavigate(name)} className={`nav-item ${page === name ? "active" : ""}`}><span className="nav-node" aria-hidden="true" /><span className="nav-item-label">{name}</span>{count !== undefined && <b>{count}</b>}</button>;
+  const compact = collapsed && !open;
+  const item = (name: Page, count?: number) => <button type="button" onClick={() => onNavigate(name)} className={`nav-item ${page === name ? "active" : ""}`} aria-current={page === name ? "page" : undefined} title={compact ? name : undefined}><SidebarGlyph name={name} /><span className="nav-item-label">{name}</span>{count !== undefined && <b>{count}</b>}</button>;
   return <>
     {open && <button className="mobile-backdrop" onClick={onClose} aria-label="Fechar navegação" />}
-    <aside className={`sidebar ${open ? "sidebar-open" : ""}`}>
-      <div><div className="sidebar-brand"><div className="brand-mark">LR</div><div><strong>Locações</strong><span>Módulo 1</span></div></div>
+    <aside className={`sidebar ${open ? "sidebar-open" : ""} ${compact ? "sidebar-collapsed" : ""}`} aria-label="Navegação do Módulo 1" onClick={() => { if (compact) onExpand(); }}>
+      <div className="sidebar-main">
+        <div className="sidebar-brand">
+          <div className="brand-mark sidebar-logo"><span>L</span><i /><span>R</span></div>
+          <div className="sidebar-brand-copy"><strong>Locações & Recebíveis</strong><span>Gestão operacional · Módulo 1</span></div>
+          <button type="button" className="sidebar-mobile-close" onClick={onClose} aria-label="Fechar navegação">×</button>
+        </div>
         <nav aria-label="Navegação principal">
-          <p className="nav-label">Áreas do módulo</p>
           <div className="theme-list">{groups.map((group, index) => {
             const expanded = openTheme === group.name;
             const hasActivePage = group.pages.some((entry) => entry.name === page);
             const regionId = `sidebar-theme-${index}`;
             return <section className="theme-group" key={group.name}>
-              <button className={`theme-toggle ${expanded ? "open" : ""} ${hasActivePage ? "has-active-page" : ""}`} onClick={() => setOpenTheme(expanded ? null : group.name)} aria-expanded={expanded} aria-controls={regionId}>
-                <span className="theme-identity"><span className="theme-copy"><strong>{group.name}</strong><small>{group.description}</small></span></span>
+              <button type="button" className={`theme-toggle ${expanded ? "open" : ""} ${hasActivePage ? "has-active-page" : ""}`} onClick={() => setOpenTheme(expanded && !collapsed ? null : group.name)} aria-expanded={expanded && !compact} aria-controls={regionId} title={compact ? group.name : undefined}>
+                <span className="theme-identity"><SidebarGlyph name={group.name} /><span className="theme-copy"><strong>{group.name}</strong><small>{group.description}</small></span></span>
                 <span className="theme-chevron-shell" aria-hidden="true"><span className="theme-chevron" /></span>
               </button>
-              {expanded && <div className="theme-pages" id={regionId}>{group.pages.map((entry) => <div key={entry.name}>{item(entry.name, entry.count)}</div>)}</div>}
+              {expanded && !compact && <div className="theme-pages" id={regionId}>{group.pages.map((entry) => <div key={entry.name}>{item(entry.name, entry.count)}</div>)}</div>}
             </section>;
           })}</div>
         </nav>
       </div>
-      <div className="sidebar-account"><div className="avatar">AD</div><div><strong>Administrativo</strong><span>Acesso único</span></div><button onClick={onLogout}>Sair</button></div>
+      <footer className="sidebar-footer">
+        <div className="sidebar-environment"><span className="environment-dot" /><div><strong>Base demonstrativa</strong><small>Dados fictícios</small></div></div>
+        <div className="sidebar-account">
+          <div className="avatar-shell"><div className="avatar">AD</div><span /></div>
+          <div className="account-copy"><strong>Administrativo</strong><span>Acesso principal</span></div>
+          <button type="button" className="logout-button" onClick={onLogout} aria-label="Sair do sistema" title="Sair"><span className="logout-icon" aria-hidden="true" /><em>Sair</em></button>
+        </div>
+      </footer>
     </aside>
   </>;
 }
@@ -287,7 +310,12 @@ function ChargesPage({ page, charges: rows, total, search, setSearch, portfolioF
   const pending = charges.filter((charge) => charge.status !== "Recebida").reduce((sum, charge) => sum + chargeBalance(charge), 0);
   return <>
     <PageHeading eyebrow={page === "Pendências" ? "12 de agosto de 2026" : "Consulta operacional"} title={page} description={page === "Pendências" ? "Veja o que exige ação, a composição de cada cobrança e os saldos por competência." : "Localize cobranças por carteira, contrato, unidade, locatário ou item."} action="Nova cobrança" onAction={onNew} />
-    {page === "Pendências" && <section className="summary-strip"><div><span>Saldo em acompanhamento</span><strong>{brl.format(pending)}</strong><small>Valores fictícios</small></div><div><span>Vencidas</span><strong>1</strong><small>Exige ação</small></div><div><span>Próximas</span><strong>2</strong><small>Até 15 de agosto</small></div><div><span>Baixa parcial</span><strong>1</strong><small>Saldo distribuído por item</small></div></section>}
+    {page === "Pendências" && <section className="summary-strip pending-summary" aria-label="Indicadores de pendências">
+      <div className="summary-card summary-card-tracking"><span>Saldo em acompanhamento</span><strong>{brl.format(pending)}</strong><small>Valores fictícios</small></div>
+      <div className="summary-card summary-card-overdue"><span>Vencidas</span><strong>1</strong><small>Exige ação</small></div>
+      <div className="summary-card summary-card-upcoming"><span>Próximas</span><strong>2</strong><small>Até 15 de agosto</small></div>
+      <div className="summary-card summary-card-partial"><span>Baixa parcial</span><strong>1</strong><small>Saldo distribuído por item</small></div>
+    </section>}
     <TableSection toolbar={<><SearchBar value={search} onChange={setSearch} placeholder="Buscar por contrato, unidade, locatário ou item" /><PortfolioFilter value={portfolioFilter} onChange={setPortfolioFilter} /><select aria-label="Filtrar por situação" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option>Todas</option><option>Vencida</option><option>Em aberto</option><option>Próxima</option><option>Parcial</option><option>Recebida</option></select></>} footer={<><span>{rows.length} de {total} cobranças</span><span>Inclusão e baixa manuais</span></>}>
       <table><thead><tr><th>Cobrança</th><th>Contrato / unidades</th><th>Locatário</th><th>Competência</th><th>Composição</th><th>Total</th><th>Saldo</th><th>Situação</th><th /></tr></thead><tbody>{rows.map((charge) => <tr key={charge.id} onClick={() => onOpen(charge)} tabIndex={0} onKeyDown={(event) => event.key === "Enter" && onOpen(charge)}><td><strong>{charge.id}</strong><small>{charge.portfolio}</small></td><td><strong>{charge.contract}</strong><small>{charge.property}</small><UnitPills values={charge.units} /></td><td>{charge.tenant}</td><td>{charge.competence}</td><td>{charge.items.length} {charge.items.length === 1 ? "item" : "itens"}<small>{charge.items.map((item) => item.name).join(" · ")}</small></td><td>{brl.format(chargeTotal(charge))}</td><td><strong>{brl.format(chargeBalance(charge))}</strong></td><td><StatusBadge status={charge.status} /></td><td><button className="row-action" aria-label={`Abrir ${charge.id}`}>Abrir</button></td></tr>)}</tbody></table>{rows.length === 0 && <EmptyState />}
     </TableSection>
