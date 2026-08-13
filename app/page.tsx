@@ -73,11 +73,11 @@ const units: Unit[] = [
 ];
 
 const tenants: Tenant[] = [
-  { id: "LOC-018", type: "PJ", name: "Estúdio Vereda Ltda.", document: "23.456.789/0001-11", contracts: 1 },
-  { id: "LOC-021", type: "PJ", name: "Clínica Lumina Ltda.", document: "34.567.890/0001-22", contracts: 1 },
-  { id: "LOC-009", type: "PJ", name: "Logística Prisma Ltda.", document: "45.678.901/0001-33", contracts: 1 },
-  { id: "LOC-014", type: "PJ", name: "Oficina Sete Ltda.", document: "56.789.012/0001-44", contracts: 1 },
-  { id: "LOC-004", type: "PF", name: "Marina Duarte", document: "123.456.789-00", contracts: 0 },
+  { id: "LOC-018", type: "PJ", name: "Estúdio Vereda Ltda.", document: "23.456.789/0001-95", contracts: 1 },
+  { id: "LOC-021", type: "PJ", name: "Clínica Lumina Ltda.", document: "34.567.890/0001-30", contracts: 1 },
+  { id: "LOC-009", type: "PJ", name: "Logística Prisma Ltda.", document: "45.678.901/0001-75", contracts: 1 },
+  { id: "LOC-014", type: "PJ", name: "Oficina Sete Ltda.", document: "12.345.678/0001-95", contracts: 1 },
+  { id: "LOC-004", type: "PF", name: "Marina Duarte", document: "123.456.789-09", contracts: 0 },
 ];
 
 const contracts: Contract[] = [
@@ -122,6 +122,36 @@ const expenses: Expense[] = [
 
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const decimal = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 });
+const documentDigits = (value: string) => value.replace(/\D/g, "");
+
+function maskTenantDocument(value: string, type: Tenant["type"]) {
+  const digits = documentDigits(value).slice(0, type === "PF" ? 11 : 14);
+  if (type === "PF") return digits.replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+  return digits.replace(/^(\d{2})(\d)/, "$1.$2").replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3").replace(/\.(\d{3})(\d)/, ".$1/$2").replace(/(\d{4})(\d{1,2})$/, "$1-$2");
+}
+
+function hasValidCpf(value: string) {
+  const digits = documentDigits(value);
+  if (digits.length !== 11 || /^(\d)\1+$/.test(digits)) return false;
+  const calculate = (length: number) => {
+    const sum = digits.slice(0, length).split("").reduce((total, digit, index) => total + Number(digit) * (length + 1 - index), 0);
+    const result = (sum * 10) % 11;
+    return result === 10 ? 0 : result;
+  };
+  return calculate(9) === Number(digits[9]) && calculate(10) === Number(digits[10]);
+}
+
+function hasValidCnpj(value: string) {
+  const digits = documentDigits(value);
+  if (digits.length !== 14 || /^(\d)\1+$/.test(digits)) return false;
+  const calculate = (length: number) => {
+    const weights = length === 12 ? [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2] : [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+    const sum = digits.slice(0, length).split("").reduce((total, digit, index) => total + Number(digit) * weights[index], 0);
+    const remainder = sum % 11;
+    return remainder < 2 ? 0 : 11 - remainder;
+  };
+  return calculate(12) === Number(digits[12]) && calculate(13) === Number(digits[13]);
+}
 const DEMO_DATE_ISO = "2026-08-12";
 const UPCOMING_WINDOW_DAYS = 7;
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
@@ -481,7 +511,7 @@ export default function Home() {
     {selectedContract && <ContractDrawer contract={selectedContract} onClose={() => setSelectedContract(null)} onCharge={() => setForm("charge")} />}
     {selectedExpense && <ExpenseDrawer expense={selectedExpense} onClose={() => setSelectedExpense(null)} />}
     {receiptOpen && selectedCharge && <ReceiptModal charge={selectedCharge} onClose={() => setReceiptOpen(false)} onSave={saveReceipt} />}
-    {form && <EntityForm kind={form} portfolio={form === "portfolio" ? editingPortfolio : null} property={form === "property" ? editingProperty : null} unit={form === "unit" ? editingUnit : null} tenant={form === "tenant" ? editingTenant : null} portfolioOptions={portfolioRecords} propertyOptions={propertyRecords} onClose={() => { setForm(null); setEditingPortfolio(null); setEditingProperty(null); setEditingUnit(null); setEditingTenant(null); }} onSave={saveForm} />}
+    {form && <EntityForm kind={form} portfolio={form === "portfolio" ? editingPortfolio : null} property={form === "property" ? editingProperty : null} unit={form === "unit" ? editingUnit : null} tenant={form === "tenant" ? editingTenant : null} portfolioOptions={portfolioRecords} propertyOptions={propertyRecords} tenantOptions={tenantRecords} onClose={() => { setForm(null); setEditingPortfolio(null); setEditingProperty(null); setEditingUnit(null); setEditingTenant(null); }} onSave={saveForm} />}
     {toast && <SuccessToast message={toast} />}
   </main>;
 }
@@ -719,12 +749,14 @@ function ReceiptModal({ charge, onClose, onSave }: { charge: Charge; onClose: ()
 function ModalHeader({ eyebrow, title, onClose }: { eyebrow: string; title: string; onClose: () => void }) { return <header><div><p className="eyebrow">{eyebrow}</p><h2>{title}</h2></div><button type="button" className="close-button" onClick={onClose}>×</button></header>; }
 function ModalFooter({ onClose, action, pending = false }: { onClose: () => void; action: string; pending?: boolean }) { return <footer><button type="button" className="secondary-button" onClick={onClose} disabled={pending}>Cancelar</button><button className="primary-button" disabled={pending} aria-busy={pending}>{pending ? "Salvando…" : action}</button></footer>; }
 
-function EntityForm({ kind, portfolio, property, unit, tenant, portfolioOptions, propertyOptions, onClose, onSave }: { kind: Exclude<FormKind, null>; portfolio?: Portfolio | null; property?: Property | null; unit?: Unit | null; tenant?: Tenant | null; portfolioOptions: Portfolio[]; propertyOptions: Property[]; onClose: () => void; onSave: (data: FormData) => void }) {
+function EntityForm({ kind, portfolio, property, unit, tenant, portfolioOptions, propertyOptions, tenantOptions, onClose, onSave }: { kind: Exclude<FormKind, null>; portfolio?: Portfolio | null; property?: Property | null; unit?: Unit | null; tenant?: Tenant | null; portfolioOptions: Portfolio[]; propertyOptions: Property[]; tenantOptions: Tenant[]; onClose: () => void; onSave: (data: FormData) => void }) {
   const baseConfig = {
     portfolio: ["Estrutura patrimonial", "Nova carteira", "Salvar carteira"], property: ["Estrutura patrimonial", "Novo imóvel", "Salvar imóvel"], unit: ["Estrutura locável", "Nova unidade", "Salvar unidade"], tenant: ["Cadastro essencial", "Novo locatário", "Salvar locatário"], contract: ["Locação", "Novo contrato", "Salvar contrato"], charge: ["Inclusão manual", "Nova cobrança", "Salvar cobrança"],
   }[kind];
   const config = kind === "portfolio" && portfolio ? [baseConfig[0], `Editar ${portfolio.name}`, "Salvar alterações"] : kind === "property" && property ? [baseConfig[0], `Editar ${property.name}`, "Salvar alterações"] : kind === "unit" && unit ? [baseConfig[0], `Editar ${unit.name}`, "Salvar alterações"] : kind === "tenant" && tenant ? [baseConfig[0], `Editar ${tenant.name}`, "Salvar alterações"] : baseConfig;
   const [tenantType, setTenantType] = useState<Tenant["type"]>(tenant?.type ?? "PJ");
+  const [tenantDocument, setTenantDocument] = useState(tenant?.document ?? "");
+  const [tenantDocumentError, setTenantDocumentError] = useState("");
   const [selectedUnits, setSelectedUnits] = useState<string[]>(["Sala 101"]);
   const [contractItems, setContractItems] = useState(["Aluguel", "IPTU", "Condomínio"]);
   const [chargeItems, setChargeItems] = useState([{ name: "Aluguel", due: "2026-08-10", amount: 3200 }, { name: "IPTU", due: "2026-08-10", amount: 385 }]);
@@ -733,8 +765,25 @@ function EntityForm({ kind, portfolio, property, unit, tenant, portfolioOptions,
   const toggleUnit = (unit: string) => setSelectedUnits((current) => current.includes(unit) ? current.filter((value) => value !== unit) : [...current, unit]);
   const addContractItem = () => setContractItems((current) => [...current, "Outro"]);
   const addChargeItem = () => setChargeItems((current) => [...current, { name: "Outro", due: "2026-08-10", amount: 0 }]);
+  const getTenantDocumentError = (value: string, type: Tenant["type"]) => {
+    const label = type === "PF" ? "CPF" : "CNPJ";
+    const expectedLength = type === "PF" ? 11 : 14;
+    if (documentDigits(value).length !== expectedLength) return `Informe um ${label} completo.`;
+    if (!(type === "PF" ? hasValidCpf(value) : hasValidCnpj(value))) return `${label} inválido. Confira os dígitos.`;
+    const duplicate = tenantOptions.some((record) => record.id !== tenant?.id && documentDigits(record.document) === documentDigits(value));
+    return duplicate ? `${label} já cadastrado para outro locatário.` : "";
+  };
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (kind === "tenant") {
+      const documentError = getTenantDocumentError(tenantDocument, tenantType);
+      if (documentError) {
+        setTenantDocumentError(documentError);
+        const documentField = event.currentTarget.elements.namedItem("tenantDocument");
+        if (documentField instanceof HTMLElement) documentField.focus();
+        return;
+      }
+    }
     const invalidField = Array.from(event.currentTarget.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>("input, select, textarea")).find((field) => !field.checkValidity());
     if (invalidField) {
       const fieldName = invalidField.closest("label")?.childNodes[0]?.textContent?.trim() || "campo obrigatório";
@@ -765,7 +814,7 @@ function EntityForm({ kind, portfolio, property, unit, tenant, portfolioOptions,
     {kind === "portfolio" && <><label>Nome da carteira<input name="portfolioName" placeholder="Ex.: Carteira Atlas" defaultValue={portfolio?.name ?? ""} required /></label><label>Titular<input name="portfolioHolder" placeholder="Razão social ou nome" defaultValue={portfolio?.holder ?? ""} required /></label><label className="full-field">CPF / CNPJ do titular<input name="portfolioDocument" placeholder="Documento fictício nesta demonstração" defaultValue={portfolio?.document ?? ""} required /></label></>}
     {kind === "property" && <><label>Carteira<select name="propertyPortfolio" defaultValue={property?.portfolio ?? portfolioOptions[0].name} required>{portfolioOptions.map((portfolio) => <option key={portfolio.id}>{portfolio.name}</option>)}</select></label><label>Nome do imóvel<input name="propertyName" placeholder="Ex.: Centro Empresarial" defaultValue={property?.name ?? ""} required /></label><label className="full-field">Endereço principal<input name="propertyAddress" placeholder="Logradouro, número e bairro" defaultValue={property?.address ?? ""} required /></label></>}
     {kind === "unit" && <><label>Imóvel<select name="unitProperty" defaultValue={unit?.property ?? propertyOptions[0].name} required>{propertyOptions.map((property) => <option key={property.id}>{property.name}</option>)}</select></label><label>Identificação da unidade<input name="unitName" placeholder="Ex.: Sala 101" defaultValue={unit?.name ?? ""} required /></label><label>Área privativa<span className="input-with-suffix"><input name="unitArea" type="number" inputMode="decimal" min="0.01" step="0.01" placeholder="Ex.: 42" defaultValue={unit?.area ?? ""} required /><span className="input-suffix" aria-hidden="true">m²</span></span></label><label>Status inicial<select name="unitStatus" defaultValue={unit?.occupied ? "Ocupada" : "Disponível"} disabled={Boolean(unit?.occupied)} aria-describedby={unit?.occupied ? "unit-occupancy-help" : undefined}><option>Disponível</option><option>Ocupada</option></select>{unit?.occupied && <small id="unit-occupancy-help" className="field-help">Ocupação definida por contrato ativo.</small>}</label></>}
-    {kind === "tenant" && <>{tenant && <div className="edit-record-banner full-field"><span>Modo de edição</span><strong>ID {tenant.id}</strong></div>}<label>Tipo<select name="tenantType" value={tenantType} onChange={(event) => setTenantType(event.target.value as Tenant["type"])} required><option>PJ</option><option>PF</option></select></label><label>{tenantType === "PJ" ? "Razão social" : "Nome completo"}<input name="tenantName" placeholder={tenantType === "PJ" ? "Empresa locatária" : "Pessoa locatária"} defaultValue={tenant?.name ?? ""} required /></label><label className="full-field">{tenantType === "PJ" ? "CNPJ" : "CPF"}<input name="tenantDocument" placeholder={tenantType === "PJ" ? "00.000.000/0000-00" : "000.000.000-00"} defaultValue={tenant?.document ?? ""} required /></label></>}
+    {kind === "tenant" && <>{tenant && <div className="edit-record-banner full-field"><span>Modo de edição</span><strong>ID {tenant.id}</strong></div>}<label>Tipo<select name="tenantType" value={tenantType} onChange={(event) => { const nextType = event.target.value as Tenant["type"]; setTenantType(nextType); setTenantDocument(maskTenantDocument(tenantDocument, nextType)); setTenantDocumentError(""); }} required><option>PJ</option><option>PF</option></select></label><label>{tenantType === "PJ" ? "Razão social" : "Nome completo"}<input name="tenantName" placeholder={tenantType === "PJ" ? "Empresa locatária" : "Pessoa locatária"} defaultValue={tenant?.name ?? ""} required /></label><label className="full-field">{tenantType === "PJ" ? "CNPJ" : "CPF"}<input name="tenantDocument" inputMode="numeric" autoComplete="off" maxLength={tenantType === "PJ" ? 18 : 14} placeholder={tenantType === "PJ" ? "00.000.000/0000-00" : "000.000.000-00"} value={tenantDocument} onChange={(event) => { const masked = maskTenantDocument(event.target.value, tenantType); setTenantDocument(masked); const complete = documentDigits(masked).length === (tenantType === "PJ" ? 14 : 11); setTenantDocumentError(complete ? getTenantDocumentError(masked, tenantType) : ""); }} onBlur={() => tenantDocument && setTenantDocumentError(getTenantDocumentError(tenantDocument, tenantType))} aria-invalid={tenantDocumentError ? "true" : undefined} aria-describedby="tenant-document-help" required /><small id="tenant-document-help" className={tenantDocumentError ? "field-error" : "field-help"} role={tenantDocumentError ? "alert" : undefined}>{tenantDocumentError || `A máscara e os dígitos do ${tenantType === "PJ" ? "CNPJ" : "CPF"} serão verificados.`}</small></label></>}
     {kind === "contract" && <><label>Carteira<select><option>Carteira Atlas</option><option>Carteira Horizonte</option></select></label><label>Imóvel<select><option>Centro Empresarial Nexo</option><option>Complexo Aurora</option></select></label><fieldset className="full-field check-field"><legend>Unidades vinculadas</legend>{["Sala 101", "Sala 102", "Sala 201"].map((unit) => <label key={unit}><input type="checkbox" checked={selectedUnits.includes(unit)} onChange={() => toggleUnit(unit)} />{unit}</label>)}</fieldset><label className="full-field">Locatário<select>{tenants.map((tenant) => <option key={tenant.id}>{tenant.name}</option>)}</select></label><label>Início da vigência<input type="date" required /></label><label>Fim da vigência<input type="date" required /></label><label>Aluguel base<input type="number" min="0" required /></label><label>Dia de vencimento<input type="number" min="1" max="31" required /></label><label>Mês de reajuste<select>{["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"].map((month) => <option key={month}>{month}</option>)}</select></label><div className="full-field repeatable-block"><div className="section-title"><h3>Itens previstos no contrato</h3><button type="button" className="text-button" onClick={addContractItem}>+ Adicionar item</button></div>{contractItems.map((item, index) => <div className="repeatable-row" key={`${item}-${index}`}><input value={item} onChange={(event) => setContractItems((items) => items.map((value, position) => position === index ? event.target.value : value))} /><button type="button" className="remove-button" onClick={() => setContractItems((items) => items.filter((_, position) => position !== index))}>Remover</button></div>)}</div><p className="form-help full-field">Salvar o contrato não cria cobranças automaticamente.</p></>}
     {kind === "charge" && <><label>Contrato<select required>{contracts.map((contract) => <option key={contract.id}>{contract.id} · {contract.tenant}</option>)}</select></label><label>Competência<input type="month" required defaultValue="2026-08" /></label><div className="full-field charge-builder"><div className="section-title"><h3>Itens da cobrança</h3><button type="button" className="text-button" onClick={addChargeItem}>+ Adicionar item</button></div>{chargeItems.map((item, index) => <div className="charge-builder-row" key={index}><span className="item-index">{String(index + 1).padStart(2, "0")}</span><label>Descrição<input value={item.name} onChange={(event) => setChargeItems((items) => items.map((value, position) => position === index ? { ...value, name: event.target.value } : value))} required /></label><label>Vencimento<input type="date" value={item.due} onChange={(event) => setChargeItems((items) => items.map((value, position) => position === index ? { ...value, due: event.target.value } : value))} required /></label><label>Valor<input type="number" min="0.01" step="0.01" value={item.amount} onChange={(event) => setChargeItems((items) => items.map((value, position) => position === index ? { ...value, amount: Number(event.target.value) } : value))} required /></label><button type="button" className="remove-button" onClick={() => setChargeItems((items) => items.filter((_, position) => position !== index))}>Remover</button></div>)}<div className="builder-total"><span>Total previsto</span><strong>{brl.format(chargeItems.reduce((sum, item) => sum + item.amount, 0))}</strong></div></div><p className="form-help full-field">A cobrança será criada manualmente apenas para esta competência.</p></>}
   </div><ModalFooter onClose={onClose} action={config[2]} pending={saving} /></form></div>;
