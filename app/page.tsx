@@ -419,7 +419,7 @@ function Login({ loading, onSubmit }: { loading: boolean; onSubmit: (event: Form
       <div className="login-heading"><p className="eyebrow">Acesso administrativo</p><h2>Bem-vinda.</h2><p>Entre para explorar o Módulo 1 com dados totalmente fictícios.</p></div>
       <label>E-mail<input type="email" defaultValue="administrativo@exemplo.com.br" required /></label>
       <label>Senha<input type="password" defaultValue="demonstracao" required /></label>
-      <button className="primary-button login-button" disabled={loading}>{loading ? <><span className="spinner" /> Preparando ambiente</> : "Acessar demonstração"}</button>
+      <button className="primary-button login-button" disabled={loading} aria-busy={loading}>{loading ? <><span className="spinner" /> Preparando ambiente</> : "Acessar demonstração"}</button>
       <p className="demo-note">Nenhum dado real do cliente é exibido nesta versão.</p>
     </form></section>
   </main>;
@@ -637,7 +637,7 @@ function ReceiptModal({ charge, onClose, onSave }: { charge: Charge; onClose: ()
 }
 
 function ModalHeader({ eyebrow, title, onClose }: { eyebrow: string; title: string; onClose: () => void }) { return <header><div><p className="eyebrow">{eyebrow}</p><h2>{title}</h2></div><button type="button" className="close-button" onClick={onClose}>×</button></header>; }
-function ModalFooter({ onClose, action, pending = false }: { onClose: () => void; action: string; pending?: boolean }) { return <footer><button type="button" className="secondary-button" onClick={onClose} disabled={pending}>Cancelar</button><button className="primary-button" disabled={pending}>{pending ? "Salvando…" : action}</button></footer>; }
+function ModalFooter({ onClose, action, pending = false }: { onClose: () => void; action: string; pending?: boolean }) { return <footer><button type="button" className="secondary-button" onClick={onClose} disabled={pending}>Cancelar</button><button className="primary-button" disabled={pending} aria-busy={pending}>{pending ? "Salvando…" : action}</button></footer>; }
 
 function EntityForm({ kind, onClose, onSave }: { kind: Exclude<FormKind, null>; onClose: () => void; onSave: (event: FormEvent) => void }) {
   const config = {
