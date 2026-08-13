@@ -9,6 +9,7 @@ type Page = "Pendências" | "Carteiras" | "Imóveis" | "Unidades" | "Locatários
 type FormKind = "portfolio" | "property" | "unit" | "tenant" | "contract" | "charge" | null;
 type ContentState = "ready" | "loading" | "error";
 type ToastMessage = { message: string; reference: string } | null;
+type Portfolio = { id: string; name: string; holder: string; document: string; properties: number; units: number };
 const FilterStateContext = createContext(false);
 type ChargeItem = { name: string; dueDate: string; amount: number; received: number };
 type Charge = {
@@ -46,7 +47,7 @@ type Expense = {
   status: ExpenseStatus;
 };
 
-const portfolios = [
+const portfolios: Portfolio[] = [
   { id: "CAR-001", name: "Carteira Atlas", holder: "Atlas Patrimonial Ltda.", document: "12.345.678/0001-10", properties: 2, units: 5 },
   { id: "CAR-002", name: "Carteira Horizonte", holder: "Horizonte Imóveis Ltda.", document: "98.765.432/0001-20", properties: 2, units: 2 },
 ];
@@ -293,6 +294,8 @@ export default function Home() {
   const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null);
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [form, setForm] = useState<FormKind>(null);
+  const [portfolioRecords, setPortfolioRecords] = useState<Portfolio[]>(portfolios);
+  const [editingPortfolio, setEditingPortfolio] = useState<Portfolio | null>(null);
   const [toast, setToast] = useState<ToastMessage>(null);
   const [contentState, setContentState] = useState<ContentState>("ready");
   const [online, setOnline] = useState(true);
@@ -363,15 +366,31 @@ export default function Home() {
     setSelectedCharge(null);
     notify("Recebimento registrado e distribuído entre os itens.", selectedCharge?.id ?? "COB-DEMO");
   };
-  const saveForm = (event: FormEvent) => {
-    event.preventDefault();
+  const saveForm = (data: FormData) => {
     const references: Record<Exclude<FormKind, null>, string> = {
       portfolio: "CAR-DEMO-003", property: "IMO-DEMO-005", unit: "UNI-DEMO-008",
       tenant: "LOC-DEMO-022", contract: "CTR-DEMO-022", charge: "COB-DEMO-0089",
     };
-    const savedReference = form ? references[form] : "REG-DEMO";
+    let savedReference = form ? references[form] : "REG-DEMO";
+    let message = "Cadastro salvo neste ambiente demonstrativo.";
+    if (form === "portfolio") {
+      const values = {
+        name: String(data.get("portfolioName") ?? ""),
+        holder: String(data.get("portfolioHolder") ?? ""),
+        document: String(data.get("portfolioDocument") ?? ""),
+      };
+      if (editingPortfolio) {
+        savedReference = editingPortfolio.id;
+        setPortfolioRecords((records) => records.map((record) => record.id === editingPortfolio.id ? { ...record, ...values } : record));
+        message = "Carteira atualizada neste ambiente demonstrativo.";
+      } else {
+        setPortfolioRecords((records) => [...records, { id: savedReference, ...values, properties: 0, units: 0 }]);
+        message = "Carteira criada neste ambiente demonstrativo.";
+      }
+    }
     setForm(null);
-    notify("Cadastro salvo neste ambiente demonstrativo.", savedReference);
+    setEditingPortfolio(null);
+    notify(message, savedReference);
   };
 
   if (!authenticated) return <Login loading={loading} onSubmit={login} />;
@@ -390,7 +409,7 @@ export default function Home() {
         {contentState === "error" && <SystemError onRetry={retryContent} />}
         {contentState === "ready" && <FilterStateContext.Provider value={Boolean(search || portfolioFilter !== "Todas as carteiras" || statusFilter !== "Todas" || categoryFilter !== "Todas as categorias")}><>
           {(page === "Pendências" || page === "Cobranças") && <ChargesPage page={page} charges={filteredCharges} total={baseCharges.length} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} statusFilter={statusFilter} setStatusFilter={setStatusFilter} onOpen={setSelectedCharge} onNew={() => setForm("charge")} />}
-          {page === "Carteiras" && <PortfoliosPage search={search} setSearch={setSearch} onNew={() => setForm("portfolio")} />}
+          {page === "Carteiras" && <PortfoliosPage portfolios={portfolioRecords} search={search} setSearch={setSearch} onNew={() => { setEditingPortfolio(null); setForm("portfolio"); }} onEdit={(portfolio) => { setEditingPortfolio(portfolio); setForm("portfolio"); }} />}
           {page === "Imóveis" && <PropertiesPage search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} onNew={() => setForm("property")} />}
           {page === "Unidades" && <UnitsPage search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} onNew={() => setForm("unit")} />}
           {page === "Locatários" && <TenantsPage search={search} setSearch={setSearch} onNew={() => setForm("tenant")} />}
@@ -403,7 +422,7 @@ export default function Home() {
     {selectedContract && <ContractDrawer contract={selectedContract} onClose={() => setSelectedContract(null)} onCharge={() => setForm("charge")} />}
     {selectedExpense && <ExpenseDrawer expense={selectedExpense} onClose={() => setSelectedExpense(null)} />}
     {receiptOpen && selectedCharge && <ReceiptModal charge={selectedCharge} onClose={() => setReceiptOpen(false)} onSave={saveReceipt} />}
-    {form && <EntityForm kind={form} onClose={() => setForm(null)} onSave={saveForm} />}
+    {form && <EntityForm kind={form} portfolio={form === "portfolio" ? editingPortfolio : null} onClose={() => { setForm(null); setEditingPortfolio(null); }} onSave={saveForm} />}
     {toast && <SuccessToast message={toast} />}
   </main>;
 }
@@ -591,9 +610,9 @@ function ExpensesPage({ rows, search, setSearch, statusFilter, setStatusFilter, 
   </>;
 }
 
-function PortfoliosPage({ search, setSearch, onNew }: { search: string; setSearch: (value: string) => void; onNew: () => void }) {
+function PortfoliosPage({ portfolios, search, setSearch, onNew, onEdit }: { portfolios: Portfolio[]; search: string; setSearch: (value: string) => void; onNew: () => void; onEdit: (portfolio: Portfolio) => void }) {
   const rows = portfolios.filter((portfolio) => `${portfolio.name}${portfolio.holder}${portfolio.document}`.toLowerCase().includes(search.toLowerCase()));
-  return <><PageHeading eyebrow="Estrutura patrimonial" title="Carteiras" description="Agrupe imóveis sob a titularidade ou organização usada na operação." action="Nova carteira" onAction={onNew} /><TableSection toolbar={<SearchBar value={search} onChange={setSearch} placeholder="Buscar por carteira, titular ou CNPJ" />} footer={<><span>{rows.length} carteiras</span><span>Base demonstrativa</span></>}><table className="compact-table"><thead><tr><th>Carteira</th><th>Titular</th><th>Documento</th><th>Imóveis</th><th>Unidades</th><th /></tr></thead><tbody>{rows.map((portfolio) => <tr key={portfolio.id}><td><strong>{portfolio.name}</strong><small>{portfolio.id}</small></td><td>{portfolio.holder}</td><td>{portfolio.document}</td><td>{portfolio.properties}</td><td>{portfolio.units}</td><td><button className="row-action" onClick={onNew}>Editar</button></td></tr>)}</tbody></table>{rows.length === 0 && <EmptyState />}</TableSection></>;
+  return <><PageHeading eyebrow="Estrutura patrimonial" title="Carteiras" description="Agrupe imóveis sob a titularidade ou organização usada na operação." action="Nova carteira" onAction={onNew} /><TableSection toolbar={<SearchBar value={search} onChange={setSearch} placeholder="Buscar por carteira, titular ou CNPJ" />} footer={<><span>{rows.length} carteiras</span><span>Base demonstrativa</span></>}><table className="compact-table"><thead><tr><th>Carteira</th><th>Titular</th><th>Documento</th><th>Imóveis</th><th>Unidades</th><th /></tr></thead><tbody>{rows.map((portfolio) => <tr key={portfolio.id}><td><strong>{portfolio.name}</strong><small>{portfolio.id}</small></td><td>{portfolio.holder}</td><td>{portfolio.document}</td><td>{portfolio.properties}</td><td>{portfolio.units}</td><td><button className="row-action" onClick={() => onEdit(portfolio)}>Editar</button></td></tr>)}</tbody></table>{rows.length === 0 && <EmptyState />}</TableSection></>;
 }
 
 function PropertiesPage({ search, setSearch, portfolioFilter, setPortfolioFilter, onNew }: { search: string; setSearch: (value: string) => void; portfolioFilter: string; setPortfolioFilter: (value: string) => void; onNew: () => void }) {
@@ -641,10 +660,11 @@ function ReceiptModal({ charge, onClose, onSave }: { charge: Charge; onClose: ()
 function ModalHeader({ eyebrow, title, onClose }: { eyebrow: string; title: string; onClose: () => void }) { return <header><div><p className="eyebrow">{eyebrow}</p><h2>{title}</h2></div><button type="button" className="close-button" onClick={onClose}>×</button></header>; }
 function ModalFooter({ onClose, action, pending = false }: { onClose: () => void; action: string; pending?: boolean }) { return <footer><button type="button" className="secondary-button" onClick={onClose} disabled={pending}>Cancelar</button><button className="primary-button" disabled={pending} aria-busy={pending}>{pending ? "Salvando…" : action}</button></footer>; }
 
-function EntityForm({ kind, onClose, onSave }: { kind: Exclude<FormKind, null>; onClose: () => void; onSave: (event: FormEvent) => void }) {
-  const config = {
+function EntityForm({ kind, portfolio, onClose, onSave }: { kind: Exclude<FormKind, null>; portfolio?: Portfolio | null; onClose: () => void; onSave: (data: FormData) => void }) {
+  const baseConfig = {
     portfolio: ["Estrutura patrimonial", "Nova carteira", "Salvar carteira"], property: ["Estrutura patrimonial", "Novo imóvel", "Salvar imóvel"], unit: ["Estrutura locável", "Nova unidade", "Salvar unidade"], tenant: ["Cadastro essencial", "Novo locatário", "Salvar locatário"], contract: ["Locação", "Novo contrato", "Salvar contrato"], charge: ["Inclusão manual", "Nova cobrança", "Salvar cobrança"],
   }[kind];
+  const config = kind === "portfolio" && portfolio ? [baseConfig[0], `Editar ${portfolio.name}`, "Salvar alterações"] : baseConfig;
   const [tenantType, setTenantType] = useState("PJ");
   const [selectedUnits, setSelectedUnits] = useState<string[]>(["Sala 101"]);
   const [contractItems, setContractItems] = useState(["Aluguel", "IPTU", "Condomínio"]);
@@ -671,7 +691,8 @@ function EntityForm({ kind, onClose, onSave }: { kind: Exclude<FormKind, null>; 
     }
     setFormError("");
     setSaving(true);
-    window.setTimeout(() => onSave(event), 450);
+    const data = new FormData(event.currentTarget);
+    window.setTimeout(() => onSave(data), 450);
   };
   const clearFieldError = (event: FormEvent<HTMLFormElement>) => {
     const field = event.target;
@@ -682,7 +703,7 @@ function EntityForm({ kind, onClose, onSave }: { kind: Exclude<FormKind, null>; 
     if (formError) setFormError("");
   };
   return <div className="modal-layer" role="dialog" aria-modal="true" aria-label={config[1]}><button className="drawer-backdrop" onClick={onClose} /><form className="receipt-modal entity-modal" noValidate onSubmit={handleSubmit} onInputCapture={clearFieldError}><ModalHeader eyebrow={config[0]} title={config[1]} onClose={onClose} /><InlineFieldError message={formError} /><div className="form-grid entity-grid">
-    {kind === "portfolio" && <><label>Nome da carteira<input placeholder="Ex.: Carteira Atlas" required /></label><label>Titular<input placeholder="Razão social ou nome" required /></label><label className="full-field">CPF / CNPJ do titular<input placeholder="Documento fictício nesta demonstração" required /></label></>}
+    {kind === "portfolio" && <><label>Nome da carteira<input name="portfolioName" placeholder="Ex.: Carteira Atlas" defaultValue={portfolio?.name ?? ""} required /></label><label>Titular<input name="portfolioHolder" placeholder="Razão social ou nome" defaultValue={portfolio?.holder ?? ""} required /></label><label className="full-field">CPF / CNPJ do titular<input name="portfolioDocument" placeholder="Documento fictício nesta demonstração" defaultValue={portfolio?.document ?? ""} required /></label></>}
     {kind === "property" && <><label>Carteira<select required>{portfolios.map((portfolio) => <option key={portfolio.id}>{portfolio.name}</option>)}</select></label><label>Nome do imóvel<input placeholder="Ex.: Centro Empresarial" required /></label><label className="full-field">Endereço principal<input placeholder="Logradouro, número e bairro" required /></label></>}
     {kind === "unit" && <><label>Imóvel<select required>{properties.map((property) => <option key={property.id}>{property.name}</option>)}</select></label><label>Identificação da unidade<input placeholder="Ex.: Sala 101" required /></label><label>Área privativa<input placeholder="Ex.: 42 m²" /></label><label>Status inicial<select><option>Disponível</option><option>Ocupada</option></select></label></>}
     {kind === "tenant" && <><label>Tipo<select value={tenantType} onChange={(event) => setTenantType(event.target.value)}><option>PJ</option><option>PF</option></select></label><label>{tenantType === "PJ" ? "Razão social" : "Nome completo"}<input placeholder={tenantType === "PJ" ? "Empresa locatária" : "Pessoa locatária"} required /></label><label className="full-field">{tenantType === "PJ" ? "CNPJ" : "CPF"}<input placeholder={tenantType === "PJ" ? "00.000.000/0000-00" : "000.000.000-00"} required /></label></>}
