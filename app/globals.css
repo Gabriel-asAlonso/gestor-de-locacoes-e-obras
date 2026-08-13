@@ -272,6 +272,7 @@ th { height:var(--control-height-lg);padding:0 var(--space-3);color:var(--color-
 td { height:72px;padding:11px var(--space-3);color:#454e5d;border-bottom:1px solid #cedae5;font-size:var(--font-size-sm);line-height:1.45;white-space:nowrap; }
 tbody tr { transition:background var(--duration-fast);outline:none; }
 tbody tr:hover,tbody tr:focus { background:var(--state-hover-surface); }
+.charges-table tbody tr { cursor:pointer; }
 td strong { display:block;color:#1c222c;font-weight:650; }
 td small { display:block;margin-top:4px;color:var(--muted-strong);font-size:var(--font-size-xs);line-height:1.45; }
 .status { --status-text:var(--color-text-muted);--status-surface:var(--color-surface-subtle);--status-border:var(--color-border-strong);display:inline-flex;align-items:center;gap:7px;padding:6px 9px;color:var(--status-text);background:var(--status-surface);border:1px solid var(--status-border);border-radius:var(--radius-sm);box-shadow:0 0 7px color-mix(in srgb,var(--status-border) 22%,transparent);font-size:var(--font-size-xs);line-height:var(--line-height-tight);font-weight:720;letter-spacing:.01em; }
