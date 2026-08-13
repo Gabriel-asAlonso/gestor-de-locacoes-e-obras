@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type Status = "Vencida" | "Em aberto" | "Próxima" | "Parcial" | "Recebida";
 type ExpenseStatus = "Pendente" | "Pago" | "Vencido";
@@ -121,12 +121,163 @@ const chargeTotal = (charge: Charge) => charge.items.reduce((sum, item) => sum +
 const receivedTotal = (charge: Charge) => charge.items.reduce((sum, item) => sum + item.received, 0);
 const chargeBalance = (charge: Charge) => chargeTotal(charge) - receivedTotal(charge);
 
+const FOCUSABLE_ELEMENTS = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled]):not([type='hidden'])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  "[tabindex]:not([tabindex='-1'])",
+].join(",");
+
+function setDialogBackgroundState(element: HTMLElement, inactive: boolean) {
+  if (inactive) {
+    if (!element.hasAttribute("data-dialog-managed")) {
+      element.dataset.dialogPreviousAriaHidden = element.getAttribute("aria-hidden") ?? "__absent__";
+      element.dataset.dialogPreviousInert = element.hasAttribute("inert") ? "true" : "false";
+      element.setAttribute("data-dialog-managed", "");
+    }
+    element.setAttribute("aria-hidden", "true");
+    element.setAttribute("inert", "");
+    return;
+  }
+
+  if (!element.hasAttribute("data-dialog-managed")) return;
+  const previousAriaHidden = element.dataset.dialogPreviousAriaHidden;
+  if (previousAriaHidden === "__absent__") element.removeAttribute("aria-hidden");
+  else if (previousAriaHidden !== undefined) element.setAttribute("aria-hidden", previousAriaHidden);
+  if (element.dataset.dialogPreviousInert === "false") element.removeAttribute("inert");
+  delete element.dataset.dialogPreviousAriaHidden;
+  delete element.dataset.dialogPreviousInert;
+  element.removeAttribute("data-dialog-managed");
+}
+
+function syncDialogStack() {
+  const shell = document.querySelector<HTMLElement>(".app-shell");
+  if (!shell) return;
+  const layers = Array.from(shell.querySelectorAll<HTMLElement>(":scope > .drawer-layer, :scope > .modal-layer"));
+  const topLayer = layers.at(-1);
+  Array.from(shell.children).forEach((child) => {
+    if (child instanceof HTMLElement) setDialogBackgroundState(child, Boolean(topLayer && child !== topLayer));
+  });
+
+  layers.forEach((layer) => {
+    const panel = layer.querySelector<HTMLElement>(".drawer, .receipt-modal");
+    const title = panel?.querySelector<HTMLElement>("h2");
+    const isTopLayer = layer === topLayer;
+    const accessibleName = layer.getAttribute("aria-label");
+    layer.removeAttribute("role");
+    layer.removeAttribute("aria-modal");
+    if (!panel) return;
+    panel.setAttribute("role", "dialog");
+    if (isTopLayer) panel.setAttribute("aria-modal", "true");
+    else panel.removeAttribute("aria-modal");
+    panel.setAttribute("tabindex", "-1");
+    if (title) {
+      if (!title.id) title.id = `dialog-title-${layers.indexOf(layer) + 1}`;
+      title.setAttribute("tabindex", "-1");
+      panel.setAttribute("aria-labelledby", title.id);
+      panel.removeAttribute("aria-label");
+    } else if (accessibleName) {
+      panel.setAttribute("aria-label", accessibleName);
+    }
+    const backdrop = layer.querySelector<HTMLElement>(".drawer-backdrop");
+    backdrop?.setAttribute("tabindex", "-1");
+    backdrop?.setAttribute("aria-hidden", "true");
+  });
+}
+
+function useDialogManagement() {
+  const previousLayersRef = useRef<HTMLElement[]>([]);
+  const openersRef = useRef(new WeakMap<HTMLElement, HTMLElement | null>());
+  const focusedLayerRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const shell = document.querySelector<HTMLElement>(".app-shell");
+    if (!shell) return;
+    const layers = Array.from(shell.querySelectorAll<HTMLElement>(":scope > .drawer-layer, :scope > .modal-layer"));
+    const previousLayers = previousLayersRef.current;
+    const addedLayers = layers.filter((layer) => !previousLayers.includes(layer));
+    const removedLayers = previousLayers.filter((layer) => !layers.includes(layer));
+    const activeElement = document.activeElement instanceof HTMLElement && document.activeElement !== document.body
+      ? document.activeElement
+      : null;
+    const inheritedOpener = [...removedLayers].reverse()
+      .map((layer) => openersRef.current.get(layer))
+      .find((element): element is HTMLElement => Boolean(element?.isConnected)) ?? null;
+    addedLayers.forEach((layer) => openersRef.current.set(layer, activeElement ?? inheritedOpener));
+    previousLayersRef.current = layers;
+    syncDialogStack();
+
+    const topLayer = layers.at(-1) ?? null;
+    if (topLayer && topLayer !== focusedLayerRef.current) {
+      const initialFocus = topLayer.querySelector<HTMLElement>("h2")
+        ?? topLayer.querySelector<HTMLElement>(".drawer, .receipt-modal");
+      initialFocus?.focus();
+    }
+    focusedLayerRef.current = topLayer;
+
+    if (removedLayers.length && !addedLayers.length) {
+      const opener = [...removedLayers].reverse()
+        .map((layer) => openersRef.current.get(layer))
+        .find((element): element is HTMLElement => Boolean(element?.isConnected));
+      window.requestAnimationFrame(() => opener?.isConnected && opener.focus());
+    }
+  });
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const shell = document.querySelector<HTMLElement>(".app-shell");
+      const currentLayer = Array.from(shell?.querySelectorAll<HTMLElement>(":scope > .drawer-layer, :scope > .modal-layer") ?? []).at(-1);
+      if (!currentLayer) return;
+
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        currentLayer.querySelector<HTMLButtonElement>(".drawer-backdrop")?.click();
+        return;
+      }
+      if (event.key !== "Tab") return;
+
+      const panel = currentLayer.querySelector<HTMLElement>(".drawer, .receipt-modal");
+      if (!panel) return;
+      const focusable = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_ELEMENTS))
+        .filter((element) => element.getClientRects().length > 0 && element.getAttribute("aria-hidden") !== "true");
+      if (!focusable.length) {
+        event.preventDefault();
+        panel.focus();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const activeElement = document.activeElement;
+      if (event.shiftKey && (activeElement === first || !panel.contains(activeElement))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (activeElement === last || !panel.contains(activeElement))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown, true);
+      previousLayersRef.current = [];
+      focusedLayerRef.current = null;
+      window.requestAnimationFrame(syncDialogStack);
+    };
+  }, []);
+}
+
 function StatusBadge({ status }: { status: Status }) {
   const name = status.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(" ", "-");
   return <span className={`status status-${name}`}><i />{status}</span>;
 }
 
 export default function Home() {
+  useDialogManagement();
   const [authenticated, setAuthenticated] = useState(false);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState<Page>("Pendências");
@@ -207,7 +358,7 @@ export default function Home() {
       </div>
     </section>
     {selectedCharge && <ChargeDrawer charge={selectedCharge} onClose={() => setSelectedCharge(null)} onReceipt={() => setReceiptOpen(true)} />}
-    {selectedContract && <ContractDrawer contract={selectedContract} onClose={() => setSelectedContract(null)} onCharge={() => { setSelectedContract(null); setForm("charge"); }} />}
+    {selectedContract && <ContractDrawer contract={selectedContract} onClose={() => setSelectedContract(null)} onCharge={() => setForm("charge")} />}
     {selectedExpense && <ExpenseDrawer expense={selectedExpense} onClose={() => setSelectedExpense(null)} />}
     {receiptOpen && selectedCharge && <ReceiptModal charge={selectedCharge} onClose={() => setReceiptOpen(false)} onSave={saveReceipt} />}
     {form && <EntityForm kind={form} onClose={() => setForm(null)} onSave={saveForm} />}
@@ -355,10 +506,10 @@ function ExpensesPage({ rows, search, setSearch, statusFilter, setStatusFilter, 
   return <>
     <PageHeading eyebrow="Controle financeiro operacional" title="Despesas / Contas a Pagar" description="Acompanhe obrigações financeiras, vencimentos e pagamentos em uma única visão." />
     <section className="summary-strip payable-summary" aria-label="Resumo financeiro das contas a pagar">
-      <div><span>Total a pagar</span><strong>{brl.format(totalPayable)}</strong><small>{openAccounts} contas em aberto</small></div>
+      <div className="summary-payable"><span>Total a pagar</span><strong>{brl.format(totalPayable)}</strong><small>{openAccounts} contas em aberto</small></div>
       <div className="summary-overdue"><span>Total vencido</span><strong>{brl.format(totalOverdue)}</strong><small>{overdueAccounts} conta exige atenção</small></div>
-      <div><span>Total pago</span><strong>{brl.format(totalPaid)}</strong><small>{paidAccounts} contas quitadas</small></div>
-      <div><span>Próximos vencimentos</span><strong>{nextDue}</strong><small>Nos próximos 7 dias</small></div>
+      <div className="summary-paid"><span>Total pago</span><strong>{brl.format(totalPaid)}</strong><small>{paidAccounts} contas quitadas</small></div>
+      <div className="summary-upcoming"><span>Próximos vencimentos</span><strong>{nextDue}</strong><small>Nos próximos 7 dias</small></div>
     </section>
     <TableSection toolbar={<><SearchBar value={search} onChange={setSearch} placeholder="Buscar por fornecedor, descrição ou conta" /><select aria-label="Filtrar contas por status" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option>Todas</option><option>Pendente</option><option>Pago</option><option>Vencido</option></select><select aria-label="Filtrar contas por categoria" value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}><option>Todas as categorias</option>{categories.map((category) => <option key={category}>{category}</option>)}</select></>} footer={<><span>{rows.length} de {expenses.length} contas</span><span>Valores demonstrativos</span></>}>
       <table className="expense-table" aria-label="Listagem de despesas e contas a pagar"><thead><tr><th>Conta</th><th>Fornecedor / beneficiário</th><th>Descrição</th><th>Categoria</th><th>Vencimento</th><th>Pagamento</th><th>Valor</th><th>Status</th><th><span className="sr-only">Ações</span></th></tr></thead><tbody>{rows.map((expense) => {
