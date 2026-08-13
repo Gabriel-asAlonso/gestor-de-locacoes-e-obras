@@ -416,7 +416,7 @@ function Login({ loading, onSubmit }: { loading: boolean; onSubmit: (event: Form
       <div className="login-footer"><span /> Ambiente demonstrativo</div>
     </section>
     <section className="login-panel"><form className="login-form" onSubmit={onSubmit}>
-      <div className="login-heading"><p className="eyebrow">Acesso administrativo</p><h2>Bem-vinda.</h2><p>Entre para explorar o Módulo 1 com dados totalmente fictícios.</p></div>
+      <div className="login-heading"><p className="eyebrow">Acesso administrativo</p><h2>Boas-vindas</h2><p>Entre para explorar o Módulo 1 com dados totalmente fictícios.</p></div>
       <label>E-mail<input type="email" defaultValue="administrativo@exemplo.com.br" required /></label>
       <label>Senha<input type="password" defaultValue="demonstracao" required /></label>
       <button className="primary-button login-button" disabled={loading} aria-busy={loading}>{loading ? <><span className="spinner" /> Preparando ambiente</> : "Acessar demonstração"}</button>
