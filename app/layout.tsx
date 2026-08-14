@@ -23,7 +23,7 @@ export async function generateMetadata(): Promise<Metadata> {
       description,
       type: "website",
       locale: "pt_BR",
-      images: [{ url: socialImage, width: 1731, height: 909, alt: "Despesas e contas a pagar no Módulo 1" }],
+      images: [{ url: socialImage, width: 1662, height: 946, alt: "Visão geral de Locações e Recebíveis" }],
     },
     twitter: { card: "summary_large_image", title, description, images: [socialImage] },
   };

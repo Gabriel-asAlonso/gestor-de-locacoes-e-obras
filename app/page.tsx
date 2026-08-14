@@ -1,11 +1,11 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { createContext, FormEvent, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 type Status = "Vencida" | "Em aberto" | "Próxima" | "Parcial" | "Recebida";
 type ExpenseStatus = "Pendente" | "Pago" | "Vencido";
-type Page = "Pendências" | "Carteiras" | "Imóveis" | "Unidades" | "Locatários" | "Contratos" | "Cobranças" | "Despesas / Contas a Pagar";
+type Page = "Visão geral" | "Carteiras" | "Imóveis" | "Unidades" | "Locatários" | "Contratos" | "Cobranças" | "Despesas / Contas a Pagar";
 type FormKind = "portfolio" | "property" | "unit" | "tenant" | "contract" | "charge" | null;
 type ContentState = "ready" | "loading" | "error";
 type ToastMessage = { message: string; reference: string } | null;
@@ -318,7 +318,7 @@ export default function Home() {
   useDialogManagement();
   const [authenticated, setAuthenticated] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [page, setPage] = useState<Page>("Pendências");
+  const [page, setPage] = useState<Page>("Visão geral");
   const [search, setSearch] = useState("");
   const [portfolioFilter, setPortfolioFilter] = useState("Todas as carteiras");
   const [statusFilter, setStatusFilter] = useState("Todas");
@@ -359,13 +359,13 @@ export default function Home() {
     };
   }, []);
 
-  const operational = charges.filter((charge) => charge.status !== "Recebida");
-  const baseCharges = page === "Pendências" ? operational : charges;
-  const filteredCharges = useMemo(() => baseCharges.filter((charge) => {
+  const chargeAttentionCount = charges.filter((charge) => charge.status === "Vencida" || charge.status === "Parcial").length;
+  const chargesInScope = useMemo(() => charges.filter((charge) => {
     const query = search.trim().toLowerCase();
     const matchesSearch = !query || [charge.id, charge.contract, charge.property, charge.tenant, charge.competence, ...charge.units, ...charge.items.map((item) => item.name)].some((value) => value.toLowerCase().includes(query));
-    return matchesSearch && (statusFilter === "Todas" || charge.status === statusFilter) && (portfolioFilter === "Todas as carteiras" || charge.portfolio === portfolioFilter);
-  }), [baseCharges, portfolioFilter, search, statusFilter]);
+    return matchesSearch && (portfolioFilter === "Todas as carteiras" || charge.portfolio === portfolioFilter);
+  }), [portfolioFilter, search]);
+  const filteredCharges = useMemo(() => chargesInScope.filter((charge) => statusFilter === "Todas" || charge.status === statusFilter), [chargesInScope, statusFilter]);
   const filteredExpenses = useMemo(() => expenses.filter((expense) => {
     const query = search.trim().toLowerCase();
     const matchesSearch = !query || [expense.id, expense.supplier, expense.description, expense.category].some((value) => value.toLowerCase().includes(query));
@@ -485,7 +485,7 @@ export default function Home() {
   if (!authenticated) return <Login loading={loading} onSubmit={login} />;
 
   return <main className={`app-shell ${sidebarCollapsed ? "app-shell-sidebar-collapsed" : ""}`}>
-    <Sidebar page={page} operationalCount={operational.length} onNavigate={changePage} onLogout={() => setAuthenticated(false)} open={menuOpen} onClose={() => setMenuOpen(false)} collapsed={sidebarCollapsed} onExpand={() => setSidebarCollapsed(false)} />
+    <Sidebar page={page} attentionCount={chargeAttentionCount} onNavigate={changePage} onLogout={() => setAuthenticated(false)} open={menuOpen} onClose={() => setMenuOpen(false)} collapsed={sidebarCollapsed} onExpand={() => setSidebarCollapsed(false)} />
     <section className="workspace" onClick={() => !sidebarCollapsed && setSidebarCollapsed(true)}>
       <header className="topbar">
         <button className="menu-button" onClick={() => setMenuOpen(true)} aria-label="Abrir navegação">☰</button>
@@ -497,7 +497,8 @@ export default function Home() {
         {contentState === "loading" && <AuthenticatedPageSkeleton />}
         {contentState === "error" && <SystemError onRetry={retryContent} />}
         {contentState === "ready" && <FilterStateContext.Provider value={Boolean(search || portfolioFilter !== "Todas as carteiras" || statusFilter !== "Todas" || categoryFilter !== "Todas as categorias")}><>
-          {(page === "Pendências" || page === "Cobranças") && <ChargesPage page={page} charges={filteredCharges} total={baseCharges.length} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} statusFilter={statusFilter} setStatusFilter={setStatusFilter} onOpen={setSelectedCharge} onNew={() => setForm("charge")} />}
+          {page === "Visão geral" && <DashboardPage charges={charges} expenses={expenses} units={unitRecords} contracts={contracts} onNavigate={(next, status) => { changePage(next); if (status) setStatusFilter(status); }} />}
+          {page === "Cobranças" && <ChargesPage charges={filteredCharges} summaryCharges={chargesInScope} total={charges.length} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} statusFilter={statusFilter} setStatusFilter={setStatusFilter} onOpen={setSelectedCharge} onNew={() => setForm("charge")} />}
           {page === "Carteiras" && <PortfoliosPage portfolios={portfolioRecords} search={search} setSearch={setSearch} onNew={() => { setEditingPortfolio(null); setForm("portfolio"); }} onEdit={(portfolio) => { setEditingPortfolio(portfolio); setForm("portfolio"); }} />}
           {page === "Imóveis" && <PropertiesPage properties={propertyRecords} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} onNew={() => { setEditingProperty(null); setForm("property"); }} onEdit={(property) => { setEditingProperty(property); setForm("property"); }} />}
           {page === "Unidades" && <UnitsPage units={unitRecords} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} onNew={() => { setEditingUnit(null); setForm("unit"); }} onEdit={(unit) => { setEditingUnit(unit); setForm("unit"); }} />}
@@ -536,18 +537,18 @@ function Login({ loading, onSubmit }: { loading: boolean; onSubmit: (event: Form
 function SidebarGlyph({ name }: { name: string }) {
   const glyphs: Record<string, string> = {
     "Operação": "clipboard", "Estrutura": "structure", "Locação": "key", "Financeiro": "finance",
-    "Pendências": "schedule", "Carteiras": "briefcase", "Imóveis": "building", "Unidades": "door",
+    "Visão geral": "schedule", "Carteiras": "briefcase", "Imóveis": "building", "Unidades": "door",
     "Locatários": "users", "Contratos": "document", "Cobranças": "income", "Despesas / Contas a Pagar": "payable",
   };
   return <span className={`sidebar-glyph glyph-${glyphs[name] ?? "document"}`} aria-hidden="true"><span /></span>;
 }
 
-function Sidebar({ page, operationalCount, onNavigate, onLogout, open, onClose, collapsed, onExpand }: { page: Page; operationalCount: number; onNavigate: (page: Page) => void; onLogout: () => void; open: boolean; onClose: () => void; collapsed: boolean; onExpand: () => void }) {
+function Sidebar({ page, attentionCount, onNavigate, onLogout, open, onClose, collapsed, onExpand }: { page: Page; attentionCount: number; onNavigate: (page: Page) => void; onLogout: () => void; open: boolean; onClose: () => void; collapsed: boolean; onExpand: () => void }) {
   const [openTheme, setOpenTheme] = useState<string | null>("Operação");
   const groups: Array<{ name: string; description: string; pages: Array<{ name: Page; count?: number }> }> = [
-    { name: "Operação", description: "Acompanhamento diário", pages: [{ name: "Pendências", count: operationalCount }] },
+    { name: "Operação", description: "Acompanhamento diário", pages: [{ name: "Visão geral" }] },
     { name: "Estrutura", description: "Cadastros e patrimônio", pages: [{ name: "Carteiras" }, { name: "Imóveis" }, { name: "Unidades" }, { name: "Locatários" }] },
-    { name: "Locação", description: "Contratos e recebíveis", pages: [{ name: "Contratos" }, { name: "Cobranças" }] },
+    { name: "Locação", description: "Contratos e recebíveis", pages: [{ name: "Contratos" }, { name: "Cobranças", count: attentionCount }] },
     { name: "Financeiro", description: "Obrigações financeiras", pages: [{ name: "Despesas / Contas a Pagar" }] },
   ];
   const compact = collapsed && !open;
@@ -632,18 +633,98 @@ function EmptyState({ filtered, entity = "registro" }: { filtered?: boolean; ent
 }
 function UnitPills({ values }: { values: string[] }) { return <div className="tag-list">{values.map((value) => <span key={value}>{value}</span>)}</div>; }
 
-function ChargesPage({ page, charges: rows, total, search, setSearch, portfolioFilter, setPortfolioFilter, statusFilter, setStatusFilter, onOpen, onNew }: { page: Page; charges: Charge[]; total: number; search: string; setSearch: (value: string) => void; portfolioFilter: string; setPortfolioFilter: (value: string) => void; statusFilter: string; setStatusFilter: (value: string) => void; onOpen: (charge: Charge) => void; onNew: () => void }) {
-  const pendingCharges = charges.filter((charge) => charge.status !== "Recebida");
-  const pending = pendingCharges.reduce((sum, charge) => sum + chargeBalance(charge), 0);
-  const countByStatus = (status: ChargeStatus) => pendingCharges.filter((charge) => charge.status === status).length;
+function DashboardPage({ charges, expenses, units, contracts, onNavigate }: { charges: Charge[]; expenses: Expense[]; units: Unit[]; contracts: Contract[]; onNavigate: (page: Page, status?: string) => void }) {
+  const openCharges = charges.filter((charge) => charge.status !== "Recebida");
+  const overdueCharges = charges.filter((charge) => charge.status === "Vencida");
+  const partialCharges = charges.filter((charge) => charge.status === "Parcial");
+  const openExpenses = expenses.filter((expense) => expense.status !== "Pago");
+  const overdueExpenses = expenses.filter((expense) => expense.status === "Vencido");
+  const receivableBalance = openCharges.reduce((sum, charge) => sum + chargeBalance(charge), 0);
+  const overdueReceivable = overdueCharges.reduce((sum, charge) => sum + chargeBalance(charge), 0);
+  const payableBalance = openExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+  const occupiedUnits = units.filter((unit) => unit.occupied).length;
+  const occupancyRate = units.length ? Math.round((occupiedUnits / units.length) * 100) : 0;
+  const statusRows = (["Vencida", "Parcial", "Próxima", "Em aberto", "Recebida"] as Status[]).map((status) => ({ status, count: charges.filter((charge) => charge.status === status).length }));
+  const statusColors: Record<Status, string> = { Vencida: "#b44853", Parcial: "#c18424", "Próxima": "#4b78cf", "Em aberto": "#8693a5", Recebida: "#2d7b58" };
+  let donutStart = 0;
+  const donutStops = statusRows.filter((row) => row.count > 0).map((row) => {
+    const start = donutStart;
+    donutStart += (row.count / Math.max(charges.length, 1)) * 100;
+    return `${statusColors[row.status]} ${start}% ${donutStart}%`;
+  });
+  const monthlyMap = new Map<string, { billed: number; received: number }>();
+  charges.forEach((charge) => {
+    const current = monthlyMap.get(charge.competence) ?? { billed: 0, received: 0 };
+    current.billed += chargeTotal(charge);
+    current.received += receivedTotal(charge);
+    monthlyMap.set(charge.competence, current);
+  });
+  const monthlyRows = Array.from(monthlyMap, ([competence, values]) => ({ competence, ...values })).sort((a, b) => {
+    const [monthA, yearA] = a.competence.split("/").map(Number);
+    const [monthB, yearB] = b.competence.split("/").map(Number);
+    return yearA * 12 + monthA - (yearB * 12 + monthB);
+  });
+  const monthlyMax = Math.max(...monthlyRows.flatMap((row) => [row.billed, row.received]), 1);
+  const portfolios = Array.from(new Set(units.map((unit) => unit.portfolio))).map((portfolio) => {
+    const portfolioUnits = units.filter((unit) => unit.portfolio === portfolio);
+    const occupied = portfolioUnits.filter((unit) => unit.occupied).length;
+    return { portfolio, occupied, total: portfolioUnits.length, rate: portfolioUnits.length ? Math.round((occupied / portfolioUnits.length) * 100) : 0 };
+  });
   return <>
-    <PageHeading eyebrow={page === "Pendências" ? "12 de agosto de 2026" : "Consulta operacional"} title={page} description={page === "Pendências" ? "Veja o que exige ação, a composição de cada cobrança e os saldos por competência." : "Localize cobranças por carteira, contrato, unidade, locatário ou item."} action="Nova cobrança" onAction={onNew} />
-    {page === "Pendências" && <section className="summary-strip pending-summary" aria-label="Indicadores de pendências">
-      <div className="summary-card summary-card-tracking"><span>Saldo em acompanhamento</span><strong>{brl.format(pending)}</strong><small>Valores fictícios</small></div>
-      <button type="button" className="summary-card summary-card-button summary-card-overdue" aria-pressed={statusFilter === "Vencida"} onClick={() => setStatusFilter("Vencida")} title="Filtrar cobranças vencidas"><span>Vencidas</span><strong>{countByStatus("Vencida")}</strong><small>Exige ação</small></button>
-      <button type="button" className="summary-card summary-card-button summary-card-upcoming" aria-pressed={statusFilter === "Próxima"} onClick={() => setStatusFilter("Próxima")} title="Filtrar cobranças próximas"><span>Próximas</span><strong>{countByStatus("Próxima")}</strong><small>Até 15 de agosto</small></button>
-      <button type="button" className="summary-card summary-card-button summary-card-partial" aria-pressed={statusFilter === "Parcial"} onClick={() => setStatusFilter("Parcial")} title="Filtrar cobranças com baixa parcial"><span>Baixa parcial</span><strong>{countByStatus("Parcial")}</strong><small>Saldo distribuído por item</small></button>
-    </section>}
+    <PageHeading eyebrow="12 de agosto de 2026" title="Visão geral" description="Acompanhe a saúde da operação, dos recebíveis e das obrigações financeiras." />
+    <section className="dashboard-kpis" aria-label="Indicadores gerais da operação">
+      <button type="button" className="dashboard-kpi kpi-receivable" onClick={() => onNavigate("Cobranças")}><span>Saldo a receber</span><strong>{brl.format(receivableBalance)}</strong><small>{openCharges.length} cobranças em aberto</small><i aria-hidden="true">→</i></button>
+      <button type="button" className="dashboard-kpi kpi-overdue" onClick={() => onNavigate("Cobranças", "Vencida")}><span>Recebíveis vencidos</span><strong>{brl.format(overdueReceivable)}</strong><small>{overdueCharges.length} {overdueCharges.length === 1 ? "cobrança exige" : "cobranças exigem"} atenção</small><i aria-hidden="true">→</i></button>
+      <button type="button" className="dashboard-kpi kpi-payable" onClick={() => onNavigate("Despesas / Contas a Pagar")}><span>Contas a pagar</span><strong>{brl.format(payableBalance)}</strong><small>{openExpenses.length} contas em aberto</small><i aria-hidden="true">→</i></button>
+      <button type="button" className="dashboard-kpi kpi-occupancy" onClick={() => onNavigate("Unidades")}><span>Ocupação das unidades</span><strong>{occupancyRate}%</strong><small>{occupiedUnits} de {units.length} unidades ocupadas</small><i aria-hidden="true">→</i></button>
+    </section>
+    <section className="dashboard-grid dashboard-grid-main">
+      <article className="dashboard-panel dashboard-cashflow">
+        <header className="dashboard-panel-header"><div><p className="eyebrow">Recebíveis por competência</p><h2>Previsto x recebido</h2></div><div className="chart-legend"><span><i className="legend-billed" />Previsto</span><span><i className="legend-received" />Recebido</span></div></header>
+        <div className="competence-chart" role="img" aria-label="Comparação entre valores previstos e recebidos por competência">
+          <div className="chart-scale" aria-hidden="true"><span>{brl.format(monthlyMax)}</span><span>{brl.format(monthlyMax / 2)}</span><span>R$ 0</span></div>
+          <div className="chart-plot">{monthlyRows.map((row) => <div className="chart-group" key={row.competence} aria-label={`${row.competence}: previsto ${brl.format(row.billed)}, recebido ${brl.format(row.received)}`}><div className="chart-bars"><i className="chart-bar chart-bar-billed" style={{ "--bar-height": `${(row.billed / monthlyMax) * 100}%` } as CSSProperties} /><i className="chart-bar chart-bar-received" style={{ "--bar-height": `${(row.received / monthlyMax) * 100}%` } as CSSProperties} /></div><strong>{row.competence}</strong></div>)}</div>
+        </div>
+        <footer className="dashboard-panel-footer"><span>Total previsto <strong>{brl.format(charges.reduce((sum, charge) => sum + chargeTotal(charge), 0))}</strong></span><span>Total recebido <strong>{brl.format(charges.reduce((sum, charge) => sum + receivedTotal(charge), 0))}</strong></span></footer>
+      </article>
+      <article className="dashboard-panel dashboard-status-panel">
+        <header className="dashboard-panel-header"><div><p className="eyebrow">Carteira de cobranças</p><h2>Situação atual</h2></div></header>
+        <div className="status-overview"><div className="status-donut" style={{ background: donutStops.length ? `conic-gradient(${donutStops.join(",")})` : "#e5e9ef" }} role="img" aria-label={`Distribuição de ${charges.length} cobranças por situação`}><span><strong>{openCharges.length}</strong><small>em aberto</small></span></div>
+          <div className="status-breakdown">{statusRows.filter((row) => row.count > 0).map((row) => <button type="button" key={row.status} onClick={() => onNavigate("Cobranças", row.status)}><i style={{ background: statusColors[row.status] }} /><span>{row.status}</span><strong>{row.count}</strong></button>)}</div>
+        </div>
+      </article>
+    </section>
+    <section className="dashboard-grid dashboard-grid-secondary">
+      <article className="dashboard-panel occupancy-panel">
+        <header className="dashboard-panel-header"><div><p className="eyebrow">Estrutura patrimonial</p><h2>Ocupação por carteira</h2></div><span className="panel-meta">{contracts.length} contratos ativos</span></header>
+        <div className="occupancy-list">{portfolios.map((row) => <div className="occupancy-row" key={row.portfolio}><div><strong>{row.portfolio}</strong><span>{row.occupied} de {row.total} unidades</span></div><div className="occupancy-track" role="progressbar" aria-valuenow={row.rate} aria-valuemin={0} aria-valuemax={100} aria-label={`Ocupação de ${row.portfolio}`}><i style={{ width: `${row.rate}%` }} /></div><b>{row.rate}%</b></div>)}</div>
+        <button type="button" className="panel-link" onClick={() => onNavigate("Unidades")}>Ver todas as unidades <span aria-hidden="true">→</span></button>
+      </article>
+      <article className="dashboard-panel attention-panel">
+        <header className="dashboard-panel-header"><div><p className="eyebrow">Prioridades</p><h2>Exige atenção</h2></div><span className="attention-count">{overdueCharges.length + overdueExpenses.length + partialCharges.length}</span></header>
+        <div className="attention-list">
+          {overdueCharges.map((charge) => <button type="button" key={charge.id} onClick={() => onNavigate("Cobranças", "Vencida")}><i className="attention-danger" /><span><strong>{charge.tenant}</strong><small>{charge.id} · cobrança vencida</small></span><b>{brl.format(chargeBalance(charge))}</b></button>)}
+          {overdueExpenses.map((expense) => <button type="button" key={expense.id} onClick={() => onNavigate("Despesas / Contas a Pagar", "Vencido")}><i className="attention-danger" /><span><strong>{expense.supplier}</strong><small>{expense.id} · conta vencida</small></span><b>{brl.format(expense.amount)}</b></button>)}
+          {partialCharges.map((charge) => <button type="button" key={charge.id} onClick={() => onNavigate("Cobranças", "Parcial")}><i className="attention-warning" /><span><strong>{charge.tenant}</strong><small>{charge.id} · baixa parcial</small></span><b>{brl.format(chargeBalance(charge))}</b></button>)}
+        </div>
+      </article>
+    </section>
+  </>;
+}
+
+function ChargesPage({ charges: rows, summaryCharges, total, search, setSearch, portfolioFilter, setPortfolioFilter, statusFilter, setStatusFilter, onOpen, onNew }: { charges: Charge[]; summaryCharges: Charge[]; total: number; search: string; setSearch: (value: string) => void; portfolioFilter: string; setPortfolioFilter: (value: string) => void; statusFilter: string; setStatusFilter: (value: string) => void; onOpen: (charge: Charge) => void; onNew: () => void }) {
+  const pendingCharges = summaryCharges.filter((charge) => charge.status !== "Recebida");
+  const pending = pendingCharges.reduce((sum, charge) => sum + chargeBalance(charge), 0);
+  const countByStatus = (status: Status) => pendingCharges.filter((charge) => charge.status === status).length;
+  const toggleStatus = (status: Status) => setStatusFilter(statusFilter === status ? "Todas" : status);
+  return <>
+    <PageHeading eyebrow="Consulta operacional" title="Cobranças" description="Localize cobranças por carteira, contrato, unidade, locatário ou item." action="Nova cobrança" onAction={onNew} />
+    <section className="summary-strip pending-summary" aria-label="Indicadores de cobranças">
+      <div className="summary-card summary-card-tracking"><span>Saldo em aberto</span><strong>{brl.format(pending)}</strong><small>{pendingCharges.length} cobranças em acompanhamento</small></div>
+      <button type="button" className="summary-card summary-card-button summary-card-overdue" aria-pressed={statusFilter === "Vencida"} onClick={() => toggleStatus("Vencida")} title="Filtrar cobranças vencidas"><span>Vencidas</span><strong>{countByStatus("Vencida")}</strong><small>Exige ação</small></button>
+      <button type="button" className="summary-card summary-card-button summary-card-upcoming" aria-pressed={statusFilter === "Próxima"} onClick={() => toggleStatus("Próxima")} title="Filtrar cobranças próximas"><span>Próximas</span><strong>{countByStatus("Próxima")}</strong><small>Nos próximos dias</small></button>
+      <button type="button" className="summary-card summary-card-button summary-card-partial" aria-pressed={statusFilter === "Parcial"} onClick={() => toggleStatus("Parcial")} title="Filtrar cobranças com baixa parcial"><span>Baixa parcial</span><strong>{countByStatus("Parcial")}</strong><small>Saldo distribuído por item</small></button>
+    </section>
     <TableSection toolbar={<><SearchBar value={search} onChange={setSearch} placeholder="Buscar por contrato, unidade, locatário ou item" /><PortfolioFilter value={portfolioFilter} onChange={setPortfolioFilter} /><select aria-label="Filtrar por situação" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option>Todas</option><option>Vencida</option><option>Em aberto</option><option>Próxima</option><option>Parcial</option><option>Recebida</option></select></>} footer={<><span>{rows.length} de {total} cobranças</span><span>Inclusão e baixa manuais</span></>}>
       <table className="charges-table"><thead><tr><th>Cobrança</th><th>Contrato / unidades</th><th>Locatário</th><th>Competência</th><th>Composição</th><th>Total</th><th>Saldo</th><th>Situação</th></tr></thead><tbody>{rows.map((charge) => <tr key={charge.id} onClick={() => onOpen(charge)} tabIndex={0} onKeyDown={(event) => event.key === "Enter" && onOpen(charge)}><td><strong>{charge.id}</strong><small>{charge.portfolio}</small></td><td><strong>{charge.contract}</strong><small>{charge.property}</small><UnitPills values={charge.units} /></td><td>{charge.tenant}</td><td>{charge.competence}</td><td>{charge.items.length} {charge.items.length === 1 ? "item" : "itens"}<small>{charge.items.map((item) => item.name).join(" · ")}</small></td><td>{brl.format(chargeTotal(charge))}</td><td><strong>{brl.format(chargeBalance(charge))}</strong></td><td><StatusBadge status={charge.status} /></td></tr>)}</tbody></table>{rows.length === 0 && <EmptyState />}
     </TableSection>
