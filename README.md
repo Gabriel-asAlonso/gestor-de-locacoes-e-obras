@@ -6,9 +6,9 @@ cobranças, recebimentos e obrigações financeiras.
 ## Escopo funcional desta demonstração
 
 O Módulo 1 trabalha somente com dados fictícios e operações demonstrativas. A
-área **Despesas / Contas a Pagar** inclui consulta, busca, filtros por status e
-categoria, indicadores essenciais, tabela de obrigações e visualização de
-detalhes. A forma de pagamento não é exibida porque esse campo não faz parte da
+área **Despesas** inclui cadastro, consulta, busca, filtros por categoria e status,
+alteração de status, indicadores essenciais e visualização de detalhes. A forma
+de pagamento não é exibida porque esse campo não faz parte da
 documentação disponível para esta etapa.
 
 Permanecem fora do escopo automações financeiras avançadas, conciliação,

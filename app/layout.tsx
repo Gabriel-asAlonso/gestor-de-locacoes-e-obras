@@ -7,7 +7,7 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 const title = "Locações e Recebíveis — Módulo 1";
-const description = "Controle operacional de locações, cobranças, recebimentos e contas a pagar.";
+const description = "Controle operacional de locações, cobranças, recebimentos e despesas.";
 
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();
