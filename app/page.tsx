@@ -643,6 +643,7 @@ function DashboardPage({ charges, expenses, units, contracts, onNavigate }: { ch
   const overdueReceivable = overdueCharges.reduce((sum, charge) => sum + chargeBalance(charge), 0);
   const payableBalance = openExpenses.reduce((sum, expense) => sum + expense.amount, 0);
   const occupiedUnits = units.filter((unit) => unit.occupied).length;
+  const availableUnits = units.length - occupiedUnits;
   const occupancyRate = units.length ? Math.round((occupiedUnits / units.length) * 100) : 0;
   const statusRows = (["Vencida", "Parcial", "Próxima", "Em aberto", "Recebida"] as Status[]).map((status) => ({ status, count: charges.filter((charge) => charge.status === status).length }));
   const statusColors: Record<Status, string> = { Vencida: "#b44853", Parcial: "#c18424", "Próxima": "#4b78cf", "Em aberto": "#8693a5", Recebida: "#2d7b58" };
@@ -671,43 +672,43 @@ function DashboardPage({ charges, expenses, units, contracts, onNavigate }: { ch
     return { portfolio, occupied, total: portfolioUnits.length, rate: portfolioUnits.length ? Math.round((occupied / portfolioUnits.length) * 100) : 0 };
   });
   return <>
-    <PageHeading eyebrow="12 de agosto de 2026" title="Visão geral" description="Acompanhe a saúde da operação, dos recebíveis e das obrigações financeiras." />
-    <section className="dashboard-kpis" aria-label="Indicadores gerais da operação">
-      <button type="button" className="dashboard-kpi kpi-receivable" onClick={() => onNavigate("Cobranças")}><span>Saldo a receber</span><strong>{brl.format(receivableBalance)}</strong><small>{openCharges.length} cobranças em aberto</small><i aria-hidden="true">→</i></button>
-      <button type="button" className="dashboard-kpi kpi-overdue" onClick={() => onNavigate("Cobranças", "Vencida")}><span>Recebíveis vencidos</span><strong>{brl.format(overdueReceivable)}</strong><small>{overdueCharges.length} {overdueCharges.length === 1 ? "cobrança exige" : "cobranças exigem"} atenção</small><i aria-hidden="true">→</i></button>
-      <button type="button" className="dashboard-kpi kpi-payable" onClick={() => onNavigate("Despesas / Contas a Pagar")}><span>Contas a pagar</span><strong>{brl.format(payableBalance)}</strong><small>{openExpenses.length} contas em aberto</small><i aria-hidden="true">→</i></button>
-      <button type="button" className="dashboard-kpi kpi-occupancy" onClick={() => onNavigate("Unidades")}><span>Ocupação das unidades</span><strong>{occupancyRate}%</strong><small>{occupiedUnits} de {units.length} unidades ocupadas</small><i aria-hidden="true">→</i></button>
+    <PageHeading eyebrow="12 de agosto de 2026" title="Visão geral" description="Uma leitura clara da operação patrimonial e da posição financeira." />
+    <section className="dashboard-domain dashboard-domain-operation" aria-labelledby="dashboard-operation-title">
+      <header className="dashboard-domain-header"><span className="dashboard-domain-index" aria-hidden="true">01</span><div><p>Operação patrimonial</p><h2 id="dashboard-operation-title">Estrutura, contratos e ocupação</h2><small>Acompanhe o uso das unidades e a estrutura locável.</small></div><b>OPERAÇÃO</b></header>
+      <div className="dashboard-domain-content">
+        <section className="dashboard-kpis dashboard-kpis-three" aria-label="Indicadores da operação patrimonial">
+          <button type="button" className="dashboard-kpi kpi-occupancy" onClick={() => onNavigate("Unidades")}><span>Ocupação das unidades</span><strong>{occupancyRate}%</strong><small>{occupiedUnits} de {units.length} unidades ocupadas</small><i aria-hidden="true">→</i></button>
+          <button type="button" className="dashboard-kpi kpi-available" onClick={() => onNavigate("Unidades")}><span>Unidades disponíveis</span><strong>{availableUnits}</strong><small>Espaços livres para locação</small><i aria-hidden="true">→</i></button>
+          <button type="button" className="dashboard-kpi kpi-contracts" onClick={() => onNavigate("Contratos")}><span>Contratos ativos</span><strong>{contracts.length}</strong><small>Vínculos vigentes na base</small><i aria-hidden="true">→</i></button>
+        </section>
+        <article className="dashboard-panel occupancy-panel">
+          <header className="dashboard-panel-header"><div><p className="eyebrow">Desempenho operacional</p><h2>Ocupação por carteira</h2></div><span className="panel-meta">{availableUnits} unidades disponíveis</span></header>
+          <div className="occupancy-list">{portfolios.map((row) => <div className="occupancy-row" key={row.portfolio}><div><strong>{row.portfolio}</strong><span>{row.occupied} de {row.total} unidades</span></div><div className="occupancy-track" role="progressbar" aria-valuenow={row.rate} aria-valuemin={0} aria-valuemax={100} aria-label={`Ocupação de ${row.portfolio}`}><i style={{ width: `${row.rate}%` }} /></div><b>{row.rate}%</b></div>)}</div>
+          <button type="button" className="panel-link" onClick={() => onNavigate("Unidades")}>Ver todas as unidades <span aria-hidden="true">→</span></button>
+        </article>
+      </div>
     </section>
-    <section className="dashboard-grid dashboard-grid-main">
-      <article className="dashboard-panel dashboard-cashflow">
-        <header className="dashboard-panel-header"><div><p className="eyebrow">Recebíveis por competência</p><h2>Previsto x recebido</h2></div><div className="chart-legend"><span><i className="legend-billed" />Previsto</span><span><i className="legend-received" />Recebido</span></div></header>
-        <div className="competence-chart" role="img" aria-label="Comparação entre valores previstos e recebidos por competência">
-          <div className="chart-scale" aria-hidden="true"><span>{brl.format(monthlyMax)}</span><span>{brl.format(monthlyMax / 2)}</span><span>R$ 0</span></div>
-          <div className="chart-plot">{monthlyRows.map((row) => <div className="chart-group" key={row.competence} aria-label={`${row.competence}: previsto ${brl.format(row.billed)}, recebido ${brl.format(row.received)}`}><div className="chart-bars"><i className="chart-bar chart-bar-billed" style={{ "--bar-height": `${(row.billed / monthlyMax) * 100}%` } as CSSProperties} /><i className="chart-bar chart-bar-received" style={{ "--bar-height": `${(row.received / monthlyMax) * 100}%` } as CSSProperties} /></div><strong>{row.competence}</strong></div>)}</div>
-        </div>
-        <footer className="dashboard-panel-footer"><span>Total previsto <strong>{brl.format(charges.reduce((sum, charge) => sum + chargeTotal(charge), 0))}</strong></span><span>Total recebido <strong>{brl.format(charges.reduce((sum, charge) => sum + receivedTotal(charge), 0))}</strong></span></footer>
-      </article>
-      <article className="dashboard-panel dashboard-status-panel">
-        <header className="dashboard-panel-header"><div><p className="eyebrow">Carteira de cobranças</p><h2>Situação atual</h2></div></header>
-        <div className="status-overview"><div className="status-donut" style={{ background: donutStops.length ? `conic-gradient(${donutStops.join(",")})` : "#e5e9ef" }} role="img" aria-label={`Distribuição de ${charges.length} cobranças por situação`}><span><strong>{openCharges.length}</strong><small>em aberto</small></span></div>
-          <div className="status-breakdown">{statusRows.filter((row) => row.count > 0).map((row) => <button type="button" key={row.status} onClick={() => onNavigate("Cobranças", row.status)}><i style={{ background: statusColors[row.status] }} /><span>{row.status}</span><strong>{row.count}</strong></button>)}</div>
-        </div>
-      </article>
-    </section>
-    <section className="dashboard-grid dashboard-grid-secondary">
-      <article className="dashboard-panel occupancy-panel">
-        <header className="dashboard-panel-header"><div><p className="eyebrow">Estrutura patrimonial</p><h2>Ocupação por carteira</h2></div><span className="panel-meta">{contracts.length} contratos ativos</span></header>
-        <div className="occupancy-list">{portfolios.map((row) => <div className="occupancy-row" key={row.portfolio}><div><strong>{row.portfolio}</strong><span>{row.occupied} de {row.total} unidades</span></div><div className="occupancy-track" role="progressbar" aria-valuenow={row.rate} aria-valuemin={0} aria-valuemax={100} aria-label={`Ocupação de ${row.portfolio}`}><i style={{ width: `${row.rate}%` }} /></div><b>{row.rate}%</b></div>)}</div>
-        <button type="button" className="panel-link" onClick={() => onNavigate("Unidades")}>Ver todas as unidades <span aria-hidden="true">→</span></button>
-      </article>
-      <article className="dashboard-panel attention-panel">
-        <header className="dashboard-panel-header"><div><p className="eyebrow">Prioridades</p><h2>Exige atenção</h2></div><span className="attention-count">{overdueCharges.length + overdueExpenses.length + partialCharges.length}</span></header>
-        <div className="attention-list">
-          {overdueCharges.map((charge) => <button type="button" key={charge.id} onClick={() => onNavigate("Cobranças", "Vencida")}><i className="attention-danger" /><span><strong>{charge.tenant}</strong><small>{charge.id} · cobrança vencida</small></span><b>{brl.format(chargeBalance(charge))}</b></button>)}
-          {overdueExpenses.map((expense) => <button type="button" key={expense.id} onClick={() => onNavigate("Despesas / Contas a Pagar", "Vencido")}><i className="attention-danger" /><span><strong>{expense.supplier}</strong><small>{expense.id} · conta vencida</small></span><b>{brl.format(expense.amount)}</b></button>)}
-          {partialCharges.map((charge) => <button type="button" key={charge.id} onClick={() => onNavigate("Cobranças", "Parcial")}><i className="attention-warning" /><span><strong>{charge.tenant}</strong><small>{charge.id} · baixa parcial</small></span><b>{brl.format(chargeBalance(charge))}</b></button>)}
-        </div>
-      </article>
+    <section className="dashboard-domain dashboard-domain-financial" aria-labelledby="dashboard-financial-title">
+      <header className="dashboard-domain-header"><span className="dashboard-domain-index" aria-hidden="true">02</span><div><p>Financeiro</p><h2 id="dashboard-financial-title">Recebíveis e obrigações</h2><small>Compare entradas previstas, recebimentos e contas a pagar.</small></div><b>FINANCEIRO</b></header>
+      <div className="dashboard-domain-content">
+        <section className="dashboard-kpis dashboard-kpis-three" aria-label="Indicadores financeiros">
+          <button type="button" className="dashboard-kpi kpi-receivable" onClick={() => onNavigate("Cobranças")}><span>Saldo a receber</span><strong>{brl.format(receivableBalance)}</strong><small>{openCharges.length} cobranças em aberto</small><i aria-hidden="true">→</i></button>
+          <button type="button" className="dashboard-kpi kpi-overdue" onClick={() => onNavigate("Cobranças", "Vencida")}><span>Recebíveis vencidos</span><strong>{brl.format(overdueReceivable)}</strong><small>{overdueCharges.length} {overdueCharges.length === 1 ? "cobrança exige" : "cobranças exigem"} atenção</small><i aria-hidden="true">→</i></button>
+          <button type="button" className="dashboard-kpi kpi-payable" onClick={() => onNavigate("Despesas / Contas a Pagar")}><span>Contas a pagar</span><strong>{brl.format(payableBalance)}</strong><small>{openExpenses.length} contas em aberto</small><i aria-hidden="true">→</i></button>
+        </section>
+        <section className="dashboard-grid dashboard-grid-main">
+          <article className="dashboard-panel dashboard-cashflow">
+            <header className="dashboard-panel-header"><div><p className="eyebrow">Recebíveis por competência</p><h2>Previsto x recebido</h2></div><div className="chart-legend"><span><i className="legend-billed" />Previsto</span><span><i className="legend-received" />Recebido</span></div></header>
+            <div className="competence-chart" role="img" aria-label="Comparação entre valores previstos e recebidos por competência"><div className="chart-scale" aria-hidden="true"><span>{brl.format(monthlyMax)}</span><span>{brl.format(monthlyMax / 2)}</span><span>R$ 0</span></div><div className="chart-plot">{monthlyRows.map((row) => <div className="chart-group" key={row.competence} aria-label={`${row.competence}: previsto ${brl.format(row.billed)}, recebido ${brl.format(row.received)}`}><div className="chart-bars"><i className="chart-bar chart-bar-billed" style={{ "--bar-height": `${(row.billed / monthlyMax) * 100}%` } as CSSProperties} /><i className="chart-bar chart-bar-received" style={{ "--bar-height": `${(row.received / monthlyMax) * 100}%` } as CSSProperties} /></div><strong>{row.competence}</strong></div>)}</div></div>
+            <footer className="dashboard-panel-footer"><span>Total previsto <strong>{brl.format(charges.reduce((sum, charge) => sum + chargeTotal(charge), 0))}</strong></span><span>Total recebido <strong>{brl.format(charges.reduce((sum, charge) => sum + receivedTotal(charge), 0))}</strong></span></footer>
+          </article>
+          <article className="dashboard-panel dashboard-status-panel"><header className="dashboard-panel-header"><div><p className="eyebrow">Carteira de cobranças</p><h2>Situação atual</h2></div></header><div className="status-overview"><div className="status-donut" style={{ background: donutStops.length ? `conic-gradient(${donutStops.join(",")})` : "#e5e9ef" }} role="img" aria-label={`Distribuição de ${charges.length} cobranças por situação`}><span><strong>{openCharges.length}</strong><small>em aberto</small></span></div><div className="status-breakdown">{statusRows.filter((row) => row.count > 0).map((row) => <button type="button" key={row.status} onClick={() => onNavigate("Cobranças", row.status)}><i style={{ background: statusColors[row.status] }} /><span>{row.status}</span><strong>{row.count}</strong></button>)}</div></div></article>
+        </section>
+        <article className="dashboard-panel attention-panel financial-attention">
+          <header className="dashboard-panel-header"><div><p className="eyebrow">Prioridades financeiras</p><h2>Valores que exigem atenção</h2></div><span className="attention-count">{overdueCharges.length + overdueExpenses.length + partialCharges.length}</span></header>
+          <div className="attention-list">{overdueCharges.map((charge) => <button type="button" key={charge.id} onClick={() => onNavigate("Cobranças", "Vencida")}><i className="attention-danger" /><span><strong>{charge.tenant}</strong><small>{charge.id} · cobrança vencida</small></span><b>{brl.format(chargeBalance(charge))}</b></button>)}{overdueExpenses.map((expense) => <button type="button" key={expense.id} onClick={() => onNavigate("Despesas / Contas a Pagar", "Vencido")}><i className="attention-danger" /><span><strong>{expense.supplier}</strong><small>{expense.id} · conta vencida</small></span><b>{brl.format(expense.amount)}</b></button>)}{partialCharges.map((charge) => <button type="button" key={charge.id} onClick={() => onNavigate("Cobranças", "Parcial")}><i className="attention-warning" /><span><strong>{charge.tenant}</strong><small>{charge.id} · baixa parcial</small></span><b>{brl.format(chargeBalance(charge))}</b></button>)}</div>
+        </article>
+      </div>
     </section>
   </>;
 }
