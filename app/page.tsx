@@ -64,8 +64,8 @@ type Expense = {
 const expenseStatusPriority: Record<ExpenseStatus, number> = { Vencido: 0, Pendente: 1, Pago: 2 };
 
 const portfolios: Portfolio[] = [
-  { id: "CAR-001", name: "Carteira Atlas", holder: "Atlas Patrimonial Ltda.", document: "12.345.678/0001-10", properties: 2, units: 5 },
-  { id: "CAR-002", name: "Carteira Horizonte", holder: "Horizonte Imóveis Ltda.", document: "98.765.432/0001-20", properties: 2, units: 2 },
+  { id: "CAR-001", name: "Carteira Atlas", holder: "Atlas Patrimonial Ltda.", document: "12.345.678/0001-10", properties: 4, units: 9 },
+  { id: "CAR-002", name: "Carteira Horizonte", holder: "Horizonte Imóveis Ltda.", document: "98.765.432/0001-20", properties: 4, units: 5 },
 ];
 
 const properties: Property[] = [
@@ -73,6 +73,10 @@ const properties: Property[] = [
   { id: "IMO-002", portfolio: "Carteira Atlas", name: "Complexo Aurora", address: "Av. do Contorno, 1180 · Norte", units: 2 },
   { id: "IMO-003", portfolio: "Carteira Horizonte", name: "Edifício Horizonte", address: "Rua do Mercado, 84 · Centro", units: 1 },
   { id: "IMO-004", portfolio: "Carteira Horizonte", name: "Galeria Pátio Azul", address: "Alameda Sul, 510 · Jardins", units: 1 },
+  { id: "IMO-005", portfolio: "Carteira Atlas", name: "Parque Logístico Vereda", address: "Rod. das Indústrias, 920 · Distrito Industrial", units: 2 },
+  { id: "IMO-006", portfolio: "Carteira Atlas", name: "Edifício Jardim Central", address: "Av. das Nações, 860 · Bela Vista", units: 2 },
+  { id: "IMO-007", portfolio: "Carteira Horizonte", name: "Shopping Alameda", address: "Praça das Flores, 145 · Savassi", units: 2 },
+  { id: "IMO-008", portfolio: "Carteira Horizonte", name: "Centro Comercial Orla", address: "Av. Beira-Mar, 780 · Praia", units: 1 },
 ];
 
 const propertyCoverImages: Record<string, string> = {
@@ -80,6 +84,10 @@ const propertyCoverImages: Record<string, string> = {
   "IMO-002": "/properties/complexo-aurora.jpg",
   "IMO-003": "/properties/edificio-horizonte.jpg",
   "IMO-004": "/properties/galeria-patio-azul.jpg",
+  "IMO-005": "/properties/parque-logistico-vereda.jpg",
+  "IMO-006": "/properties/edificio-jardim-central.jpg",
+  "IMO-007": "/properties/shopping-alameda.jpg",
+  "IMO-008": "/properties/centro-comercial-orla.jpg",
 };
 const fallbackPropertyCover = "/properties/centro-empresarial-nexo.jpg";
 
@@ -91,6 +99,13 @@ const units: Unit[] = [
   { id: "UNI-005", property: "Complexo Aurora", portfolio: "Carteira Atlas", name: "Galpão 02", area: 280, occupied: true },
   { id: "UNI-006", property: "Edifício Horizonte", portfolio: "Carteira Horizonte", name: "Módulo A", area: 96, occupied: true },
   { id: "UNI-007", property: "Galeria Pátio Azul", portfolio: "Carteira Horizonte", name: "Loja 04", area: 74, occupied: false },
+  { id: "UNI-008", property: "Parque Logístico Vereda", portfolio: "Carteira Atlas", name: "Galpão A", area: 420, occupied: false },
+  { id: "UNI-009", property: "Parque Logístico Vereda", portfolio: "Carteira Atlas", name: "Galpão B", area: 380, occupied: true },
+  { id: "UNI-010", property: "Edifício Jardim Central", portfolio: "Carteira Atlas", name: "Sala 301", area: 74, occupied: true },
+  { id: "UNI-011", property: "Edifício Jardim Central", portfolio: "Carteira Atlas", name: "Sala 302", area: 68, occupied: false },
+  { id: "UNI-012", property: "Shopping Alameda", portfolio: "Carteira Horizonte", name: "Loja 11", area: 55, occupied: true },
+  { id: "UNI-013", property: "Shopping Alameda", portfolio: "Carteira Horizonte", name: "Loja 12", area: 61, occupied: false },
+  { id: "UNI-014", property: "Centro Comercial Orla", portfolio: "Carteira Horizonte", name: "Loja térrea", area: 88, occupied: false },
 ];
 
 const tenants: Tenant[] = [
