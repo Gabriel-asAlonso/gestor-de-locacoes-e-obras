@@ -824,10 +824,31 @@ function TableSection({ toolbar, children, footer }: { toolbar: ReactNode; child
   return <section className="table-section"><div className="table-toolbar">{toolbar}</div><div className="table-wrap">{children}</div><div className="table-footer">{footer}</div></section>;
 }
 
-function EmptyState({ filtered, entity = "registro" }: { filtered?: boolean; entity?: string }) {
+function EmptyState({ filtered, entity = "registro", mark = "00", eyebrow = "Base pronta para começar", title, description, action, onAction, onClear, tone = "neutral" }: { filtered?: boolean; entity?: string; mark?: string; eyebrow?: string; title?: string; description?: string; action?: string; onAction?: () => void; onClear?: () => void; tone?: "neutral" | "portfolio" | "property" | "unit" | "tenant" | "contract" | "charge" | "expense" }) {
   const hasActiveFilter = useContext(FilterStateContext);
   const isFiltered = filtered ?? hasActiveFilter;
-  return <div className="empty-state"><span aria-hidden="true">0</span><h3>{isFiltered ? "Nenhum resultado para estes filtros" : `Nenhum ${entity} cadastrado`}</h3><p>{isFiltered ? "Ajuste ou limpe a busca e os filtros aplicados." : `Quando houver algum ${entity}, ele aparecerá aqui.`}</p></div>;
+  const resolvedTitle = isFiltered ? "Nenhum resultado encontrado" : title ?? `Nenhum ${entity} cadastrado`;
+  const resolvedDescription = isFiltered ? "Os dados continuam preservados. Limpe os filtros ou ajuste a busca para visualizar outros registros." : description ?? `Quando houver algum ${entity}, ele aparecerá aqui.`;
+  return <section className={`empty-state empty-state-${isFiltered ? "filtered" : tone}`} aria-live="polite">
+    <div className="empty-state-copy">
+      <p className="empty-state-eyebrow"><span aria-hidden="true">{isFiltered ? "↺" : mark}</span>{isFiltered ? "Busca sem correspondência" : eyebrow}</p>
+      <h3>{resolvedTitle}</h3>
+      <p>{resolvedDescription}</p>
+      <div className="empty-state-actions">
+        {isFiltered && onClear && <button type="button" className="primary-button" onClick={onClear}>Limpar filtros</button>}
+        {action && onAction && <button type="button" className={isFiltered ? "secondary-button" : "primary-button"} onClick={onAction}>{action}</button>}
+      </div>
+    </div>
+    <div className="empty-state-visual" aria-hidden="true">
+      <span className="empty-state-orbit"><i /></span>
+      <span className="empty-state-sheet empty-state-sheet-back"><i /><i /><i /></span>
+      <span className="empty-state-sheet empty-state-sheet-front"><b>{isFiltered ? "?" : mark}</b><i /><i /><em>{isFiltered ? "⌕" : "+"}</em></span>
+    </div>
+  </section>;
+}
+
+function CompactEmptyState({ mark, title, description, tone = "neutral" }: { mark: string; title: string; description: string; tone?: "neutral" | "success" | "charge" | "tenant" }) {
+  return <div className={`compact-empty-state compact-empty-state-${tone}`}><span aria-hidden="true">{mark}</span><div><strong>{title}</strong><p>{description}</p></div></div>;
 }
 function UnitPills({ values }: { values: string[] }) { return <div className="tag-list">{values.map((value) => <span key={value}>{value}</span>)}</div>; }
 function tenantInitials(name: string) {
@@ -905,7 +926,7 @@ function DashboardPage({ charges, negotiations, expenses, properties, units, con
     </section>
     <article className="dashboard-panel attention-panel financial-attention dashboard-priorities-first dashboard-priority-center">
       <header className="dashboard-panel-header"><div><p className="eyebrow">Central de prioridades</p><h2>Valores que exigem atenção</h2><span>{priorityValue ? `${brl.format(priorityValue)} concentrados em pendências financeiras` : "Nenhuma pendência crítica no momento"}</span></div><span className="attention-count">{overdueCharges.length + overdueExpenses.length + partialCharges.length}</span></header>
-      <div className="attention-list">{overdueCharges.map((charge) => <button type="button" key={charge.id} onClick={() => onNavigate("Cobranças", "Vencida")}><i className="attention-danger" /><span><strong>{charge.tenant}</strong><small>{charge.id} · cobrança vencida</small></span><b>{brl.format(chargeBalance(charge))}</b></button>)}{overdueExpenses.map((expense) => <button type="button" key={expense.id} onClick={() => onNavigate("Despesas", "Vencido")}><i className="attention-danger" /><span><strong>{expense.supplier}</strong><small>{expense.id} · despesa vencida</small></span><b>{brl.format(expense.amount)}</b></button>)}{partialCharges.map((charge) => <button type="button" key={charge.id} onClick={() => onNavigate("Cobranças", "Parcial")}><i className="attention-warning" /><span><strong>{charge.tenant}</strong><small>{charge.id} · baixa parcial</small></span><b>{brl.format(chargeBalance(charge))}</b></button>)}</div>
+      <div className="attention-list">{overdueCharges.map((charge) => <button type="button" key={charge.id} onClick={() => onNavigate("Cobranças", "Vencida")}><i className="attention-danger" /><span><strong>{charge.tenant}</strong><small>{charge.id} · cobrança vencida</small></span><b>{brl.format(chargeBalance(charge))}</b></button>)}{overdueExpenses.map((expense) => <button type="button" key={expense.id} onClick={() => onNavigate("Despesas", "Vencido")}><i className="attention-danger" /><span><strong>{expense.supplier}</strong><small>{expense.id} · despesa vencida</small></span><b>{brl.format(expense.amount)}</b></button>)}{partialCharges.map((charge) => <button type="button" key={charge.id} onClick={() => onNavigate("Cobranças", "Parcial")}><i className="attention-warning" /><span><strong>{charge.tenant}</strong><small>{charge.id} · baixa parcial</small></span><b>{brl.format(chargeBalance(charge))}</b></button>)}{overdueCharges.length + overdueExpenses.length + partialCharges.length === 0 && <CompactEmptyState mark="✓" tone="success" title="Operação sem urgências" description="Novas pendências financeiras aparecerão aqui em ordem de prioridade." />}</div>
     </article>
     <section className="dashboard-domain dashboard-domain-operation" aria-labelledby="dashboard-operation-title">
       <header className="dashboard-domain-header"><span className="dashboard-domain-index" aria-hidden="true">01</span><div><p>Operação patrimonial</p><h2 id="dashboard-operation-title">Estrutura, contratos e ocupação</h2><small>Acompanhe o uso das unidades e a estrutura locável.</small></div><b>OPERAÇÃO</b></header>
@@ -917,9 +938,9 @@ function DashboardPage({ charges, negotiations, expenses, properties, units, con
         </section>
         <section className="dashboard-grid dashboard-grid-operation"><article className="dashboard-panel occupancy-panel">
           <header className="dashboard-panel-header"><div><p className="eyebrow">Desempenho operacional</p><h2>Ocupação por carteira</h2></div><span className="panel-meta">{availableUnits} unidades disponíveis</span></header>
-          <div className="occupancy-list">{portfolios.map((row) => <div className="occupancy-row" key={row.portfolio}><div><strong>{row.portfolio}</strong><span>{row.occupied} de {row.total} unidades</span></div><div className="occupancy-track" role="progressbar" aria-valuenow={row.rate} aria-valuemin={0} aria-valuemax={100} aria-label={`Ocupação de ${row.portfolio}`}><i style={{ width: `${row.rate}%` }} /></div><b>{row.rate}%</b></div>)}</div>
+          <div className="occupancy-list">{portfolios.map((row) => <div className="occupancy-row" key={row.portfolio}><div><strong>{row.portfolio}</strong><span>{row.occupied} de {row.total} unidades</span></div><div className="occupancy-track" role="progressbar" aria-valuenow={row.rate} aria-valuemin={0} aria-valuemax={100} aria-label={`Ocupação de ${row.portfolio}`}><i style={{ width: `${row.rate}%` }} /></div><b>{row.rate}%</b></div>)}{portfolios.length === 0 && <CompactEmptyState mark="OP" title="Ocupação ainda sem dados" description="Cadastre carteiras e unidades para formar este panorama operacional." />}</div>
           <button type="button" className="panel-link" onClick={() => onNavigate("Unidades")}>Ver todas as unidades <span aria-hidden="true">→</span></button>
-        </article>{featuredAvailability && featuredProperty && <article className="dashboard-property-spotlight"><img src={propertyCoverImages[featuredProperty.id] ?? fallbackPropertyCover} alt={`Fachada de ${featuredProperty.name}`} width="720" height="520" /><div className="dashboard-property-spotlight-top"><span>Oportunidade do patrimônio</span><b>{featuredAvailability.units.length} {featuredAvailability.units.length === 1 ? "unidade disponível" : "unidades disponíveis"}</b></div><div className="dashboard-property-spotlight-copy"><span>{featuredProperty.portfolio}</span><h2>{featuredProperty.name}</h2><p>{featuredProperty.address}</p><div>{featuredAvailability.units.map((unit) => <b key={unit.id}>{unit.name} · {decimal.format(unit.area)} m²</b>)}</div><button type="button" onClick={() => onNavigate("Unidades")}>Explorar disponibilidade <span aria-hidden="true">→</span></button></div></article>}</section>
+        </article>{featuredAvailability && featuredProperty ? <article className="dashboard-property-spotlight"><img src={propertyCoverImages[featuredProperty.id] ?? fallbackPropertyCover} alt={`Fachada de ${featuredProperty.name}`} width="720" height="520" /><div className="dashboard-property-spotlight-top"><span>Oportunidade do patrimônio</span><b>{featuredAvailability.units.length} {featuredAvailability.units.length === 1 ? "unidade disponível" : "unidades disponíveis"}</b></div><div className="dashboard-property-spotlight-copy"><span>{featuredProperty.portfolio}</span><h2>{featuredProperty.name}</h2><p>{featuredProperty.address}</p><div>{featuredAvailability.units.map((unit) => <b key={unit.id}>{unit.name} · {decimal.format(unit.area)} m²</b>)}</div><button type="button" onClick={() => onNavigate("Unidades")}>Explorar disponibilidade <span aria-hidden="true">→</span></button></div></article> : <article className="dashboard-availability-empty"><CompactEmptyState mark="✓" tone="success" title="Patrimônio totalmente ocupado" description="Quando uma unidade ficar disponível, ela ganhará destaque visual neste espaço." /></article>}</section>
       </div>
     </section>
     <section className="dashboard-domain dashboard-domain-financial" aria-labelledby="dashboard-financial-title">
@@ -936,7 +957,7 @@ function DashboardPage({ charges, negotiations, expenses, properties, units, con
             <div className="competence-chart" role="img" aria-label="Comparação entre valores previstos e recebidos por competência"><div className="chart-scale" aria-hidden="true"><span>{brl.format(monthlyMax)}</span><span>{brl.format(monthlyMax / 2)}</span><span>R$ 0</span></div><div className="chart-plot">{monthlyRows.map((row) => <div className="chart-group" key={row.competence} aria-label={`${row.competence}: previsto ${brl.format(row.billed)}, recebido ${brl.format(row.received)}`}><div className="chart-bars"><i className="chart-bar chart-bar-billed" style={{ "--bar-height": `${(row.billed / monthlyMax) * 100}%` } as CSSProperties} /><i className="chart-bar chart-bar-received" style={{ "--bar-height": `${(row.received / monthlyMax) * 100}%` } as CSSProperties} /></div><strong>{row.competence}</strong></div>)}</div></div>
             <footer className="dashboard-panel-footer"><span>Total previsto <strong>{brl.format(charges.reduce((sum, charge) => sum + chargeTotal(charge), 0))}</strong></span><span>Total recebido <strong>{brl.format(charges.reduce((sum, charge) => sum + receivedTotal(charge), 0))}</strong></span></footer>
           </article>
-          <article className="dashboard-panel dashboard-status-panel"><header className="dashboard-panel-header"><div><p className="eyebrow">Carteira de cobranças</p><h2>Situação atual</h2></div></header><div className="status-overview"><div className="status-donut" style={{ background: donutStops.length ? `conic-gradient(${donutStops.join(",")})` : "#e5e9ef" }} role="img" aria-label={`Distribuição de ${charges.length} cobranças por situação`}><span><strong>{openCharges.length}</strong><small>em aberto</small></span></div><div className="status-breakdown">{statusRows.filter((row) => row.count > 0).map((row) => <button type="button" key={row.status} onClick={() => onNavigate("Cobranças", row.status)}><i style={{ background: statusColors[row.status] }} /><span>{row.status}</span><strong>{row.count}</strong></button>)}</div></div></article>
+          <article className="dashboard-panel dashboard-status-panel"><header className="dashboard-panel-header"><div><p className="eyebrow">Carteira de cobranças</p><h2>Situação atual</h2></div></header><div className="status-overview"><div className="status-donut" style={{ background: donutStops.length ? `conic-gradient(${donutStops.join(",")})` : "#e5e9ef" }} role="img" aria-label={`Distribuição de ${charges.length} cobranças por situação`}><span><strong>{openCharges.length}</strong><small>em aberto</small></span></div><div className="status-breakdown">{statusRows.filter((row) => row.count > 0).map((row) => <button type="button" key={row.status} onClick={() => onNavigate("Cobranças", row.status)}><i style={{ background: statusColors[row.status] }} /><span>{row.status}</span><strong>{row.count}</strong></button>)}{charges.length === 0 && <CompactEmptyState mark="CO" tone="charge" title="Sem cobranças no período" description="A distribuição por situação será formada após a primeira competência." />}</div></div></article>
         </section>
       </div>
     </section>
@@ -954,6 +975,8 @@ function ChargesPage({ charges: rows, summaryCharges, negotiations, total, searc
   const overdueBalance = pendingCharges.filter((charge) => charge.status === "Vencida").reduce((sum, charge) => sum + operationalChargeBalance(charge, negotiations[charge.id]), 0);
   const upcomingBalance = pendingCharges.filter((charge) => charge.status === "Próxima").reduce((sum, charge) => sum + operationalChargeBalance(charge, negotiations[charge.id]), 0);
   const negotiatedBalance = pendingCharges.filter((charge) => charge.status === "Negociada").reduce((sum, charge) => sum + operationalChargeBalance(charge, negotiations[charge.id]), 0);
+  const hasChargeFilters = Boolean(search.trim() || portfolioFilter !== "Todas as carteiras" || statusFilter !== "Todas");
+  const clearChargeFilters = () => { setSearch(""); setPortfolioFilter("Todas as carteiras"); setStatusFilter("Todas"); };
 
   return <>
     <PageHeading eyebrow="Gestão de recebíveis" title="Cobranças" description="Priorize valores em risco, acompanhe acordos e registre recebimentos por competência." action="Nova cobrança" onAction={onNew} />
@@ -979,7 +1002,7 @@ function ChargesPage({ charges: rows, summaryCharges, negotiations, total, searc
           <span className="charge-ledger-values"><span><small>Total previsto</small><b>{brl.format(totalValue)}</b></span><span><small>{negotiations[charge.id] ? "Saldo acordado" : "Saldo atual"}</small><strong>{brl.format(balanceValue)}</strong></span><i aria-hidden="true"><b style={{ width: `${receivedRate}%` }} /></i></span>
           <span className="charge-ledger-arrow" aria-hidden="true">→</span>
         </button>;
-      })}</div> : <EmptyState entity="cobrança" />}
+      })}</div> : <EmptyState filtered={hasChargeFilters} entity="cobrança" mark="CO" tone="charge" eyebrow="Primeira competência" title="Transforme contratos em recebíveis" description="Crie a primeira cobrança para acompanhar vencimentos, baixas e negociações em um único fluxo." action="Nova cobrança" onAction={onNew} onClear={clearChargeFilters} />}
     </TableSection>
   </>;
 }
@@ -1064,7 +1087,7 @@ function ExpensesPage({ rows, total, categories, search, setSearch, statusFilter
           <span className="expense-ledger-value"><small>Valor da despesa</small><strong>{brl.format(expense.amount)}</strong><span>{expense.status === "Pago" ? "Compromisso quitado" : "Pagamento pendente"}</span></span>
           <span className="expense-ledger-arrow" aria-hidden="true">→</span>
         </button>;
-      })}</div> : <EmptyState entity="despesa" />}
+      })}</div> : <EmptyState filtered={hasExpenseFilters} entity="despesa" mark="DE" tone="expense" eyebrow="Controle financeiro" title="Registre o primeiro compromisso" description="Inclua uma despesa para antecipar vencimentos e acompanhar o ciclo de pagamentos da operação." action="Nova despesa" onAction={onNew} onClear={clearExpenseFilters} />}
     </TableSection>
   </>;
 }
@@ -1117,7 +1140,7 @@ function PortfoliosPage({ portfolios, properties, units, search, setSearch, onNe
           <div className="portfolio-property-list"><span>Empreendimentos</span><div>{portfolioProperties.slice(0, 3).map((property) => <small key={property.id}>{property.name}</small>)}{portfolioProperties.length > 3 && <small>+{portfolioProperties.length - 3}</small>}{portfolioProperties.length === 0 && <small>Nenhum imóvel vinculado</small>}</div></div>
         </div>
       </article>;
-    })}</section> : <div className="portfolio-empty-result"><EmptyState /></div>}
+    })}</section> : <div className="portfolio-empty-result"><EmptyState filtered={Boolean(search.trim())} entity="carteira" mark="CA" tone="portfolio" eyebrow="Estrutura patrimonial" title="Comece organizando o patrimônio" description="Crie uma carteira para reunir titularidade, imóveis e indicadores de ocupação em uma visão consolidada." action="Nova carteira" onAction={onNew} onClear={() => setSearch("")} /></div>}
 
     {rows.length > 0 && <details className="portfolio-table-view">
       <summary><span><strong>Visão cadastral</strong><small>Consulte titular, documento e totais em formato de tabela.</small></span><b aria-hidden="true">+</b></summary>
@@ -1168,7 +1191,7 @@ function PropertiesPage({ properties, units, search, setSearch, portfolioFilter,
             </span>
           </span>
         </button>;
-      })}</div> : <EmptyState entity="imóvel" />}
+      })}</div> : <EmptyState filtered={Boolean(search.trim() || portfolioFilter !== "Todas as carteiras")} entity="imóvel" mark="IM" tone="property" eyebrow="Ativo imobiliário" title="Dê forma visual ao patrimônio" description="Cadastre o primeiro empreendimento para organizar localização, imagens, documentos e unidades vinculadas." action="Novo imóvel" onAction={onNew} onClear={() => { setSearch(""); setPortfolioFilter("Todas as carteiras"); }} />}
     </TableSection>
   </>;
 }
@@ -1211,7 +1234,7 @@ function UnitsPage({ units, properties, search, setSearch, portfolioFilter, setP
           </button>
           <footer><span>{unit.occupied ? "Espaço em uso" : "Pronta para locação"}</span><button type="button" onClick={() => onEdit(unit)}>Editar</button></footer>
         </article>;
-      })}</div> : <EmptyState entity="unidade" />}
+      })}</div> : <EmptyState filtered={Boolean(search.trim() || portfolioFilter !== "Todas as carteiras")} entity="unidade" mark="UN" tone="unit" eyebrow="Mapa de disponibilidade" title="Mapeie os espaços locáveis" description="Adicione unidades para visualizar metragem, ocupação e disponibilidade dentro de cada empreendimento." action="Nova unidade" onAction={onNew} onClear={() => { setSearch(""); setPortfolioFilter("Todas as carteiras"); }} />}
     </TableSection>
   </>;
 }
@@ -1259,7 +1282,7 @@ function TenantsPage({ tenants, contracts, charges, search, setSearch, onNew, on
           </button>
           <footer><span>{mainContract ? `${tenantContracts.length} ${tenantContracts.length === 1 ? "contrato ativo" : "contratos ativos"}` : "Relacionamento em prospecção"}</span><button type="button" onClick={() => onEdit(tenant)}>Editar cadastro</button></footer>
         </article>;
-      })}</div> : <EmptyState filtered={Boolean(search || relationshipFilter !== "Todos")} entity="locatário" />}
+      })}</div> : <EmptyState filtered={Boolean(search.trim() || relationshipFilter !== "Todos")} entity="locatário" mark="LO" tone="tenant" eyebrow="Base de relacionamentos" title="Cadastre o primeiro locatário" description="Construa uma base pronta para conectar pessoas e empresas aos contratos e à operação financeira." action="Novo locatário" onAction={onNew} onClear={() => { setSearch(""); setRelationshipFilter("Todos"); }} />}
     </TableSection>
   </>;
 }
@@ -1292,7 +1315,7 @@ function ContractsPage({ charges, search, setSearch, portfolioFilter, setPortfol
           <span className="contract-card-period"><span><i aria-hidden="true" /><b>{startDate}</b></span><i aria-hidden="true" /><span><i aria-hidden="true" /><b>{endDate}</b></span></span>
           <span className="contract-card-footer"><span>Reajuste em {contract.adjustment}</span><b>{contractCharges} {contractCharges === 1 ? "cobrança" : "cobranças"} <i aria-hidden="true">→</i></b></span>
         </button>;
-      })}</div> : <EmptyState entity="contrato" />}
+      })}</div> : <EmptyState filtered={Boolean(search.trim() || portfolioFilter !== "Todas as carteiras")} entity="contrato" mark="CT" tone="contract" eyebrow="Instrumento de locação" title="Conecte patrimônio e locatário" description="Crie o primeiro contrato para definir unidades, vigência, valores e a composição das futuras cobranças." action="Novo contrato" onAction={onNew} onClear={() => { setSearch(""); setPortfolioFilter("Todas as carteiras"); }} />}
     </TableSection>
     <InfoNote text="Os itens e valores ficam previstos no contrato, enquanto cada competência continua sendo incluída manualmente em Cobranças." />
   </>;
@@ -1386,7 +1409,7 @@ function RegistryDetailDrawer({ detail, properties, units, contracts, charges, d
         <div className={tenantAttentionCharges.length ? "tenant-detail-attention" : ""}><span>Saldo em aberto</span><strong>{brl.format(tenantOpenBalance)}</strong><small>{tenantAttentionCharges.length ? `${tenantAttentionCharges.length} cobrança exige atenção` : `${tenantOpenCharges.length} cobranças abertas`}</small></div>
       </section>
       {tenantContracts.length ? <section className="tenant-contract-panel" aria-labelledby="tenant-contracts-title"><header><div><span>Relacionamentos ativos</span><h3 id="tenant-contracts-title">Contratos e ocupação</h3></div><b>{tenantContracts.length}</b></header><div>{tenantContracts.map((contract) => <article key={contract.id}><span className="tenant-contract-id"><small>Contrato</small><strong>{contract.id}</strong></span><span><small>Empreendimento</small><strong>{contract.property}</strong></span><span><small>Aluguel base</small><strong>{brl.format(contract.rent)}</strong></span><footer><span>{contract.units.join(" · ")}</span><span>Vence dia {contract.due}</span></footer></article>)}</div></section> : <aside className="tenant-unlinked-note"><span aria-hidden="true">+</span><div><strong>Pronto para um novo contrato</strong><p>Este locatário está cadastrado, mas ainda não possui uma unidade vinculada.</p></div></aside>}
-      <section className="tenant-financial-panel" aria-labelledby="tenant-financial-title"><header><div><span>Saúde financeira</span><h3 id="tenant-financial-title">Cobranças do relacionamento</h3></div><b className={tenantAttentionCharges.length ? "has-attention" : ""}>{tenantAttentionCharges.length ? "Requer atenção" : tenantCharges.length ? "Em dia" : "Sem histórico"}</b></header>{tenantCharges.length ? <div>{tenantCharges.slice(0, 4).map((charge) => <span key={charge.id}><StatusBadge status={charge.status} /><strong>{charge.id}</strong><small>{charge.competence}</small><b>{brl.format(chargeBalance(charge))}</b></span>)}</div> : <p>Nenhuma cobrança foi gerada para este locatário.</p>}</section>
+      <section className="tenant-financial-panel" aria-labelledby="tenant-financial-title"><header><div><span>Saúde financeira</span><h3 id="tenant-financial-title">Cobranças do relacionamento</h3></div><b className={tenantAttentionCharges.length ? "has-attention" : ""}>{tenantAttentionCharges.length ? "Requer atenção" : tenantCharges.length ? "Em dia" : "Sem histórico"}</b></header>{tenantCharges.length ? <div>{tenantCharges.slice(0, 4).map((charge) => <span key={charge.id}><StatusBadge status={charge.status} /><strong>{charge.id}</strong><small>{charge.competence}</small><b>{brl.format(chargeBalance(charge))}</b></span>)}</div> : <CompactEmptyState mark="CO" tone="tenant" title="Relacionamento sem histórico financeiro" description="As cobranças vinculadas a este locatário aparecerão aqui por competência." />}</section>
       <div className="tenant-detail-section-title"><span>Dados cadastrais</span><small>Identificação do relacionamento</small></div>
     </>}
     <dl className="detail-list registry-detail-list">{fields.map((field) => <div key={field.label}><dt>{field.label}</dt><dd>{field.value}</dd></div>)}</dl>
@@ -1418,7 +1441,7 @@ function ChargeDrawer({ charge, negotiation, onClose, onReceipt, onNegotiate }: 
     {negotiation && <section className="negotiation-card" aria-labelledby="negotiation-card-title"><div className="section-title"><h3 id="negotiation-card-title">Acordo de negociação</h3><span>{negotiation.id}</span></div><div className="negotiation-card-values"><span>Total acordado<strong>{brl.format(negotiation.negotiatedTotal)}</strong></span><span>Entrada prevista<strong>{brl.format(negotiation.downPayment)}</strong></span><span>Parcelamento<strong>{negotiation.installmentCount}× de {brl.format(negotiation.schedule[0]?.amount ?? 0)}</strong></span></div><dl className="negotiation-card-meta"><div><dt>Motivo</dt><dd>{negotiation.reason}</dd></div><div><dt>Forma de pagamento</dt><dd>{negotiation.paymentMethod}</dd></div><div><dt>Período</dt><dd>{formatExpenseDate(negotiation.firstDueDate)}{lastInstallment && negotiation.installmentCount > 1 ? ` — ${formatExpenseDate(lastInstallment.dueDate)}` : ""}</dd></div></dl>{negotiation.notes && <p>{negotiation.notes}</p>}</section>}
     <section className="charge-detail-context" aria-labelledby="charge-context-title"><header><div><span>Origem da cobrança</span><h3 id="charge-context-title">Vínculos e competência</h3></div><b>{charge.competence}</b></header><div><span>Contrato<strong>{charge.contract}</strong></span><span>Carteira<strong>{charge.portfolio}</strong></span><span>Locatário<strong>{charge.tenant}</strong></span><span>Imóvel<strong>{charge.property}</strong></span></div><footer>{charge.units.map((unit) => <span key={unit}>{unit}</span>)}</footer></section>
     <section className="charge-items-block"><div className="section-title"><h3>Composição da cobrança</h3><span>{charge.items.length} itens</span></div><div className="charge-items">{charge.items.map((item) => <article className="charge-item" key={`${item.name}-${item.dueDate}`}><div className="charge-item-head"><strong>{item.name}</strong><span>Vence {item.dueDate}</span></div><div className="charge-item-values"><span>Previsto <b>{brl.format(item.amount)}</b></span><span>Recebido <b>{brl.format(item.received)}</b></span><span>Saldo <b>{brl.format(item.amount - item.received)}</b></span></div></article>)}</div></section>
-    <section className="history-block"><div className="section-title"><h3>Histórico de recebimentos</h3><span>{receivedTotal(charge) ? "1 registro" : "Sem registros"}</span></div>{receivedTotal(charge) ? <div className="history-entry"><i /><div><strong>{brl.format(receivedTotal(charge))}</strong><span>10 ago 2026 · Baixa manual distribuída por item</span></div></div> : <div className="history-empty">Nenhuma baixa registrada nesta cobrança.</div>}</section>
+    <section className="history-block"><div className="section-title"><h3>Histórico de recebimentos</h3><span>{receivedTotal(charge) ? "1 registro" : "Sem registros"}</span></div>{receivedTotal(charge) ? <div className="history-entry"><i /><div><strong>{brl.format(receivedTotal(charge))}</strong><span>10 ago 2026 · Baixa manual distribuída por item</span></div></div> : <CompactEmptyState mark="↓" tone="charge" title="Aguardando a primeira baixa" description="Recebimentos parciais ou integrais serão organizados aqui em ordem cronológica." />}</section>
   </div><footer className="drawer-footer charge-drawer-footer charge-detail-footer"><button type="button" className="secondary-button drawer-footer-close" onClick={onClose}>Fechar</button>{charge.status !== "Recebida" && <><button type="button" className="secondary-button negotiation-action-button" onClick={onNegotiate}>{negotiation ? "Editar negociação" : "Negociar cobrança"}</button><button type="button" className="primary-button" onClick={onReceipt}>Registrar recebimento</button></>}</footer></aside></div>;
 }
 
