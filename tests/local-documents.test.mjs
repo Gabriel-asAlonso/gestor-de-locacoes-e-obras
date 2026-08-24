@@ -3,7 +3,11 @@ import test from "node:test";
 
 import {
   MAX_DOCUMENT_SIZE_BYTES,
+  REGISTRY_DOCUMENT_TOPICS,
+  countCategorizedDocuments,
+  createEmptyCategorizedDocuments,
   documentFingerprint,
+  flattenCategorizedDocuments,
   formatDocumentSize,
   isImageDocument,
   validateDocumentFile,
@@ -36,4 +40,23 @@ test("separa imagens dos demais documentos para a galeria", () => {
   assert.equal(isImageDocument({ extension: "png" }), true);
   assert.equal(isImageDocument({ extension: "pdf" }), false);
   assert.equal(isImageDocument({ extension: "docx" }), false);
+});
+
+test("organiza anexos nos seis tópicos de imóveis e unidades", () => {
+  const categorized = createEmptyCategorizedDocuments();
+  const contract = { id: "doc-1" };
+  const photo = { id: "doc-2" };
+  categorized["property-contract"] = [contract];
+  categorized["property-photos"] = [photo];
+
+  assert.deepEqual(REGISTRY_DOCUMENT_TOPICS.map((topic) => topic.label), [
+    "Contrato do imóvel",
+    "Documentação do imóvel",
+    "Fotos do imóvel",
+    "Vistoria — entrega do imóvel",
+    "Manutenções",
+    "Contrato de locação",
+  ]);
+  assert.equal(countCategorizedDocuments(categorized), 2);
+  assert.deepEqual(flattenCategorizedDocuments(categorized), [contract, photo]);
 });

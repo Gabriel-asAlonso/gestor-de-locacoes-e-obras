@@ -10,8 +10,15 @@ import {
   suggestedAccountingReportFilename,
 } from "./accounting-report";
 import type { AccountingReportDownload } from "./accounting-report-workbook";
-import { DocumentCollection, DocumentManager } from "./document-manager";
-import { revokeDocumentUrls, type LocalDocument } from "./local-documents";
+import { CategorizedDocumentCollection, CategorizedDocumentManager, DocumentCollection, DocumentManager } from "./document-manager";
+import {
+  countCategorizedDocuments,
+  createEmptyCategorizedDocuments,
+  flattenCategorizedDocuments,
+  revokeDocumentUrls,
+  type CategorizedDocuments,
+  type LocalDocument,
+} from "./local-documents";
 
 type Status = "Vencida" | "Em aberto" | "Próxima" | "Parcial" | "Recebida";
 type ExpenseStatus = "Pendente" | "Pago" | "Vencido";
@@ -19,6 +26,7 @@ type Page = "Visão geral" | "Carteiras" | "Imóveis" | "Unidades" | "Locatário
 type FormKind = "portfolio" | "property" | "unit" | "tenant" | "contract" | "charge" | "expense" | null;
 type ContentState = "ready" | "loading" | "error";
 type ToastMessage = { message: string; reference: string } | null;
+type FormDocuments = LocalDocument[] | CategorizedDocuments;
 type Portfolio = { id: string; name: string; holder: string; document: string; properties: number; units: number };
 type Property = { id: string; portfolio: string; name: string; address: string; units: number };
 type Unit = { id: string; property: string; portfolio: string; name: string; area: number; occupied: boolean };
@@ -401,6 +409,8 @@ export default function Home() {
   const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
   const [documentsByOwner, setDocumentsByOwner] = useState<Record<string, LocalDocument[]>>({});
   const documentsByOwnerRef = useRef(documentsByOwner);
+  const [categorizedDocumentsByOwner, setCategorizedDocumentsByOwner] = useState<Record<string, CategorizedDocuments>>({});
+  const categorizedDocumentsByOwnerRef = useRef(categorizedDocumentsByOwner);
   const [expenseRecords, setExpenseRecords] = useState<Expense[]>(expenses);
   const [toast, setToast] = useState<ToastMessage>(null);
   const [contentState, setContentState] = useState<ContentState>("ready");
@@ -409,7 +419,9 @@ export default function Home() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
 
   useEffect(() => { documentsByOwnerRef.current = documentsByOwner; }, [documentsByOwner]);
+  useEffect(() => { categorizedDocumentsByOwnerRef.current = categorizedDocumentsByOwner; }, [categorizedDocumentsByOwner]);
   useEffect(() => () => revokeDocumentUrls(Object.values(documentsByOwnerRef.current).flat()), []);
+  useEffect(() => () => revokeDocumentUrls(Object.values(categorizedDocumentsByOwnerRef.current).flatMap(flattenCategorizedDocuments)), []);
 
   useEffect(() => {
     const handleOffline = () => { setOnline(false); setContentState("error"); };
@@ -475,7 +487,7 @@ export default function Home() {
     setSelectedCharge(null);
     notify("Recebimento registrado e distribuído entre os itens.", selectedCharge?.id ?? "COB-DEMO");
   };
-  const saveForm = (data: FormData, documents?: LocalDocument[]) => {
+  const saveForm = (data: FormData, documents?: FormDocuments) => {
     const references: Record<Exclude<FormKind, null>, string> = {
       portfolio: "CAR-DEMO-003", property: "IMO-DEMO-005", unit: "UNI-DEMO-008",
       tenant: "LOC-DEMO-022", contract: "CTR-DEMO-022", charge: "COB-DEMO-0089", expense: "PAG-DEMO",
@@ -561,10 +573,17 @@ export default function Home() {
       }]);
       message = "Despesa cadastrada neste ambiente demonstrativo.";
     }
-    if (documents && (form === "property" || form === "unit" || form === "tenant")) {
+    if (documents && Array.isArray(documents) && form === "tenant") {
       setDocumentsByOwner((current) => {
         const retainedIds = new Set(documents.map((document) => document.id));
         revokeDocumentUrls((current[savedReference] ?? []).filter((document) => !retainedIds.has(document.id)));
+        return { ...current, [savedReference]: documents };
+      });
+    } else if (documents && !Array.isArray(documents) && (form === "property" || form === "unit")) {
+      setCategorizedDocumentsByOwner((current) => {
+        const retainedIds = new Set(flattenCategorizedDocuments(documents).map((document) => document.id));
+        const previousDocuments = current[savedReference] ? flattenCategorizedDocuments(current[savedReference]) : [];
+        revokeDocumentUrls(previousDocuments.filter((document) => !retainedIds.has(document.id)));
         return { ...current, [savedReference]: documents };
       });
     }
@@ -619,7 +638,7 @@ export default function Home() {
     </section>
     {selectedCharge && <ChargeDrawer charge={selectedCharge} onClose={() => setSelectedCharge(null)} onReceipt={() => setReceiptOpen(true)} />}
     {selectedContract && <ContractDrawer contract={selectedContract} onClose={() => setSelectedContract(null)} onCharge={() => { setChargeSourceContract(selectedContract); setSelectedContract(null); setForm("charge"); }} />}
-    {registryDetail && <RegistryDetailDrawer detail={registryDetail} documents={documentsByOwner[registryDetail.record.id] ?? []} onClose={() => setRegistryDetail(null)} onEdit={editRegistryDetail} />}
+    {registryDetail && <RegistryDetailDrawer detail={registryDetail} documents={registryDetail.kind === "tenant" ? documentsByOwner[registryDetail.record.id] ?? [] : []} categorizedDocuments={registryDetail.kind === "property" || registryDetail.kind === "unit" ? categorizedDocumentsByOwner[registryDetail.record.id] ?? createEmptyCategorizedDocuments() : undefined} onClose={() => setRegistryDetail(null)} onEdit={editRegistryDetail} />}
     {selectedExpense && <ExpenseDrawer expense={selectedExpense} onClose={() => setSelectedExpense(null)} onStatusChange={(status, paidIso) => {
       const paidDate = status === "Pago" && paidIso ? formatExpenseDate(paidIso) : null;
       setExpenseRecords((records) => records.map((record) => record.id === selectedExpense.id ? { ...record, status, paidDate } : record));
@@ -628,7 +647,7 @@ export default function Home() {
     }} />}
     {receiptOpen && selectedCharge && <ReceiptModal charge={selectedCharge} onClose={() => setReceiptOpen(false)} onSave={saveReceipt} />}
     {reportOpen && <ReportExportModal initialPortfolio={portfolioFilter} portfolioOptions={portfolioRecords} propertyOptions={propertyRecords} tenantOptions={tenantRecords} chargeOptions={charges} onClose={() => setReportOpen(false)} onExported={(filename) => notify("Relatório contábil gerado e pronto para download.", filename)} />}
-    {form && <EntityForm kind={form} portfolio={form === "portfolio" ? editingPortfolio : null} property={form === "property" ? editingProperty : null} unit={form === "unit" ? editingUnit : null} tenant={form === "tenant" ? editingTenant : null} documents={form === "property" && editingProperty ? documentsByOwner[editingProperty.id] ?? [] : form === "unit" && editingUnit ? documentsByOwner[editingUnit.id] ?? [] : form === "tenant" && editingTenant ? documentsByOwner[editingTenant.id] ?? [] : []} chargeSourceContract={form === "charge" ? chargeSourceContract : null} portfolioOptions={portfolioRecords} propertyOptions={propertyRecords} unitOptions={unitRecords} tenantOptions={tenantRecords} onClose={() => { setForm(null); setEditingPortfolio(null); setEditingProperty(null); setEditingUnit(null); setEditingTenant(null); setChargeSourceContract(null); }} onSave={saveForm} />}
+    {form && <EntityForm kind={form} portfolio={form === "portfolio" ? editingPortfolio : null} property={form === "property" ? editingProperty : null} unit={form === "unit" ? editingUnit : null} tenant={form === "tenant" ? editingTenant : null} documents={form === "tenant" && editingTenant ? documentsByOwner[editingTenant.id] ?? [] : []} categorizedDocuments={form === "property" && editingProperty ? categorizedDocumentsByOwner[editingProperty.id] ?? createEmptyCategorizedDocuments() : form === "unit" && editingUnit ? categorizedDocumentsByOwner[editingUnit.id] ?? createEmptyCategorizedDocuments() : undefined} chargeSourceContract={form === "charge" ? chargeSourceContract : null} portfolioOptions={portfolioRecords} propertyOptions={propertyRecords} unitOptions={unitRecords} tenantOptions={tenantRecords} onClose={() => { setForm(null); setEditingPortfolio(null); setEditingProperty(null); setEditingUnit(null); setEditingTenant(null); setChargeSourceContract(null); }} onSave={saveForm} />}
     {toast && <SuccessToast message={toast} />}
   </main>;
 }
@@ -983,7 +1002,7 @@ function ContractsPage({ search, setSearch, portfolioFilter, setPortfolioFilter,
 
 function InfoNote({ text }: { text: string }) { return <aside className="info-note"><span>i</span><p>{text}</p></aside>; }
 
-function RegistryDetailDrawer({ detail, documents, onClose, onEdit }: { detail: RegistryDetail; documents: LocalDocument[]; onClose: () => void; onEdit: () => void }) {
+function RegistryDetailDrawer({ detail, documents, categorizedDocuments, onClose, onEdit }: { detail: RegistryDetail; documents: LocalDocument[]; categorizedDocuments?: CategorizedDocuments; onClose: () => void; onEdit: () => void }) {
   let eyebrow = "Detalhes do cadastro";
   const title = detail.record.name;
   let fields: Array<{ label: string; value: ReactNode }>;
@@ -1015,9 +1034,11 @@ function RegistryDetailDrawer({ detail, documents, onClose, onEdit }: { detail: 
     ];
   }
 
+  const documentCount = categorizedDocuments ? countCategorizedDocuments(categorizedDocuments) : documents.length;
+
   return <div className="drawer-layer" role="dialog" aria-modal="true" aria-label={`${eyebrow}: ${title}`}><button className="drawer-backdrop" onClick={onClose} /><aside className="drawer wide-drawer registry-detail-drawer"><header className="drawer-header"><div><p className="eyebrow">{eyebrow}</p><h2>{title}</h2></div><button type="button" className="close-button" onClick={onClose} aria-label="Fechar detalhes">×</button></header><div className="drawer-body">
     <dl className="detail-list registry-detail-list">{fields.map((field) => <div key={field.label}><dt>{field.label}</dt><dd>{field.value}</dd></div>)}</dl>
-    <section className="registry-documents" aria-labelledby="registry-documents-title"><div className="section-title"><h3 id="registry-documents-title">Documentos e imagens</h3><span>{documents.length ? `${documents.length} ${documents.length === 1 ? "anexo" : "anexos"}` : "Sem anexos"}</span></div><DocumentCollection documents={documents} emptyDescription="Nenhuma imagem ou arquivo foi anexado a este registro nesta sessão." /></section>
+    <section className="registry-documents" aria-labelledby="registry-documents-title"><div className="section-title"><h3 id="registry-documents-title">{categorizedDocuments ? "Anexos por tópico" : "Documentos e imagens"}</h3><span>{documentCount ? `${documentCount} ${documentCount === 1 ? "anexo" : "anexos"}` : "Sem anexos"}</span></div>{categorizedDocuments ? <CategorizedDocumentCollection documents={categorizedDocuments} /> : <DocumentCollection documents={documents} emptyDescription="Nenhuma imagem ou arquivo foi anexado a este registro nesta sessão." />}</section>
   </div><footer className="drawer-footer"><button type="button" className="secondary-button" onClick={onClose}>Fechar</button><button type="button" className="primary-button" onClick={onEdit}>Editar cadastro</button></footer></aside></div>;
 }
 
@@ -1159,7 +1180,7 @@ function ReceiptModal({ charge, onClose, onSave }: { charge: Charge; onClose: ()
 function ModalHeader({ eyebrow, title, onClose }: { eyebrow: string; title: string; onClose: () => void }) { return <header><div><p className="eyebrow">{eyebrow}</p><h2>{title}</h2></div><button type="button" className="close-button" onClick={onClose}>×</button></header>; }
 function ModalFooter({ onClose, action, pending = false, disabled = false, disabledReason }: { onClose: () => void; action: string; pending?: boolean; disabled?: boolean; disabledReason?: string }) { return <footer><button type="button" className="secondary-button" onClick={onClose} disabled={pending}>Cancelar</button><button className="primary-button" disabled={pending || disabled} aria-busy={pending} title={disabled ? disabledReason : undefined}>{pending ? "Salvando…" : action}</button></footer>; }
 
-function EntityForm({ kind, portfolio, property, unit, tenant, documents: initialDocuments = [], chargeSourceContract, portfolioOptions, propertyOptions, unitOptions, tenantOptions, onClose, onSave }: { kind: Exclude<FormKind, null>; portfolio?: Portfolio | null; property?: Property | null; unit?: Unit | null; tenant?: Tenant | null; documents?: LocalDocument[]; chargeSourceContract?: Contract | null; portfolioOptions: Portfolio[]; propertyOptions: Property[]; unitOptions: Unit[]; tenantOptions: Tenant[]; onClose: () => void; onSave: (data: FormData, documents?: LocalDocument[]) => void }) {
+function EntityForm({ kind, portfolio, property, unit, tenant, documents: initialDocuments = [], categorizedDocuments: initialCategorizedDocuments = createEmptyCategorizedDocuments(), chargeSourceContract, portfolioOptions, propertyOptions, unitOptions, tenantOptions, onClose, onSave }: { kind: Exclude<FormKind, null>; portfolio?: Portfolio | null; property?: Property | null; unit?: Unit | null; tenant?: Tenant | null; documents?: LocalDocument[]; categorizedDocuments?: CategorizedDocuments; chargeSourceContract?: Contract | null; portfolioOptions: Portfolio[]; propertyOptions: Property[]; unitOptions: Unit[]; tenantOptions: Tenant[]; onClose: () => void; onSave: (data: FormData, documents?: FormDocuments) => void }) {
   const initialChargeContract = chargeSourceContract ?? contracts[0];
   const baseConfig = {
     portfolio: ["Estrutura patrimonial", "Nova carteira", "Salvar carteira"], property: ["Estrutura patrimonial", "Novo imóvel", "Salvar imóvel"], unit: ["Estrutura locável", "Nova unidade", "Salvar unidade"], tenant: ["Cadastro essencial", "Novo locatário", "Salvar locatário"], contract: ["Locação", "Novo contrato", "Salvar contrato"], charge: ["Inclusão manual", "Nova cobrança", "Salvar cobrança"], expense: ["Controle financeiro", "Nova despesa", "Salvar despesa"],
@@ -1178,7 +1199,8 @@ function EntityForm({ kind, portfolio, property, unit, tenant, documents: initia
   const [chargeItemsDirty, setChargeItemsDirty] = useState(false);
   const [expenseStatus, setExpenseStatus] = useState<ExpenseStatus>("Pendente");
   const [documents, setDocuments] = useState<LocalDocument[]>(initialDocuments);
-  const initialDocumentIds = useRef(new Set(initialDocuments.map((document) => document.id)));
+  const [categorizedDocuments, setCategorizedDocuments] = useState<CategorizedDocuments>(initialCategorizedDocuments);
+  const initialDocumentIds = useRef(new Set([...initialDocuments, ...flattenCategorizedDocuments(initialCategorizedDocuments)].map((document) => document.id)));
   const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
   const contractProperties = propertyOptions.filter((record) => record.portfolio === contractPortfolio);
@@ -1197,9 +1219,11 @@ function EntityForm({ kind, portfolio, property, unit, tenant, documents: initia
     : chargeItems.some((item) => !/^\d{4}-\d{2}-\d{2}$/.test(item.due) || item.due.slice(0, 7) !== chargeCompetence) ? "Os vencimentos devem ser datas válidas dentro da competência selecionada."
     : "";
   const supportsDocuments = kind === "property" || kind === "unit" || kind === "tenant";
+  const supportsDocumentTopics = kind === "property" || kind === "unit";
   const closeForm = () => {
     if (saving) return;
-    revokeDocumentUrls(documents.filter((document) => !initialDocumentIds.current.has(document.id)));
+    const currentDocuments = supportsDocumentTopics ? flattenCategorizedDocuments(categorizedDocuments) : documents;
+    revokeDocumentUrls(currentDocuments.filter((document) => !initialDocumentIds.current.has(document.id)));
     onClose();
   };
   const handleDocumentRemoval = (document: LocalDocument) => {
@@ -1274,7 +1298,7 @@ function EntityForm({ kind, portfolio, property, unit, tenant, documents: initia
     setFormError("");
     setSaving(true);
     const data = new FormData(event.currentTarget);
-    window.setTimeout(() => onSave(data, supportsDocuments ? documents : undefined), 450);
+    window.setTimeout(() => onSave(data, supportsDocumentTopics ? categorizedDocuments : supportsDocuments ? documents : undefined), 450);
   };
   const clearFieldError = (event: FormEvent<HTMLFormElement>) => {
     const field = event.target;
@@ -1289,7 +1313,8 @@ function EntityForm({ kind, portfolio, property, unit, tenant, documents: initia
     {kind === "property" && <><label>Carteira<select name="propertyPortfolio" defaultValue={property?.portfolio ?? portfolioOptions[0].name} required>{portfolioOptions.map((portfolio) => <option key={portfolio.id}>{portfolio.name}</option>)}</select></label><label>Nome do imóvel<input name="propertyName" placeholder="Ex.: Centro Empresarial" defaultValue={property?.name ?? ""} required /></label><label className="full-field">Endereço principal<input name="propertyAddress" placeholder="Logradouro, número e bairro" defaultValue={property?.address ?? ""} required /></label></>}
     {kind === "unit" && <><label>Imóvel<select name="unitProperty" defaultValue={unit?.property ?? propertyOptions[0].name} required>{propertyOptions.map((property) => <option key={property.id}>{property.name}</option>)}</select></label><label>Identificação da unidade<input name="unitName" placeholder="Ex.: Sala 101" defaultValue={unit?.name ?? ""} required /></label><label>Área privativa<span className="input-with-suffix"><input name="unitArea" type="number" inputMode="decimal" min="0.01" step="0.01" placeholder="Ex.: 42" defaultValue={unit?.area ?? ""} required /><span className="input-suffix" aria-hidden="true">m²</span></span></label><label>Status inicial<select name="unitStatus" defaultValue={unit?.occupied ? "Ocupada" : "Disponível"} disabled={Boolean(unit?.occupied)} aria-describedby={unit?.occupied ? "unit-occupancy-help" : undefined}><option>Disponível</option><option>Ocupada</option></select>{unit?.occupied && <small id="unit-occupancy-help" className="field-help">Ocupação definida por contrato ativo.</small>}</label></>}
     {kind === "tenant" && <>{tenant && <div className="edit-record-banner full-field"><span>Modo de edição</span><strong>ID {tenant.id}</strong></div>}<label>Tipo<select name="tenantType" value={tenantType} onChange={(event) => { const nextType = event.target.value as Tenant["type"]; setTenantType(nextType); setTenantDocument(maskTenantDocument(tenantDocument, nextType)); setTenantDocumentError(""); }} required><option>PJ</option><option>PF</option></select></label><label>{tenantType === "PJ" ? "Razão social" : "Nome completo"}<input name="tenantName" placeholder={tenantType === "PJ" ? "Empresa locatária" : "Pessoa locatária"} defaultValue={tenant?.name ?? ""} required /></label><label className="full-field">{tenantType === "PJ" ? "CNPJ" : "CPF"}<input name="tenantDocument" inputMode="numeric" autoComplete="off" maxLength={tenantType === "PJ" ? 18 : 14} placeholder={tenantType === "PJ" ? "00.000.000/0000-00" : "000.000.000-00"} value={tenantDocument} onChange={(event) => { const masked = maskTenantDocument(event.target.value, tenantType); setTenantDocument(masked); const complete = documentDigits(masked).length === (tenantType === "PJ" ? 14 : 11); setTenantDocumentError(complete ? getTenantDocumentError(masked, tenantType) : ""); }} onBlur={() => tenantDocument && setTenantDocumentError(getTenantDocumentError(tenantDocument, tenantType))} aria-invalid={tenantDocumentError ? "true" : undefined} aria-describedby="tenant-document-help" required /><small id="tenant-document-help" className={tenantDocumentError ? "field-error" : "field-help"} role={tenantDocumentError ? "alert" : undefined}>{tenantDocumentError || `A máscara e os dígitos do ${tenantType === "PJ" ? "CNPJ" : "CPF"} serão verificados.`}</small></label></>}
-    {supportsDocuments && <DocumentManager documents={documents} onChange={setDocuments} onRemove={handleDocumentRemoval} />}
+    {supportsDocumentTopics && <CategorizedDocumentManager documents={categorizedDocuments} onChange={setCategorizedDocuments} onRemove={handleDocumentRemoval} />}
+    {kind === "tenant" && <DocumentManager documents={documents} onChange={setDocuments} onRemove={handleDocumentRemoval} />}
     {kind === "expense" && <>
       <label>Fornecedor / beneficiário<input name="expenseSupplier" placeholder="Ex.: Energia Azul Distribuição" required /></label>
       <label>Categoria<input name="expenseCategory" list="expense-category-options" placeholder="Ex.: Utilidades" required /><datalist id="expense-category-options">{Array.from(new Set(expenses.map((expense) => expense.category))).map((category) => <option value={category} key={category} />)}</datalist></label>

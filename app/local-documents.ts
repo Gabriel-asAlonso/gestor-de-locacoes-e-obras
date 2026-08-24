@@ -13,6 +13,54 @@ export type LocalDocument = {
   objectUrl: string;
 };
 
+export const REGISTRY_DOCUMENT_TOPICS = [
+  {
+    id: "property-contract",
+    label: "Contrato do imóvel",
+    description: "Instrumentos de aquisição, administração ou cessão do imóvel.",
+  },
+  {
+    id: "property-documentation",
+    label: "Documentação do imóvel",
+    description: "Matrícula, escritura, certidões, IPTU, plantas e documentos cadastrais.",
+  },
+  {
+    id: "property-photos",
+    label: "Fotos do imóvel",
+    description: "Registros da fachada, ambientes, áreas comuns e demais espaços.",
+  },
+  {
+    id: "handover-inspection",
+    label: "Vistoria — entrega do imóvel",
+    description: "Laudos, termos e imagens produzidos na vistoria de entrega.",
+  },
+  {
+    id: "maintenance",
+    label: "Manutenções",
+    description: "Ordens de serviço, orçamentos, notas, comprovantes e fotos.",
+  },
+  {
+    id: "lease-contract",
+    label: "Contrato de locação",
+    description: "Contrato de locação, aditivos, garantias e documentos relacionados.",
+  },
+] as const;
+
+export type RegistryDocumentTopicId = (typeof REGISTRY_DOCUMENT_TOPICS)[number]["id"];
+export type CategorizedDocuments = Record<RegistryDocumentTopicId, LocalDocument[]>;
+
+export function createEmptyCategorizedDocuments(): CategorizedDocuments {
+  return Object.fromEntries(REGISTRY_DOCUMENT_TOPICS.map((topic) => [topic.id, []])) as unknown as CategorizedDocuments;
+}
+
+export function flattenCategorizedDocuments(documents: CategorizedDocuments) {
+  return REGISTRY_DOCUMENT_TOPICS.flatMap((topic) => documents[topic.id] ?? []);
+}
+
+export function countCategorizedDocuments(documents: CategorizedDocuments) {
+  return flattenCategorizedDocuments(documents).length;
+}
+
 export function fileExtension(name: string) {
   return name.includes(".") ? name.split(".").pop()?.toLowerCase() ?? "" : "";
 }
