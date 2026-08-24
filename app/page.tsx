@@ -10,9 +10,8 @@ import {
   suggestedAccountingReportFilename,
 } from "./accounting-report";
 import type { AccountingReportDownload } from "./accounting-report-workbook";
-import { CategorizedDocumentCollection, CategorizedDocumentManager, DocumentCollection, DocumentManager } from "./document-manager";
+import { CategorizedDocumentManager, DocumentCollection, DocumentManager } from "./document-manager";
 import {
-  countCategorizedDocuments,
   createEmptyCategorizedDocuments,
   flattenCategorizedDocuments,
   revokeDocumentUrls,
@@ -609,6 +608,15 @@ export default function Home() {
     }
     setRegistryDetail(null);
   };
+  const updateRegistryDocuments = (ownerId: string, nextDocuments: CategorizedDocuments) => {
+    setCategorizedDocumentsByOwner((current) => {
+      const retainedIds = new Set(flattenCategorizedDocuments(nextDocuments).map((document) => document.id));
+      const previousDocuments = current[ownerId] ? flattenCategorizedDocuments(current[ownerId]) : [];
+      revokeDocumentUrls(previousDocuments.filter((document) => !retainedIds.has(document.id)));
+      return { ...current, [ownerId]: nextDocuments };
+    });
+    notify("Anexos do cadastro atualizados.", ownerId);
+  };
 
   if (!authenticated) return <Login loading={loading} onSubmit={login} />;
 
@@ -638,7 +646,7 @@ export default function Home() {
     </section>
     {selectedCharge && <ChargeDrawer charge={selectedCharge} onClose={() => setSelectedCharge(null)} onReceipt={() => setReceiptOpen(true)} />}
     {selectedContract && <ContractDrawer contract={selectedContract} onClose={() => setSelectedContract(null)} onCharge={() => { setChargeSourceContract(selectedContract); setSelectedContract(null); setForm("charge"); }} />}
-    {registryDetail && <RegistryDetailDrawer detail={registryDetail} documents={registryDetail.kind === "tenant" ? documentsByOwner[registryDetail.record.id] ?? [] : []} categorizedDocuments={registryDetail.kind === "property" || registryDetail.kind === "unit" ? categorizedDocumentsByOwner[registryDetail.record.id] ?? createEmptyCategorizedDocuments() : undefined} onClose={() => setRegistryDetail(null)} onEdit={editRegistryDetail} />}
+    {registryDetail && <RegistryDetailDrawer detail={registryDetail} documents={registryDetail.kind === "tenant" ? documentsByOwner[registryDetail.record.id] ?? [] : []} categorizedDocuments={registryDetail.kind === "property" || registryDetail.kind === "unit" ? categorizedDocumentsByOwner[registryDetail.record.id] ?? createEmptyCategorizedDocuments() : undefined} onCategorizedDocumentsChange={(nextDocuments) => updateRegistryDocuments(registryDetail.record.id, nextDocuments)} onClose={() => setRegistryDetail(null)} onEdit={editRegistryDetail} />}
     {selectedExpense && <ExpenseDrawer expense={selectedExpense} onClose={() => setSelectedExpense(null)} onStatusChange={(status, paidIso) => {
       const paidDate = status === "Pago" && paidIso ? formatExpenseDate(paidIso) : null;
       setExpenseRecords((records) => records.map((record) => record.id === selectedExpense.id ? { ...record, status, paidDate } : record));
@@ -1002,7 +1010,7 @@ function ContractsPage({ search, setSearch, portfolioFilter, setPortfolioFilter,
 
 function InfoNote({ text }: { text: string }) { return <aside className="info-note"><span>i</span><p>{text}</p></aside>; }
 
-function RegistryDetailDrawer({ detail, documents, categorizedDocuments, onClose, onEdit }: { detail: RegistryDetail; documents: LocalDocument[]; categorizedDocuments?: CategorizedDocuments; onClose: () => void; onEdit: () => void }) {
+function RegistryDetailDrawer({ detail, documents, categorizedDocuments, onCategorizedDocumentsChange, onClose, onEdit }: { detail: RegistryDetail; documents: LocalDocument[]; categorizedDocuments?: CategorizedDocuments; onCategorizedDocumentsChange: (documents: CategorizedDocuments) => void; onClose: () => void; onEdit: () => void }) {
   let eyebrow = "Detalhes do cadastro";
   const title = detail.record.name;
   let fields: Array<{ label: string; value: ReactNode }>;
@@ -1034,11 +1042,9 @@ function RegistryDetailDrawer({ detail, documents, categorizedDocuments, onClose
     ];
   }
 
-  const documentCount = categorizedDocuments ? countCategorizedDocuments(categorizedDocuments) : documents.length;
-
   return <div className="drawer-layer" role="dialog" aria-modal="true" aria-label={`${eyebrow}: ${title}`}><button className="drawer-backdrop" onClick={onClose} /><aside className="drawer wide-drawer registry-detail-drawer"><header className="drawer-header"><div><p className="eyebrow">{eyebrow}</p><h2>{title}</h2></div><button type="button" className="close-button" onClick={onClose} aria-label="Fechar detalhes">×</button></header><div className="drawer-body">
     <dl className="detail-list registry-detail-list">{fields.map((field) => <div key={field.label}><dt>{field.label}</dt><dd>{field.value}</dd></div>)}</dl>
-    <section className="registry-documents" aria-labelledby="registry-documents-title"><div className="section-title"><h3 id="registry-documents-title">{categorizedDocuments ? "Anexos por tópico" : "Documentos e imagens"}</h3><span>{documentCount ? `${documentCount} ${documentCount === 1 ? "anexo" : "anexos"}` : "Sem anexos"}</span></div>{categorizedDocuments ? <CategorizedDocumentCollection documents={categorizedDocuments} /> : <DocumentCollection documents={documents} emptyDescription="Nenhuma imagem ou arquivo foi anexado a este registro nesta sessão." />}</section>
+    {categorizedDocuments ? <CategorizedDocumentManager documents={categorizedDocuments} onChange={onCategorizedDocumentsChange} /> : <section className="registry-documents" aria-labelledby="registry-documents-title"><div className="section-title"><h3 id="registry-documents-title">Documentos e imagens</h3><span>{documents.length ? `${documents.length} ${documents.length === 1 ? "anexo" : "anexos"}` : "Sem anexos"}</span></div><DocumentCollection documents={documents} emptyDescription="Nenhuma imagem ou arquivo foi anexado a este registro nesta sessão." /></section>}
   </div><footer className="drawer-footer"><button type="button" className="secondary-button" onClick={onClose}>Fechar</button><button type="button" className="primary-button" onClick={onEdit}>Editar cadastro</button></footer></aside></div>;
 }
 
