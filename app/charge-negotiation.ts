@@ -20,7 +20,13 @@ export type ChargeNegotiation = NegotiationTerms & {
   financedAmount: number;
   schedule: NegotiationInstallment[];
   reason: string;
+  otherReason?: string;
   paymentMethod: string;
+  downPaymentDueDate?: string;
+  contactName?: string;
+  contactChannel?: string;
+  surchargeBreakdown?: { fine: number; interest: number; correction: number };
+  agreementDocumentName?: string;
   notes: string;
   createdAt: string;
   updatedAt: string;
