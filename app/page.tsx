@@ -657,7 +657,7 @@ export default function Home() {
           {page === "Carteiras" && <PortfoliosPage portfolios={portfolioRecords} properties={propertyRecords} units={unitRecords} search={search} setSearch={setSearch} onNew={() => { setEditingPortfolio(null); setForm("portfolio"); }} onEdit={(portfolio) => { setEditingPortfolio(portfolio); setForm("portfolio"); }} />}
           {page === "Imóveis" && <PropertiesPage properties={propertyRecords} units={unitRecords} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} onNew={() => { setEditingProperty(null); setForm("property"); }} onOpen={(property) => setRegistryDetail({ kind: "property", record: property })} />}
           {page === "Unidades" && <UnitsPage units={unitRecords} properties={propertyRecords} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} onNew={() => { setEditingUnit(null); setForm("unit"); }} onOpen={(unit) => setRegistryDetail({ kind: "unit", record: unit })} onEdit={(unit) => { setEditingUnit(unit); setForm("unit"); }} />}
-          {page === "Locatários" && <TenantsPage tenants={tenantRecords} search={search} setSearch={setSearch} onNew={() => { setEditingTenant(null); setForm("tenant"); }} onOpen={(tenant) => setRegistryDetail({ kind: "tenant", record: tenant })} onEdit={(tenant) => { setEditingTenant(tenant); setForm("tenant"); }} />}
+          {page === "Locatários" && <TenantsPage tenants={tenantRecords} contracts={contracts} charges={chargeRecords} search={search} setSearch={setSearch} onNew={() => { setEditingTenant(null); setForm("tenant"); }} onOpen={(tenant) => setRegistryDetail({ kind: "tenant", record: tenant })} onEdit={(tenant) => { setEditingTenant(tenant); setForm("tenant"); }} />}
           {page === "Contratos" && <ContractsPage charges={chargeRecords} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} onNew={() => setForm("contract")} onOpen={setSelectedContract} />}
           {page === "Despesas" && <ExpensesPage rows={filteredExpenses} total={expenseRecords.length} categories={Array.from(new Set(expenseRecords.map((expense) => expense.category)))} search={search} setSearch={setSearch} statusFilter={statusFilter} setStatusFilter={setStatusFilter} categoryFilter={categoryFilter} setCategoryFilter={setCategoryFilter} onOpen={setSelectedExpense} onNew={() => setForm("expense")} />}
         </></FilterStateContext.Provider>}
@@ -665,7 +665,7 @@ export default function Home() {
     </section>
     {selectedCharge && <ChargeDrawer charge={selectedCharge} negotiation={negotiationsByCharge[selectedCharge.id]} onClose={() => { setSelectedCharge(null); setNegotiationOpen(false); }} onReceipt={() => setReceiptOpen(true)} onNegotiate={() => setNegotiationOpen(true)} />}
     {selectedContract && <ContractDrawer contract={selectedContract} charges={chargeRecords} onClose={() => setSelectedContract(null)} onCharge={() => { setChargeSourceContract(selectedContract); setSelectedContract(null); setForm("charge"); }} />}
-    {registryDetail && <RegistryDetailDrawer detail={registryDetail} properties={propertyRecords} units={unitRecords} documents={registryDetail.kind === "tenant" ? documentsByOwner[registryDetail.record.id] ?? [] : []} categorizedDocuments={registryDetail.kind === "property" || registryDetail.kind === "unit" ? categorizedDocumentsByOwner[registryDetail.record.id] ?? createEmptyCategorizedDocuments() : undefined} onCategorizedDocumentsChange={(nextDocuments) => updateRegistryDocuments(registryDetail.record.id, nextDocuments)} onClose={() => setRegistryDetail(null)} onEdit={editRegistryDetail} />}
+    {registryDetail && <RegistryDetailDrawer detail={registryDetail} properties={propertyRecords} units={unitRecords} contracts={contracts} charges={chargeRecords} documents={registryDetail.kind === "tenant" ? documentsByOwner[registryDetail.record.id] ?? [] : []} categorizedDocuments={registryDetail.kind === "property" || registryDetail.kind === "unit" ? categorizedDocumentsByOwner[registryDetail.record.id] ?? createEmptyCategorizedDocuments() : undefined} onCategorizedDocumentsChange={(nextDocuments) => updateRegistryDocuments(registryDetail.record.id, nextDocuments)} onClose={() => setRegistryDetail(null)} onEdit={editRegistryDetail} />}
     {selectedExpense && <ExpenseDrawer expense={selectedExpense} onClose={() => setSelectedExpense(null)} onStatusChange={(status, paidIso) => {
       const paidDate = status === "Pago" && paidIso ? formatExpenseDate(paidIso) : null;
       setExpenseRecords((records) => records.map((record) => record.id === selectedExpense.id ? { ...record, status, paidDate } : record));
@@ -830,6 +830,11 @@ function EmptyState({ filtered, entity = "registro" }: { filtered?: boolean; ent
   return <div className="empty-state"><span aria-hidden="true">0</span><h3>{isFiltered ? "Nenhum resultado para estes filtros" : `Nenhum ${entity} cadastrado`}</h3><p>{isFiltered ? "Ajuste ou limpe a busca e os filtros aplicados." : `Quando houver algum ${entity}, ele aparecerá aqui.`}</p></div>;
 }
 function UnitPills({ values }: { values: string[] }) { return <div className="tag-list">{values.map((value) => <span key={value}>{value}</span>)}</div>; }
+function tenantInitials(name: string) {
+  const ignoredWords = new Set(["ltda.", "ltda", "s/a", "sa", "de", "da", "do", "dos", "das"]);
+  const words = name.split(/\s+/).filter((word) => word && !ignoredWords.has(word.toLowerCase()));
+  return words.slice(0, 2).map((word) => word[0]).join("").toUpperCase();
+}
 
 function DashboardPage({ charges, negotiations, expenses, units, contracts, onNavigate }: { charges: Charge[]; negotiations: Record<string, ChargeNegotiation>; expenses: Expense[]; units: Unit[]; contracts: Contract[]; onNavigate: (page: Page, status?: string) => void }) {
   const openCharges = charges.filter((charge) => charge.status !== "Recebida");
@@ -1184,9 +1189,52 @@ function UnitsPage({ units, properties, search, setSearch, portfolioFilter, setP
   </>;
 }
 
-function TenantsPage({ tenants, search, setSearch, onNew, onOpen, onEdit }: { tenants: Tenant[]; search: string; setSearch: (value: string) => void; onNew: () => void; onOpen: (tenant: Tenant) => void; onEdit: (tenant: Tenant) => void }) {
-  const rows = tenants.filter((tenant) => `${tenant.name}${tenant.document}${tenant.id}`.toLowerCase().includes(search.toLowerCase()));
-  return <><PageHeading eyebrow="Cadastros essenciais" title="Locatários" description="Cadastre pessoa física ou jurídica e vincule-a aos contratos." action="Novo locatário" onAction={onNew} /><TableSection toolbar={<SearchBar value={search} onChange={setSearch} placeholder="Buscar por nome, CPF ou CNPJ" />} footer={<><span>{rows.length} locatários</span><span>PF e PJ</span></>}><table className="compact-table"><thead><tr><th>Locatário</th><th>Tipo</th><th>CPF / CNPJ</th><th>Contratos</th><th /></tr></thead><tbody>{rows.map((tenant) => <tr className="entity-row" key={tenant.id} tabIndex={0} aria-label={`Abrir detalhes de ${tenant.name}`} onClick={() => onOpen(tenant)} onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onOpen(tenant); } }}><td><strong>{tenant.name}</strong><small>{tenant.id}</small></td><td>{tenant.type}</td><td>{tenant.document}</td><td>{tenant.contracts}</td><td><button type="button" className="row-action" onClick={(event) => { event.stopPropagation(); onEdit(tenant); }}>Editar</button></td></tr>)}</tbody></table>{rows.length === 0 && <EmptyState />}</TableSection></>;
+function TenantsPage({ tenants, contracts, charges, search, setSearch, onNew, onOpen, onEdit }: { tenants: Tenant[]; contracts: Contract[]; charges: Charge[]; search: string; setSearch: (value: string) => void; onNew: () => void; onOpen: (tenant: Tenant) => void; onEdit: (tenant: Tenant) => void }) {
+  const [relationshipFilter, setRelationshipFilter] = useState("Todos");
+  const activeTenantNames = new Set(contracts.map((contract) => contract.tenant));
+  const activeTenants = tenants.filter((tenant) => activeTenantNames.has(tenant.name));
+  const unlinkedTenants = tenants.filter((tenant) => !activeTenantNames.has(tenant.name));
+  const monthlyRevenue = contracts.reduce((total, contract) => total + contract.rent, 0);
+  const rows = tenants.filter((tenant) => {
+    const matchesSearch = `${tenant.name}${tenant.document}${tenant.id}`.toLowerCase().includes(search.toLowerCase());
+    const hasContract = activeTenantNames.has(tenant.name);
+    const matchesRelationship = relationshipFilter === "Todos" || (relationshipFilter === "Com contrato" ? hasContract : !hasContract);
+    return matchesSearch && matchesRelationship;
+  });
+  const toggleRelationship = (filter: "Com contrato" | "Sem contrato") => setRelationshipFilter(relationshipFilter === filter ? "Todos" : filter);
+
+  return <><PageHeading eyebrow="Relacionamentos de locação" title="Locatários" description="Acompanhe vínculos, ocupação e situação financeira de cada relacionamento." action="Novo locatário" onAction={onNew} />
+    <section className="tenant-overview" aria-label="Resumo dos locatários">
+      <div className="tenant-overview-intro"><span>Base de relacionamentos</span><strong>{tenants.length} {tenants.length === 1 ? "locatário cadastrado" : "locatários cadastrados"}</strong><small>Pessoas e empresas conectadas à operação</small></div>
+      <div className="tenant-overview-revenue"><span>Receita mensal vinculada</span><strong>{brl.format(monthlyRevenue)}</strong><small>aluguel base dos contratos ativos</small></div>
+      <button type="button" className="tenant-overview-active" aria-pressed={relationshipFilter === "Com contrato"} onClick={() => toggleRelationship("Com contrato")}><span>Com contrato</span><strong>{activeTenants.length}</strong><small>{contracts.reduce((total, contract) => total + contract.units.length, 0)} unidades ocupadas</small><i aria-hidden="true">✓</i></button>
+      <button type="button" className="tenant-overview-unlinked" aria-pressed={relationshipFilter === "Sem contrato"} onClick={() => toggleRelationship("Sem contrato")}><span>Sem vínculo ativo</span><strong>{unlinkedTenants.length}</strong><small>disponíveis para nova locação</small><i aria-hidden="true">+</i></button>
+    </section>
+    <TableSection toolbar={<><SearchBar value={search} onChange={setSearch} placeholder="Buscar por nome, CPF ou CNPJ" /><FilterSelect label="Filtrar por vínculo" value={relationshipFilter} onChange={setRelationshipFilter} active={relationshipFilter !== "Todos"}><option>Todos</option><option>Com contrato</option><option>Sem contrato</option></FilterSelect><button type="button" className="primary-button tenant-mobile-new" onClick={onNew}>Novo locatário</button></>} footer={<><span>{rows.length} de {tenants.length} locatários</span><span>{activeTenants.length} com vínculo ativo</span></>}>
+      {rows.length > 0 ? <div className="tenant-card-grid" aria-label="Locatários cadastrados">{rows.map((tenant) => {
+        const tenantContracts = contracts.filter((contract) => contract.tenant === tenant.name);
+        const tenantCharges = charges.filter((charge) => charge.tenant === tenant.name);
+        const attentionCharges = tenantCharges.filter((charge) => charge.status === "Vencida" || charge.status === "Parcial");
+        const openBalance = tenantCharges.filter((charge) => charge.status !== "Recebida").reduce((total, charge) => total + chargeBalance(charge), 0);
+        const tenantRevenue = tenantContracts.reduce((total, contract) => total + contract.rent, 0);
+        const mainContract = tenantContracts[0];
+        const relationshipStatus = !mainContract ? "Sem vínculo" : attentionCharges.length ? "Atenção" : "Ativo";
+        const relationshipClass = !mainContract ? "unlinked" : attentionCharges.length ? "attention" : "active";
+
+        return <article className={`tenant-card tenant-card-${relationshipClass}`} key={tenant.id}>
+          <button type="button" className="tenant-card-open" onClick={() => onOpen(tenant)} aria-label={`Abrir detalhes de ${tenant.name}`}>
+            <span className="tenant-card-head"><span className="tenant-card-avatar" aria-hidden="true">{tenantInitials(tenant.name)}</span><span className="tenant-card-identity"><span><b>{tenant.type === "PJ" ? "Pessoa jurídica" : "Pessoa física"}</b><small>{tenant.id}</small></span><strong>{tenant.name}</strong><small>{tenant.document}</small></span><span className={`tenant-relationship-badge tenant-relationship-${relationshipClass}`}><i />{relationshipStatus}</span></span>
+            {mainContract ? <>
+              <span className="tenant-card-contract"><span><small>Contrato vigente</small><strong>{mainContract.id}</strong></span><span><small>Empreendimento</small><strong>{mainContract.property}</strong></span><span><small>{mainContract.units.length === 1 ? "Unidade" : "Unidades"}</small><strong>{mainContract.units.join(" · ")}</strong></span></span>
+              <span className="tenant-card-financial"><span><small>Aluguel base mensal</small><strong>{brl.format(tenantRevenue)}</strong></span><span><small>Saldo em aberto</small><strong className={attentionCharges.length ? "tenant-value-attention" : ""}>{brl.format(openBalance)}</strong></span><span><small>Cobranças</small><strong>{tenantCharges.length}</strong></span></span>
+            </> : <span className="tenant-card-empty-link"><i aria-hidden="true">+</i><span><strong>Sem contrato ativo</strong><small>Cadastro pronto para um novo vínculo de locação.</small></span></span>}
+            <span className="tenant-card-arrow" aria-hidden="true">Ver relacionamento <b>→</b></span>
+          </button>
+          <footer><span>{mainContract ? `${tenantContracts.length} ${tenantContracts.length === 1 ? "contrato ativo" : "contratos ativos"}` : "Relacionamento em prospecção"}</span><button type="button" onClick={() => onEdit(tenant)}>Editar cadastro</button></footer>
+        </article>;
+      })}</div> : <EmptyState filtered={Boolean(search || relationshipFilter !== "Todos")} entity="locatário" />}
+    </TableSection>
+  </>;
 }
 
 function ContractsPage({ charges, search, setSearch, portfolioFilter, setPortfolioFilter, onNew, onOpen }: { charges: Charge[]; search: string; setSearch: (value: string) => void; portfolioFilter: string; setPortfolioFilter: (value: string) => void; onNew: () => void; onOpen: (contract: Contract) => void }) {
@@ -1225,7 +1273,7 @@ function ContractsPage({ charges, search, setSearch, portfolioFilter, setPortfol
 
 function InfoNote({ text }: { text: string }) { return <aside className="info-note"><span>i</span><p>{text}</p></aside>; }
 
-function RegistryDetailDrawer({ detail, properties, units, documents, categorizedDocuments, onCategorizedDocumentsChange, onClose, onEdit }: { detail: RegistryDetail; properties: Property[]; units: Unit[]; documents: LocalDocument[]; categorizedDocuments?: CategorizedDocuments; onCategorizedDocumentsChange: (documents: CategorizedDocuments) => void; onClose: () => void; onEdit: () => void }) {
+function RegistryDetailDrawer({ detail, properties, units, contracts, charges, documents, categorizedDocuments, onCategorizedDocumentsChange, onClose, onEdit }: { detail: RegistryDetail; properties: Property[]; units: Unit[]; contracts: Contract[]; charges: Charge[]; documents: LocalDocument[]; categorizedDocuments?: CategorizedDocuments; onCategorizedDocumentsChange: (documents: CategorizedDocuments) => void; onClose: () => void; onEdit: () => void }) {
   let eyebrow = "Detalhes do cadastro";
   const title = detail.record.name;
   let fields: Array<{ label: string; value: ReactNode }>;
@@ -1235,6 +1283,13 @@ function RegistryDetailDrawer({ detail, properties, units, documents, categorize
   const propertyOccupancy = propertyUnits.length ? Math.round((propertyOccupied / propertyUnits.length) * 100) : 0;
   const unitProperty = detail.kind === "unit" ? properties.find((property) => property.name === detail.record.property) : undefined;
   const unitContract = detail.kind === "unit" ? contracts.find((contract) => contract.property === detail.record.property && contract.units.includes(detail.record.name)) : undefined;
+  const tenantContracts = detail.kind === "tenant" ? contracts.filter((contract) => contract.tenant === detail.record.name) : [];
+  const tenantCharges = detail.kind === "tenant" ? charges.filter((charge) => charge.tenant === detail.record.name) : [];
+  const tenantMonthlyRevenue = tenantContracts.reduce((total, contract) => total + contract.rent, 0);
+  const tenantLinkedUnits = tenantContracts.reduce((total, contract) => total + contract.units.length, 0);
+  const tenantOpenCharges = tenantCharges.filter((charge) => charge.status !== "Recebida");
+  const tenantOpenBalance = tenantOpenCharges.reduce((total, charge) => total + chargeBalance(charge), 0);
+  const tenantAttentionCharges = tenantCharges.filter((charge) => charge.status === "Vencida" || charge.status === "Parcial");
 
   if (detail.kind === "property") {
     eyebrow = "Detalhes do imóvel";
@@ -1258,11 +1313,11 @@ function RegistryDetailDrawer({ detail, properties, units, documents, categorize
       { label: "Identificador", value: detail.record.id },
       { label: "Tipo", value: detail.record.type === "PJ" ? "Pessoa jurídica" : "Pessoa física" },
       { label: detail.record.type === "PJ" ? "CNPJ" : "CPF", value: detail.record.document },
-      { label: "Contratos", value: detail.record.contracts },
+      { label: "Contratos ativos", value: tenantContracts.length },
     ];
   }
 
-  return <div className="drawer-layer" role="dialog" aria-modal="true" aria-label={`${eyebrow}: ${title}`}><button className="drawer-backdrop" onClick={onClose} /><aside className={`drawer wide-drawer registry-detail-drawer ${detail.kind === "property" ? "property-detail-drawer" : detail.kind === "unit" ? "unit-detail-drawer" : ""}`}>{detail.kind === "property" ? <header className="property-detail-hero">
+  return <div className="drawer-layer" role="dialog" aria-modal="true" aria-label={`${eyebrow}: ${title}`}><button className="drawer-backdrop" onClick={onClose} /><aside className={`drawer wide-drawer registry-detail-drawer ${detail.kind === "property" ? "property-detail-drawer" : detail.kind === "unit" ? "unit-detail-drawer" : "tenant-detail-drawer"}`}>{detail.kind === "property" ? <header className="property-detail-hero">
     <img src={propertyCoverImages[detail.record.id] ?? fallbackPropertyCover} alt={`Fachada ilustrativa de ${detail.record.name}`} width="800" height="520" />
     <div className="property-detail-hero-top"><p className="eyebrow eyebrow-light">Detalhes do imóvel</p><button type="button" className="close-button" onClick={onClose} aria-label="Fechar detalhes">×</button></div>
     <div className="property-detail-hero-copy"><span>{detail.record.id}</span><h2>{detail.record.name}</h2><p>{detail.record.address}</p></div>
@@ -1270,7 +1325,11 @@ function RegistryDetailDrawer({ detail, properties, units, documents, categorize
     <img src={(unitProperty && propertyCoverImages[unitProperty.id]) ?? fallbackPropertyCover} alt="" width="800" height="480" />
     <div className="property-detail-hero-top"><p className="eyebrow eyebrow-light">Detalhes da unidade</p><button type="button" className="close-button" onClick={onClose} aria-label="Fechar detalhes">×</button></div>
     <div className="property-detail-hero-copy unit-detail-hero-copy"><div><span>{detail.record.id}</span><span className={`unit-detail-hero-status ${detail.record.occupied ? "occupied" : "available"}`}>{detail.record.occupied ? "Ocupada" : "Disponível"}</span></div><h2>{detail.record.name}</h2><p>{detail.record.property}</p></div>
-  </header> : <header className="drawer-header"><div><p className="eyebrow">{eyebrow}</p><h2>{title}</h2></div><button type="button" className="close-button" onClick={onClose} aria-label="Fechar detalhes">×</button></header>}<div className="drawer-body">
+  </header> : <header className={`tenant-detail-hero ${tenantContracts.length ? tenantAttentionCharges.length ? "tenant-detail-hero-attention" : "tenant-detail-hero-active" : "tenant-detail-hero-unlinked"}`}>
+    <div className="tenant-detail-hero-top"><p className="eyebrow eyebrow-light">Relacionamento de locação</p><button type="button" className="close-button" onClick={onClose} aria-label="Fechar detalhes">×</button></div>
+    <div className="tenant-detail-hero-copy"><span className="tenant-detail-avatar" aria-hidden="true">{tenantInitials(detail.record.name)}</span><div><span>{detail.record.id} · {detail.record.type === "PJ" ? "Pessoa jurídica" : "Pessoa física"}</span><h2>{detail.record.name}</h2><p>{tenantContracts.length ? `${tenantContracts.length} ${tenantContracts.length === 1 ? "contrato ativo" : "contratos ativos"} · ${tenantLinkedUnits} ${tenantLinkedUnits === 1 ? "unidade vinculada" : "unidades vinculadas"}` : "Cadastro disponível para novo vínculo"}</p></div></div>
+    <i className="tenant-detail-status" aria-hidden="true">{tenantContracts.length ? tenantAttentionCharges.length ? "!" : "✓" : "+"}</i>
+  </header>}<div className="drawer-body">
     {detail.kind === "property" && <section className="property-detail-summary" aria-label={`Ocupação de ${detail.record.name}`}>
       <div><span>Carteira</span><strong>{detail.record.portfolio}</strong></div>
       <div><span>Unidades</span><strong>{propertyUnits.length}</strong></div>
@@ -1292,9 +1351,20 @@ function RegistryDetailDrawer({ detail, properties, units, documents, categorize
       </section> : !detail.record.occupied && <aside className="unit-availability-note"><span aria-hidden="true">+</span><div><strong>Disponível para nova locação</strong><p>Esta unidade pode ser selecionada ao cadastrar um novo contrato.</p></div></aside>}
       <div className="unit-detail-section-title"><span>Dados cadastrais</span><small>Informações estruturais da unidade</small></div>
     </>}
+    {detail.kind === "tenant" && <>
+      <section className="tenant-detail-summary" aria-label={`Resumo do relacionamento com ${detail.record.name}`}>
+        <div className="tenant-detail-revenue"><span>Receita mensal vinculada</span><strong>{brl.format(tenantMonthlyRevenue)}</strong><small>aluguel base contratado</small></div>
+        <div><span>Contratos ativos</span><strong>{tenantContracts.length}</strong><small>{tenantContracts.length ? "vínculos em andamento" : "sem vínculo vigente"}</small></div>
+        <div><span>Unidades vinculadas</span><strong>{tenantLinkedUnits}</strong><small>espaços ocupados</small></div>
+        <div className={tenantAttentionCharges.length ? "tenant-detail-attention" : ""}><span>Saldo em aberto</span><strong>{brl.format(tenantOpenBalance)}</strong><small>{tenantAttentionCharges.length ? `${tenantAttentionCharges.length} cobrança exige atenção` : `${tenantOpenCharges.length} cobranças abertas`}</small></div>
+      </section>
+      {tenantContracts.length ? <section className="tenant-contract-panel" aria-labelledby="tenant-contracts-title"><header><div><span>Relacionamentos ativos</span><h3 id="tenant-contracts-title">Contratos e ocupação</h3></div><b>{tenantContracts.length}</b></header><div>{tenantContracts.map((contract) => <article key={contract.id}><span className="tenant-contract-id"><small>Contrato</small><strong>{contract.id}</strong></span><span><small>Empreendimento</small><strong>{contract.property}</strong></span><span><small>Aluguel base</small><strong>{brl.format(contract.rent)}</strong></span><footer><span>{contract.units.join(" · ")}</span><span>Vence dia {contract.due}</span></footer></article>)}</div></section> : <aside className="tenant-unlinked-note"><span aria-hidden="true">+</span><div><strong>Pronto para um novo contrato</strong><p>Este locatário está cadastrado, mas ainda não possui uma unidade vinculada.</p></div></aside>}
+      <section className="tenant-financial-panel" aria-labelledby="tenant-financial-title"><header><div><span>Saúde financeira</span><h3 id="tenant-financial-title">Cobranças do relacionamento</h3></div><b className={tenantAttentionCharges.length ? "has-attention" : ""}>{tenantAttentionCharges.length ? "Requer atenção" : tenantCharges.length ? "Em dia" : "Sem histórico"}</b></header>{tenantCharges.length ? <div>{tenantCharges.slice(0, 4).map((charge) => <span key={charge.id}><StatusBadge status={charge.status} /><strong>{charge.id}</strong><small>{charge.competence}</small><b>{brl.format(chargeBalance(charge))}</b></span>)}</div> : <p>Nenhuma cobrança foi gerada para este locatário.</p>}</section>
+      <div className="tenant-detail-section-title"><span>Dados cadastrais</span><small>Identificação do relacionamento</small></div>
+    </>}
     <dl className="detail-list registry-detail-list">{fields.map((field) => <div key={field.label}><dt>{field.label}</dt><dd>{field.value}</dd></div>)}</dl>
     {categorizedDocuments ? <CategorizedDocumentManager documents={categorizedDocuments} onChange={onCategorizedDocumentsChange} /> : <section className="registry-documents" aria-labelledby="registry-documents-title"><div className="section-title"><h3 id="registry-documents-title">Documentos e imagens</h3><span>{documents.length ? `${documents.length} ${documents.length === 1 ? "anexo" : "anexos"}` : "Sem anexos"}</span></div><DocumentCollection documents={documents} emptyDescription="Nenhuma imagem ou arquivo foi anexado a este registro nesta sessão." /></section>}
-  </div><footer className="drawer-footer"><button type="button" className="secondary-button" onClick={onClose}>Fechar</button><button type="button" className="primary-button" onClick={onEdit}>Editar cadastro</button></footer></aside></div>;
+  </div><footer className={`drawer-footer ${detail.kind === "tenant" ? "tenant-detail-footer" : ""}`}><button type="button" className="secondary-button" onClick={onClose}>Fechar</button><button type="button" className="primary-button" onClick={onEdit}>Editar cadastro</button></footer></aside></div>;
 }
 
 function ChargeDrawer({ charge, negotiation, onClose, onReceipt, onNegotiate }: { charge: Charge; negotiation?: ChargeNegotiation; onClose: () => void; onReceipt: () => void; onNegotiate: () => void }) {
@@ -1703,11 +1773,11 @@ function EntityForm({ kind, portfolio, property, unit, tenant, documents: initia
     }
     if (formError) setFormError("");
   };
-  return <div className="modal-layer" role="dialog" aria-modal="true" aria-label={config[1]}><button className="drawer-backdrop" onClick={closeForm} /><form className="receipt-modal entity-modal" noValidate onSubmit={handleSubmit} onInputCapture={clearFieldError}><ModalHeader eyebrow={config[0]} title={config[1]} onClose={closeForm} /><div className="entity-modal-body"><InlineFieldError message={formError || chargeBusinessError} /><div className="form-grid entity-grid">
+  return <div className="modal-layer" role="dialog" aria-modal="true" aria-label={config[1]}><button className="drawer-backdrop" onClick={closeForm} /><form className={`receipt-modal entity-modal entity-${kind}-modal`} noValidate onSubmit={handleSubmit} onInputCapture={clearFieldError}><ModalHeader eyebrow={config[0]} title={config[1]} onClose={closeForm} /><div className="entity-modal-body"><InlineFieldError message={formError || chargeBusinessError} /><div className="form-grid entity-grid">
     {kind === "portfolio" && <><label>Nome da carteira<input name="portfolioName" placeholder="Ex.: Carteira Atlas" defaultValue={portfolio?.name ?? ""} required /></label><label>Titular<input name="portfolioHolder" placeholder="Razão social ou nome" defaultValue={portfolio?.holder ?? ""} required /></label><label className="full-field">CPF / CNPJ do titular<input name="portfolioDocument" placeholder="Documento fictício nesta demonstração" defaultValue={portfolio?.document ?? ""} required /></label></>}
     {kind === "property" && <><label>Carteira<select name="propertyPortfolio" defaultValue={property?.portfolio ?? portfolioOptions[0].name} required>{portfolioOptions.map((portfolio) => <option key={portfolio.id}>{portfolio.name}</option>)}</select></label><label>Nome do imóvel<input name="propertyName" placeholder="Ex.: Centro Empresarial" defaultValue={property?.name ?? ""} required /></label><label className="full-field">Endereço principal<input name="propertyAddress" placeholder="Logradouro, número e bairro" defaultValue={property?.address ?? ""} required /></label></>}
     {kind === "unit" && <><label>Imóvel<select name="unitProperty" defaultValue={unit?.property ?? propertyOptions[0].name} required>{propertyOptions.map((property) => <option key={property.id}>{property.name}</option>)}</select></label><label>Identificação da unidade<input name="unitName" placeholder="Ex.: Sala 101" defaultValue={unit?.name ?? ""} required /></label><label>Área privativa<span className="input-with-suffix"><input name="unitArea" type="number" inputMode="decimal" min="0.01" step="0.01" placeholder="Ex.: 42" defaultValue={unit?.area ?? ""} required /><span className="input-suffix" aria-hidden="true">m²</span></span></label><label>Status inicial<select name="unitStatus" defaultValue={unit?.occupied ? "Ocupada" : "Disponível"} disabled={Boolean(unit?.occupied)} aria-describedby={unit?.occupied ? "unit-occupancy-help" : undefined}><option>Disponível</option><option>Ocupada</option></select>{unit?.occupied && <small id="unit-occupancy-help" className="field-help">Ocupação definida por contrato ativo.</small>}</label></>}
-    {kind === "tenant" && <>{tenant && <div className="edit-record-banner full-field"><span>Modo de edição</span><strong>ID {tenant.id}</strong></div>}<label>Tipo<select name="tenantType" value={tenantType} onChange={(event) => { const nextType = event.target.value as Tenant["type"]; setTenantType(nextType); setTenantDocument(maskTenantDocument(tenantDocument, nextType)); setTenantDocumentError(""); }} required><option>PJ</option><option>PF</option></select></label><label>{tenantType === "PJ" ? "Razão social" : "Nome completo"}<input name="tenantName" placeholder={tenantType === "PJ" ? "Empresa locatária" : "Pessoa locatária"} defaultValue={tenant?.name ?? ""} required /></label><label className="full-field">{tenantType === "PJ" ? "CNPJ" : "CPF"}<input name="tenantDocument" inputMode="numeric" autoComplete="off" maxLength={tenantType === "PJ" ? 18 : 14} placeholder={tenantType === "PJ" ? "00.000.000/0000-00" : "000.000.000-00"} value={tenantDocument} onChange={(event) => { const masked = maskTenantDocument(event.target.value, tenantType); setTenantDocument(masked); const complete = documentDigits(masked).length === (tenantType === "PJ" ? 14 : 11); setTenantDocumentError(complete ? getTenantDocumentError(masked, tenantType) : ""); }} onBlur={() => tenantDocument && setTenantDocumentError(getTenantDocumentError(tenantDocument, tenantType))} aria-invalid={tenantDocumentError ? "true" : undefined} aria-describedby="tenant-document-help" required /><small id="tenant-document-help" className={tenantDocumentError ? "field-error" : "field-help"} role={tenantDocumentError ? "alert" : undefined}>{tenantDocumentError || `A máscara e os dígitos do ${tenantType === "PJ" ? "CNPJ" : "CPF"} serão verificados.`}</small></label></>}
+    {kind === "tenant" && <section className="tenant-form-identity full-field" aria-labelledby="tenant-form-identity-title">{tenant && <div className="edit-record-banner"><span>Modo de edição</span><strong>ID {tenant.id}</strong></div>}<header><span>01</span><div><h3 id="tenant-form-identity-title">Identificação do locatário</h3><p>Informe os dados que representam este relacionamento.</p></div></header><div className="tenant-form-fields"><label>Tipo de pessoa<select name="tenantType" value={tenantType} onChange={(event) => { const nextType = event.target.value as Tenant["type"]; setTenantType(nextType); setTenantDocument(maskTenantDocument(tenantDocument, nextType)); setTenantDocumentError(""); }} required><option value="PJ">Pessoa jurídica</option><option value="PF">Pessoa física</option></select></label><label>{tenantType === "PJ" ? "Razão social" : "Nome completo"}<input name="tenantName" placeholder={tenantType === "PJ" ? "Empresa locatária" : "Pessoa locatária"} defaultValue={tenant?.name ?? ""} required /></label><label className="tenant-document-field">{tenantType === "PJ" ? "CNPJ" : "CPF"}<input name="tenantDocument" inputMode="numeric" autoComplete="off" maxLength={tenantType === "PJ" ? 18 : 14} placeholder={tenantType === "PJ" ? "00.000.000/0000-00" : "000.000.000-00"} value={tenantDocument} onChange={(event) => { const masked = maskTenantDocument(event.target.value, tenantType); setTenantDocument(masked); const complete = documentDigits(masked).length === (tenantType === "PJ" ? 14 : 11); setTenantDocumentError(complete ? getTenantDocumentError(masked, tenantType) : ""); }} onBlur={() => tenantDocument && setTenantDocumentError(getTenantDocumentError(tenantDocument, tenantType))} aria-invalid={tenantDocumentError ? "true" : undefined} aria-describedby="tenant-document-help" required /><small id="tenant-document-help" className={tenantDocumentError ? "field-error" : "field-help"} role={tenantDocumentError ? "alert" : undefined}>{tenantDocumentError || `A máscara e os dígitos do ${tenantType === "PJ" ? "CNPJ" : "CPF"} serão verificados.`}</small></label></div></section>}
     {supportsDocumentTopics && <CategorizedDocumentManager documents={categorizedDocuments} onChange={setCategorizedDocuments} onRemove={handleDocumentRemoval} />}
     {kind === "tenant" && <DocumentManager documents={documents} onChange={setDocuments} onRemove={handleDocumentRemoval} />}
     {kind === "expense" && <>
