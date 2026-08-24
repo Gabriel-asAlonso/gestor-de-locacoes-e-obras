@@ -682,18 +682,44 @@ export default function Home() {
 
 function Login({ loading, onSubmit }: { loading: boolean; onSubmit: (event: FormEvent) => void }) {
   return <main className="login-page">
-    <section className="login-brand">
-      <div className="brand-mark brand-mark-light">LR</div>
-      <div className="login-copy"><p className="eyebrow eyebrow-light">Módulo 1</p><h1>Locações<br />& recebíveis</h1><p>Controle operacional de estruturas, contratos, cobranças compostas e baixas manuais.</p></div>
-      <div className="login-footer"><span /> Ambiente demonstrativo</div>
+    <section className="login-brand" aria-label="Apresentação do sistema">
+      <div className="login-brand-header">
+        <div className="login-brand-lockup">
+          <div className="brand-mark brand-mark-light" aria-hidden="true"><span>L</span><i /><span>R</span></div>
+          <div><strong>Locações &amp; Recebíveis</strong><span>Gestão patrimonial</span></div>
+        </div>
+        <span className="login-module-badge">Módulo 1</span>
+      </div>
+
+      <div className="login-copy">
+        <p className="eyebrow eyebrow-light">Gestão imobiliária integrada</p>
+        <h1>Patrimônio sob controle.<span>Recebíveis em movimento.</span></h1>
+        <p>Uma visão única para acompanhar estruturas, contratos e a saúde financeira da operação.</p>
+        <ul className="login-capabilities" aria-label="Áreas do sistema">
+          <li><span>01</span><strong>Patrimônio</strong><small>Carteiras, imóveis e unidades</small></li>
+          <li><span>02</span><strong>Contratos</strong><small>Locatários e vínculos ativos</small></li>
+          <li><span>03</span><strong>Financeiro</strong><small>Cobranças e despesas</small></li>
+        </ul>
+      </div>
+
+      <div className="login-brand-footer">
+        <div className="login-footer"><span /> Ambiente demonstrativo</div>
+        <div className="login-property-caption"><strong>Centro Empresarial Nexo</strong><span>Patrimônio em destaque</span></div>
+      </div>
     </section>
-    <section className="login-panel"><form className="login-form" onSubmit={onSubmit}>
-      <div className="login-heading"><p className="eyebrow">Acesso administrativo</p><h2>Boas-vindas</h2><p>Entre para explorar o Módulo 1 com dados totalmente fictícios.</p></div>
-      <label>E-mail<input type="email" defaultValue="administrativo@exemplo.com.br" required /></label>
-      <label>Senha<input type="password" defaultValue="demonstracao" required /></label>
-      <button className="primary-button login-button" disabled={loading} aria-busy={loading}>{loading ? <><span className="spinner" /> Preparando ambiente</> : "Acessar demonstração"}</button>
-      <p className="demo-note">Nenhum dado real do cliente é exibido nesta versão.</p>
-    </form></section>
+    <section className="login-panel" aria-label="Acesso administrativo">
+      <div className="login-panel-inner">
+        <div className="login-panel-context"><span>LR</span><p><strong>Módulo administrativo</strong><small>Ambiente seguro de demonstração</small></p></div>
+        <form className="login-form" onSubmit={onSubmit}>
+          <div className="login-heading"><p className="eyebrow">Acesso administrativo</p><h2>Boas-vindas</h2><p>Entre para visualizar a operação patrimonial e financeira em um único painel.</p></div>
+          <label>E-mail<input type="email" defaultValue="administrativo@exemplo.com.br" autoComplete="email" required /></label>
+          <label>Senha<input type="password" defaultValue="demonstracao" autoComplete="current-password" required /></label>
+          <button className="primary-button login-button" disabled={loading} aria-busy={loading}>{loading ? <><span className="spinner" /> Preparando ambiente</> : <><span>Acessar demonstração</span><span className="login-button-arrow" aria-hidden="true">→</span></>}</button>
+          <div className="login-trust-note"><span aria-hidden="true">✓</span><p><strong>Dados exclusivamente demonstrativos</strong><small>Nenhuma informação real do cliente é exibida nesta versão.</small></p></div>
+        </form>
+        <p className="login-panel-version">Locações &amp; Recebíveis · Módulo 1</p>
+      </div>
+    </section>
   </main>;
 }
 
