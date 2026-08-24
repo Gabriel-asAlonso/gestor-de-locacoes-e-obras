@@ -654,7 +654,7 @@ export default function Home() {
         {contentState === "ready" && <FilterStateContext.Provider value={Boolean(search || portfolioFilter !== "Todas as carteiras" || statusFilter !== "Todas" || categoryFilter !== "Todas as categorias")}><>
           {page === "Visão geral" && <DashboardPage charges={chargeRecords} negotiations={negotiationsByCharge} expenses={expenseRecords} units={unitRecords} contracts={contracts} onNavigate={(next, status) => { changePage(next); if (status) setStatusFilter(status); }} />}
           {page === "Cobranças" && <ChargesPage charges={filteredCharges} summaryCharges={chargesInScope} negotiations={negotiationsByCharge} total={chargeRecords.length} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} statusFilter={statusFilter} setStatusFilter={setStatusFilter} onOpen={setSelectedCharge} onNew={() => { setChargeSourceContract(null); setForm("charge"); }} onReport={() => setReportOpen(true)} />}
-          {page === "Carteiras" && <PortfoliosPage portfolios={portfolioRecords} search={search} setSearch={setSearch} onNew={() => { setEditingPortfolio(null); setForm("portfolio"); }} onEdit={(portfolio) => { setEditingPortfolio(portfolio); setForm("portfolio"); }} />}
+          {page === "Carteiras" && <PortfoliosPage portfolios={portfolioRecords} properties={propertyRecords} units={unitRecords} search={search} setSearch={setSearch} onNew={() => { setEditingPortfolio(null); setForm("portfolio"); }} onEdit={(portfolio) => { setEditingPortfolio(portfolio); setForm("portfolio"); }} />}
           {page === "Imóveis" && <PropertiesPage properties={propertyRecords} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} onNew={() => { setEditingProperty(null); setForm("property"); }} onOpen={(property) => setRegistryDetail({ kind: "property", record: property })} />}
           {page === "Unidades" && <UnitsPage units={unitRecords} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} onNew={() => { setEditingUnit(null); setForm("unit"); }} onOpen={(unit) => setRegistryDetail({ kind: "unit", record: unit })} onEdit={(unit) => { setEditingUnit(unit); setForm("unit"); }} />}
           {page === "Locatários" && <TenantsPage tenants={tenantRecords} search={search} setSearch={setSearch} onNew={() => { setEditingTenant(null); setForm("tenant"); }} onOpen={(tenant) => setRegistryDetail({ kind: "tenant", record: tenant })} onEdit={(tenant) => { setEditingTenant(tenant); setForm("tenant"); }} />}
@@ -1014,9 +1014,61 @@ function ExpensesPage({ rows, total, categories, search, setSearch, statusFilter
   </>;
 }
 
-function PortfoliosPage({ portfolios, search, setSearch, onNew, onEdit }: { portfolios: Portfolio[]; search: string; setSearch: (value: string) => void; onNew: () => void; onEdit: (portfolio: Portfolio) => void }) {
+function PortfoliosPage({ portfolios, properties, units, search, setSearch, onNew, onEdit }: { portfolios: Portfolio[]; properties: Property[]; units: Unit[]; search: string; setSearch: (value: string) => void; onNew: () => void; onEdit: (portfolio: Portfolio) => void }) {
   const rows = portfolios.filter((portfolio) => `${portfolio.name}${portfolio.holder}${portfolio.document}`.toLowerCase().includes(search.toLowerCase()));
-  return <><PageHeading eyebrow="Estrutura patrimonial" title="Carteiras" description="Agrupe imóveis sob a titularidade ou organização usada na operação." action="Nova carteira" onAction={onNew} /><TableSection toolbar={<SearchBar value={search} onChange={setSearch} placeholder="Buscar por carteira, titular ou CNPJ" />} footer={<><span>{rows.length} carteiras</span><span>Base demonstrativa</span></>}><table className="compact-table"><thead><tr><th>Carteira</th><th>Titular</th><th>Documento</th><th>Imóveis</th><th>Unidades</th><th /></tr></thead><tbody>{rows.map((portfolio) => <tr key={portfolio.id}><td><strong>{portfolio.name}</strong><small>{portfolio.id}</small></td><td>{portfolio.holder}</td><td>{portfolio.document}</td><td>{portfolio.properties}</td><td>{portfolio.units}</td><td><button className="row-action" onClick={() => onEdit(portfolio)}>Editar</button></td></tr>)}</tbody></table>{rows.length === 0 && <EmptyState />}</TableSection></>;
+  const occupiedUnits = units.filter((unit) => unit.occupied).length;
+  const occupancy = units.length ? Math.round((occupiedUnits / units.length) * 100) : 0;
+
+  return <>
+    <PageHeading eyebrow="Estrutura patrimonial" title="Carteiras" description="Visualize cada portfólio, seus imóveis e a ocupação da estrutura locável." action="Nova carteira" onAction={onNew} />
+
+    <section className="portfolio-overview" aria-label="Visão consolidada das carteiras">
+      <div className="portfolio-overview-intro"><span>Visão consolidada</span><strong>{properties.length} imóveis <b>em gestão</b></strong><small>Patrimônio distribuído em {portfolios.length} {portfolios.length === 1 ? "carteira ativa" : "carteiras ativas"}.</small></div>
+      <div className="portfolio-overview-metric"><span>Carteiras</span><strong>{portfolios.length}</strong><small>estruturas patrimoniais</small></div>
+      <div className="portfolio-overview-metric"><span>Unidades</span><strong>{units.length}</strong><small>{units.length - occupiedUnits} disponíveis</small></div>
+      <div className="portfolio-overview-occupancy"><span>Ocupação geral</span><strong>{occupancy}%</strong><small>{occupiedUnits} de {units.length} unidades</small><i aria-hidden="true"><b style={{ width: `${occupancy}%` }} /></i></div>
+    </section>
+
+    <section className="portfolio-controls" aria-label="Busca de carteiras">
+      <SearchBar value={search} onChange={setSearch} placeholder="Buscar por carteira, titular ou CNPJ" />
+      <span>{rows.length} {rows.length === 1 ? "carteira encontrada" : "carteiras encontradas"}</span>
+      <button type="button" className="primary-button portfolio-mobile-new" onClick={onNew}>Nova carteira</button>
+    </section>
+
+    {rows.length > 0 ? <section className="portfolio-card-grid" aria-label="Portfólios cadastrados">{rows.map((portfolio) => {
+      const portfolioProperties = properties.filter((property) => property.portfolio === portfolio.name);
+      const portfolioUnits = units.filter((unit) => unit.portfolio === portfolio.name);
+      const portfolioOccupied = portfolioUnits.filter((unit) => unit.occupied).length;
+      const portfolioOccupancy = portfolioUnits.length ? Math.round((portfolioOccupied / portfolioUnits.length) * 100) : 0;
+      const monogram = portfolio.name.split(" ").map((word) => word[0]).join("").slice(0, 2).toUpperCase();
+      const tone = portfolios.indexOf(portfolio) % 2 === 0 ? "atlas" : "horizon";
+
+      return <article className={`portfolio-card portfolio-card-${tone}`} key={portfolio.id}>
+        {portfolioProperties.length > 0 ? <div className={`portfolio-gallery portfolio-gallery-${Math.min(portfolioProperties.length, 3)}`}>
+          {portfolioProperties.slice(0, 3).map((property) => <span key={property.id}><img src={propertyCoverImages[property.id] ?? fallbackPropertyCover} alt={`${property.name}, imóvel de ${portfolio.name}`} width="640" height="400" loading="lazy" /></span>)}
+          <span className="portfolio-card-id">{portfolio.id}</span>
+          <span className="portfolio-card-monogram" aria-hidden="true">{monogram}</span>
+        </div> : <div className="portfolio-empty-cover"><span>{monogram}</span><strong>Carteira pronta para receber imóveis</strong><small>Vincule o primeiro empreendimento ao portfólio.</small></div>}
+
+        <div className="portfolio-card-body">
+          <header><div><span>Titular da carteira</span><h2>{portfolio.name}</h2><p>{portfolio.holder}</p></div><button type="button" className="secondary-button portfolio-edit" onClick={() => onEdit(portfolio)}>Editar carteira</button></header>
+          <div className="portfolio-document"><span>Documento do titular</span><strong>{portfolio.document}</strong></div>
+          <div className="portfolio-card-metrics">
+            <span>Imóveis<strong>{portfolioProperties.length}</strong></span>
+            <span>Unidades<strong>{portfolioUnits.length}</strong></span>
+            <span>Ocupação<strong>{portfolioOccupancy}%</strong></span>
+          </div>
+          <div className="portfolio-occupancy-row"><span><strong>{portfolioOccupied} ocupadas</strong><small>{portfolioUnits.length - portfolioOccupied} disponíveis</small></span><i aria-label={`Ocupação de ${portfolio.name}: ${portfolioOccupancy}%`}><b style={{ width: `${portfolioOccupancy}%` }} /></i></div>
+          <div className="portfolio-property-list"><span>Empreendimentos</span><div>{portfolioProperties.slice(0, 3).map((property) => <small key={property.id}>{property.name}</small>)}{portfolioProperties.length > 3 && <small>+{portfolioProperties.length - 3}</small>}{portfolioProperties.length === 0 && <small>Nenhum imóvel vinculado</small>}</div></div>
+        </div>
+      </article>;
+    })}</section> : <div className="portfolio-empty-result"><EmptyState /></div>}
+
+    {rows.length > 0 && <details className="portfolio-table-view">
+      <summary><span><strong>Visão cadastral</strong><small>Consulte titular, documento e totais em formato de tabela.</small></span><b aria-hidden="true">+</b></summary>
+      <div className="portfolio-table-scroll"><table className="compact-table"><thead><tr><th>Carteira</th><th>Titular</th><th>Documento</th><th>Imóveis</th><th>Unidades</th><th /></tr></thead><tbody>{rows.map((portfolio) => <tr key={portfolio.id}><td><strong>{portfolio.name}</strong><small>{portfolio.id}</small></td><td>{portfolio.holder}</td><td>{portfolio.document}</td><td>{properties.filter((property) => property.portfolio === portfolio.name).length}</td><td>{units.filter((unit) => unit.portfolio === portfolio.name).length}</td><td><button type="button" className="row-action" onClick={() => onEdit(portfolio)}>Editar</button></td></tr>)}</tbody></table></div>
+    </details>}
+  </>;
 }
 
 function PropertiesPage({ properties, search, setSearch, portfolioFilter, setPortfolioFilter, onNew, onOpen }: { properties: Property[]; search: string; setSearch: (value: string) => void; portfolioFilter: string; setPortfolioFilter: (value: string) => void; onNew: () => void; onOpen: (property: Property) => void }) {
