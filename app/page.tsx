@@ -658,13 +658,13 @@ export default function Home() {
           {page === "Imóveis" && <PropertiesPage properties={propertyRecords} units={unitRecords} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} onNew={() => { setEditingProperty(null); setForm("property"); }} onOpen={(property) => setRegistryDetail({ kind: "property", record: property })} />}
           {page === "Unidades" && <UnitsPage units={unitRecords} properties={propertyRecords} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} onNew={() => { setEditingUnit(null); setForm("unit"); }} onOpen={(unit) => setRegistryDetail({ kind: "unit", record: unit })} onEdit={(unit) => { setEditingUnit(unit); setForm("unit"); }} />}
           {page === "Locatários" && <TenantsPage tenants={tenantRecords} search={search} setSearch={setSearch} onNew={() => { setEditingTenant(null); setForm("tenant"); }} onOpen={(tenant) => setRegistryDetail({ kind: "tenant", record: tenant })} onEdit={(tenant) => { setEditingTenant(tenant); setForm("tenant"); }} />}
-          {page === "Contratos" && <ContractsPage search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} onNew={() => setForm("contract")} onOpen={setSelectedContract} />}
+          {page === "Contratos" && <ContractsPage charges={chargeRecords} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} onNew={() => setForm("contract")} onOpen={setSelectedContract} />}
           {page === "Despesas" && <ExpensesPage rows={filteredExpenses} total={expenseRecords.length} categories={Array.from(new Set(expenseRecords.map((expense) => expense.category)))} search={search} setSearch={setSearch} statusFilter={statusFilter} setStatusFilter={setStatusFilter} categoryFilter={categoryFilter} setCategoryFilter={setCategoryFilter} onOpen={setSelectedExpense} onNew={() => setForm("expense")} />}
         </></FilterStateContext.Provider>}
       </div>
     </section>
     {selectedCharge && <ChargeDrawer charge={selectedCharge} negotiation={negotiationsByCharge[selectedCharge.id]} onClose={() => { setSelectedCharge(null); setNegotiationOpen(false); }} onReceipt={() => setReceiptOpen(true)} onNegotiate={() => setNegotiationOpen(true)} />}
-    {selectedContract && <ContractDrawer contract={selectedContract} onClose={() => setSelectedContract(null)} onCharge={() => { setChargeSourceContract(selectedContract); setSelectedContract(null); setForm("charge"); }} />}
+    {selectedContract && <ContractDrawer contract={selectedContract} charges={chargeRecords} onClose={() => setSelectedContract(null)} onCharge={() => { setChargeSourceContract(selectedContract); setSelectedContract(null); setForm("charge"); }} />}
     {registryDetail && <RegistryDetailDrawer detail={registryDetail} properties={propertyRecords} units={unitRecords} documents={registryDetail.kind === "tenant" ? documentsByOwner[registryDetail.record.id] ?? [] : []} categorizedDocuments={registryDetail.kind === "property" || registryDetail.kind === "unit" ? categorizedDocumentsByOwner[registryDetail.record.id] ?? createEmptyCategorizedDocuments() : undefined} onCategorizedDocumentsChange={(nextDocuments) => updateRegistryDocuments(registryDetail.record.id, nextDocuments)} onClose={() => setRegistryDetail(null)} onEdit={editRegistryDetail} />}
     {selectedExpense && <ExpenseDrawer expense={selectedExpense} onClose={() => setSelectedExpense(null)} onStatusChange={(status, paidIso) => {
       const paidDate = status === "Pago" && paidIso ? formatExpenseDate(paidIso) : null;
@@ -1166,9 +1166,38 @@ function TenantsPage({ tenants, search, setSearch, onNew, onOpen, onEdit }: { te
   return <><PageHeading eyebrow="Cadastros essenciais" title="Locatários" description="Cadastre pessoa física ou jurídica e vincule-a aos contratos." action="Novo locatário" onAction={onNew} /><TableSection toolbar={<SearchBar value={search} onChange={setSearch} placeholder="Buscar por nome, CPF ou CNPJ" />} footer={<><span>{rows.length} locatários</span><span>PF e PJ</span></>}><table className="compact-table"><thead><tr><th>Locatário</th><th>Tipo</th><th>CPF / CNPJ</th><th>Contratos</th><th /></tr></thead><tbody>{rows.map((tenant) => <tr className="entity-row" key={tenant.id} tabIndex={0} aria-label={`Abrir detalhes de ${tenant.name}`} onClick={() => onOpen(tenant)} onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onOpen(tenant); } }}><td><strong>{tenant.name}</strong><small>{tenant.id}</small></td><td>{tenant.type}</td><td>{tenant.document}</td><td>{tenant.contracts}</td><td><button type="button" className="row-action" onClick={(event) => { event.stopPropagation(); onEdit(tenant); }}>Editar</button></td></tr>)}</tbody></table>{rows.length === 0 && <EmptyState />}</TableSection></>;
 }
 
-function ContractsPage({ search, setSearch, portfolioFilter, setPortfolioFilter, onNew, onOpen }: { search: string; setSearch: (value: string) => void; portfolioFilter: string; setPortfolioFilter: (value: string) => void; onNew: () => void; onOpen: (contract: Contract) => void }) {
+function ContractsPage({ charges, search, setSearch, portfolioFilter, setPortfolioFilter, onNew, onOpen }: { charges: Charge[]; search: string; setSearch: (value: string) => void; portfolioFilter: string; setPortfolioFilter: (value: string) => void; onNew: () => void; onOpen: (contract: Contract) => void }) {
   const rows = contracts.filter((contract) => `${contract.id}${contract.property}${contract.tenant}${contract.units.join("")}`.toLowerCase().includes(search.toLowerCase()) && (portfolioFilter === "Todas as carteiras" || contract.portfolio === portfolioFilter));
-  return <><PageHeading eyebrow="Locações" title="Contratos" description="Conecte locatário, carteira, imóvel e uma ou mais unidades à condição financeira acordada." action="Novo contrato" onAction={onNew} /><TableSection toolbar={<><SearchBar value={search} onChange={setSearch} placeholder="Buscar por contrato, unidade ou locatário" /><PortfolioFilter value={portfolioFilter} onChange={setPortfolioFilter} /></>} footer={<><span>{rows.length} contratos</span><span>Cobranças não são geradas automaticamente</span></>}><table><thead><tr><th>Contrato</th><th>Imóvel / unidades</th><th>Locatário</th><th>Vigência</th><th>Aluguel</th><th>Vencimento</th><th /></tr></thead><tbody>{rows.map((contract) => <tr key={contract.id} onClick={() => onOpen(contract)}><td><strong>{contract.id}</strong><small>{contract.portfolio}</small></td><td><strong>{contract.property}</strong><UnitPills values={contract.units} /></td><td>{contract.tenant}</td><td>{contract.period}</td><td><strong>{brl.format(contract.rent)}</strong></td><td>Dia {contract.due}</td><td><button className="row-action" onClick={(event) => { event.stopPropagation(); onOpen(contract); }}>Abrir</button></td></tr>)}</tbody></table>{rows.length === 0 && <EmptyState />}</TableSection><InfoNote text="O contrato define os itens previstos, mas cada cobrança continua sendo incluída manualmente por competência." /></>;
+  const monthlyRevenue = rows.reduce((total, contract) => total + contract.rent, 0);
+  const linkedUnits = rows.reduce((total, contract) => total + contract.units.length, 0);
+  const visibleContractIds = new Set(rows.map((contract) => contract.id));
+  const generatedCharges = charges.filter((charge) => visibleContractIds.has(charge.contract)).length;
+
+  return <><PageHeading eyebrow="Locações" title="Contratos" description="Acompanhe acordos ativos, vigências e valores contratados com clareza executiva." action="Novo contrato" onAction={onNew} />
+    <section className="contract-overview" aria-label="Resumo dos contratos exibidos">
+      <div className="contract-overview-intro"><span>Carteira contratual</span><strong>{rows.length} {rows.length === 1 ? "contrato ativo" : "contratos ativos"}</strong><small>Acordos vigentes no filtro atual</small></div>
+      <div><span>Receita mensal base</span><strong>{brl.format(monthlyRevenue)}</strong><small>sem adicionais contratuais</small></div>
+      <div><span>Unidades vinculadas</span><strong>{linkedUnits}</strong><small>espaços sob contrato</small></div>
+      <div className="contract-overview-billing"><span>Cobranças geradas</span><strong>{generatedCharges}</strong><small>competências incluídas manualmente</small></div>
+    </section>
+    <TableSection toolbar={<><SearchBar value={search} onChange={setSearch} placeholder="Buscar por contrato, unidade ou locatário" /><PortfolioFilter value={portfolioFilter} onChange={setPortfolioFilter} /><button type="button" className="primary-button contract-mobile-new" onClick={onNew}>Novo contrato</button></>} footer={<><span>{rows.length} contratos ativos</span><span>{brl.format(monthlyRevenue)} de receita mensal base</span></>}>
+      {rows.length > 0 ? <div className="contract-card-grid" aria-label="Contratos ativos">{rows.map((contract) => {
+        const [startDate, endDate] = contract.period.split(" — ");
+        const contractCharges = charges.filter((charge) => charge.contract === contract.id).length;
+
+        return <button type="button" className="contract-card" key={contract.id} onClick={() => onOpen(contract)} aria-label={`Abrir ${contract.id}, contrato de ${contract.tenant}`}>
+          <span className="contract-card-accent" aria-hidden="true" />
+          <span className="contract-card-head"><span><b>{contract.id}</b><small>{contract.portfolio}</small></span><span className="contract-active-badge">Ativo</span></span>
+          <span className="contract-card-tenant"><small>Locatário</small><strong>{contract.tenant}</strong><span>{contract.property}</span></span>
+          <span className="contract-card-units"><small>{contract.units.length} {contract.units.length === 1 ? "unidade vinculada" : "unidades vinculadas"}</small><span>{contract.units.map((unit) => <b key={unit}>{unit}</b>)}</span></span>
+          <span className="contract-card-value"><span><small>Aluguel base</small><strong>{brl.format(contract.rent)}</strong></span><span><small>Vencimento</small><strong>Dia {contract.due}</strong></span></span>
+          <span className="contract-card-period"><span><i aria-hidden="true" /><b>{startDate}</b></span><i aria-hidden="true" /><span><i aria-hidden="true" /><b>{endDate}</b></span></span>
+          <span className="contract-card-footer"><span>Reajuste em {contract.adjustment}</span><b>{contractCharges} {contractCharges === 1 ? "cobrança" : "cobranças"} <i aria-hidden="true">→</i></b></span>
+        </button>;
+      })}</div> : <EmptyState entity="contrato" />}
+    </TableSection>
+    <InfoNote text="Os itens e valores ficam previstos no contrato, enquanto cada competência continua sendo incluída manualmente em Cobranças." />
+  </>;
 }
 
 function InfoNote({ text }: { text: string }) { return <aside className="info-note"><span>i</span><p>{text}</p></aside>; }
@@ -1257,8 +1286,38 @@ function ChargeDrawer({ charge, negotiation, onClose, onReceipt, onNegotiate }: 
   </div><footer className="drawer-footer charge-drawer-footer"><button className="secondary-button drawer-footer-close" onClick={onClose}>Fechar</button>{charge.status !== "Recebida" && <><button className="secondary-button negotiation-action-button" onClick={onNegotiate}>{negotiation ? "Editar negociação" : "Negociar cobrança"}</button><button className="primary-button" onClick={onReceipt}>Registrar recebimento</button></>}</footer></aside></div>;
 }
 
-function ContractDrawer({ contract, onClose, onCharge }: { contract: Contract; onClose: () => void; onCharge: () => void }) {
-  return <div className="drawer-layer" role="dialog" aria-modal="true" aria-label="Detalhes do contrato"><button className="drawer-backdrop" onClick={onClose} /><aside className="drawer"><header className="drawer-header"><div><p className="eyebrow">Contrato ativo</p><h2>{contract.id}</h2></div><button className="close-button" onClick={onClose}>×</button></header><div className="drawer-body"><section className="balance-panel"><span>Aluguel base</span><strong>{brl.format(contract.rent)}</strong><small>Vencimento no dia {contract.due}</small></section><dl className="detail-list"><div><dt>Carteira</dt><dd>{contract.portfolio}</dd></div><div><dt>Imóvel</dt><dd>{contract.property}</dd></div><div><dt>Unidades vinculadas</dt><dd><UnitPills values={contract.units} /></dd></div><div><dt>Locatário</dt><dd>{contract.tenant}</dd></div><div><dt>Vigência</dt><dd>{contract.period}</dd></div><div><dt>Mês de reajuste</dt><dd>{contract.adjustment}</dd></div><div><dt>Itens previstos</dt><dd><UnitPills values={contract.charges} /></dd></div></dl><aside className="contract-edit-policy" aria-label="Política de alteração do contrato"><span aria-hidden="true">!</span><div><strong>Contrato ativo não pode ser editado diretamente</strong><p>Para corrigir condições, encerre a vigência atual e use “Novo contrato” para cadastrar o substituto. Cobranças e histórico permanecem vinculados ao contrato original.</p></div></aside><InfoNote text="Salvar ou consultar o contrato não cria competências automaticamente." /></div><footer className="drawer-footer"><button className="secondary-button" onClick={onClose}>Fechar</button><button className="primary-button" onClick={onCharge}>Criar cobrança</button></footer></aside></div>;
+function ContractDrawer({ contract, charges, onClose, onCharge }: { contract: Contract; charges: Charge[]; onClose: () => void; onCharge: () => void }) {
+  const [startDate, endDate] = contract.period.split(" — ");
+  const contractCharges = charges.filter((charge) => charge.contract === contract.id);
+
+  return <div className="drawer-layer" role="dialog" aria-modal="true" aria-label={`Detalhes do contrato ${contract.id}`}><button className="drawer-backdrop" onClick={onClose} aria-label="Fechar detalhes" /><aside className="drawer wide-drawer contract-detail-drawer">
+    <header className="contract-detail-hero">
+      <div className="contract-detail-hero-top"><p className="eyebrow eyebrow-light">Instrumento de locação</p><button type="button" className="close-button" onClick={onClose} aria-label="Fechar detalhes">×</button></div>
+      <div className="contract-detail-hero-copy"><div><span>{contract.id}</span><b>Contrato ativo</b></div><h2>{contract.tenant}</h2><p>{contract.property} · {contract.portfolio}</p></div>
+      <i className="contract-detail-seal" aria-hidden="true">✓</i>
+    </header>
+    <div className="drawer-body">
+      <section className="contract-detail-summary" aria-label={`Resumo financeiro de ${contract.id}`}>
+        <div className="contract-detail-rent"><span>Aluguel base</span><strong>{brl.format(contract.rent)}</strong><small>valor mensal contratado</small></div>
+        <div><span>Vencimento</span><strong>Dia {contract.due}</strong><small>de cada competência</small></div>
+        <div><span>Reajuste</span><strong>{contract.adjustment}</strong><small>mês de referência</small></div>
+        <div><span>Cobranças</span><strong>{contractCharges.length}</strong><small>competências geradas</small></div>
+      </section>
+      <section className="contract-period-panel" aria-labelledby="contract-period-title">
+        <header><div><span>Vigência contratual</span><h3 id="contract-period-title">Período do acordo</h3></div><b>Em andamento</b></header>
+        <div className="contract-period-line"><span><i aria-hidden="true" /><small>Início</small><strong>{startDate}</strong></span><i aria-hidden="true" /><span><i aria-hidden="true" /><small>Término</small><strong>{endDate}</strong></span></div>
+      </section>
+      <section className="contract-relationships" aria-labelledby="contract-relationships-title">
+        <header><div><span>Vínculos do contrato</span><h3 id="contract-relationships-title">Estrutura locada</h3></div><small>{contract.units.length} {contract.units.length === 1 ? "unidade" : "unidades"}</small></header>
+        <div className="contract-relationship-main"><span>Imóvel<strong>{contract.property}</strong></span><span>Locatário<strong>{contract.tenant}</strong></span></div>
+        <div className="contract-relationship-units">{contract.units.map((unit) => <span key={unit}>{unit}</span>)}</div>
+      </section>
+      <section className="contract-composition" aria-labelledby="contract-composition-title"><div className="section-title"><h3 id="contract-composition-title">Composição prevista</h3><span>{contract.charges.length} itens</span></div><div>{contract.charges.map((item, index) => <span key={item}><i>{String(index + 1).padStart(2, "0")}</i><strong>{item}</strong></span>)}</div></section>
+      <aside className="contract-edit-policy" aria-label="Política de alteração do contrato"><span aria-hidden="true">!</span><div><strong>Contrato ativo não pode ser editado diretamente</strong><p>Para corrigir condições, encerre a vigência atual e cadastre o substituto. Cobranças e histórico permanecem vinculados ao acordo original.</p></div></aside>
+      <InfoNote text="Consultar o contrato não cria competências automaticamente. Use “Criar cobrança” quando quiser faturar um novo período." />
+    </div>
+    <footer className="drawer-footer contract-detail-footer"><button type="button" className="secondary-button" onClick={onClose}>Fechar</button><button type="button" className="primary-button" onClick={onCharge}>Criar cobrança</button></footer>
+  </aside></div>;
 }
 
 function ExpenseDrawer({ expense, onClose, onStatusChange }: { expense: Expense; onClose: () => void; onStatusChange: (status: ExpenseStatus, paidIso: string) => void }) {
