@@ -3,6 +3,39 @@
 import type { CSSProperties, ReactNode } from "react";
 import { createContext, FormEvent, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowDownToLine,
+  ArrowRight,
+  ArrowUpDown,
+  BadgeDollarSign,
+  BriefcaseBusiness,
+  Building2,
+  CalendarClock,
+  Check,
+  CircleCheck,
+  ClipboardList,
+  DoorOpen,
+  FileSignature,
+  HandCoins,
+  Handshake,
+  KeyRound,
+  Landmark,
+  LayoutDashboard,
+  LogOut,
+  Menu,
+  PencilLine,
+  Plus,
+  ReceiptText,
+  RotateCcw,
+  Search,
+  SlidersHorizontal,
+  TriangleAlert,
+  UsersRound,
+  WalletCards,
+  WifiOff,
+  X,
+  type LucideIcon,
+} from "lucide-react";
+import {
   ALL_REPORT_PORTFOLIOS,
   buildAccountingReportModel,
   competenceToInputValue,
@@ -643,7 +676,7 @@ export default function Home() {
     <Sidebar page={page} attentionCount={chargeAttentionCount} onNavigate={changePage} onLogout={() => setAuthenticated(false)} open={menuOpen} onClose={() => setMenuOpen(false)} collapsed={sidebarCollapsed} onExpand={() => setSidebarCollapsed(false)} />
     <section className="workspace" onClick={() => !sidebarCollapsed && setSidebarCollapsed(true)}>
       <header className="topbar">
-        <button className="menu-button" onClick={() => setMenuOpen(true)} aria-label="Abrir navegação">☰</button>
+        <button className="menu-button" onClick={() => setMenuOpen(true)} aria-label="Abrir navegação"><Menu aria-hidden="true" /></button>
         <div><span className="breadcrumb">Módulo 1 /</span> {page}</div>
         <div className="topbar-context"><span className="context-dot" /> Dados fictícios</div>
       </header>
@@ -714,8 +747,8 @@ function Login({ loading, onSubmit }: { loading: boolean; onSubmit: (event: Form
           <div className="login-heading"><p className="eyebrow">Acesso administrativo</p><h2>Boas-vindas</h2><p>Entre para visualizar a operação patrimonial e financeira em um único painel.</p></div>
           <label>E-mail<input type="email" defaultValue="administrativo@exemplo.com.br" autoComplete="email" required /></label>
           <label>Senha<input type="password" defaultValue="demonstracao" autoComplete="current-password" required /></label>
-          <button className="primary-button login-button" disabled={loading} aria-busy={loading}>{loading ? <><span className="spinner" /> Preparando ambiente</> : <><span>Acessar demonstração</span><span className="login-button-arrow" aria-hidden="true">→</span></>}</button>
-          <div className="login-trust-note"><span aria-hidden="true">✓</span><p><strong>Dados exclusivamente demonstrativos</strong><small>Nenhuma informação real do cliente é exibida nesta versão.</small></p></div>
+          <button className="primary-button login-button" disabled={loading} aria-busy={loading}>{loading ? <><span className="spinner" /> Preparando ambiente</> : <><span>Acessar demonstração</span><span className="login-button-arrow" aria-hidden="true"><ArrowRight /></span></>}</button>
+          <div className="login-trust-note"><span aria-hidden="true"><Check /></span><p><strong>Dados exclusivamente demonstrativos</strong><small>Nenhuma informação real do cliente é exibida nesta versão.</small></p></div>
         </form>
         <p className="login-panel-version">Locações &amp; Recebíveis · Módulo 1</p>
       </div>
@@ -724,12 +757,13 @@ function Login({ loading, onSubmit }: { loading: boolean; onSubmit: (event: Form
 }
 
 function SidebarGlyph({ name }: { name: string }) {
-  const glyphs: Record<string, string> = {
-    "Operação": "clipboard", "Estrutura": "structure", "Locação": "key", "Financeiro": "finance",
-    "Visão geral": "schedule", "Carteiras": "briefcase", "Imóveis": "building", "Unidades": "door",
-    "Locatários": "users", "Contratos": "document", "Cobranças": "income", "Despesas": "payable",
+  const glyphs: Record<string, LucideIcon> = {
+    "Operação": ClipboardList, "Estrutura": Landmark, "Locação": KeyRound, "Financeiro": WalletCards,
+    "Visão geral": LayoutDashboard, "Carteiras": BriefcaseBusiness, "Imóveis": Building2, "Unidades": DoorOpen,
+    "Locatários": UsersRound, "Contratos": FileSignature, "Cobranças": BadgeDollarSign, "Despesas": ReceiptText,
   };
-  return <span className={`sidebar-glyph glyph-${glyphs[name] ?? "document"}`} aria-hidden="true"><span /></span>;
+  const Glyph = glyphs[name] ?? FileSignature;
+  return <span className="sidebar-glyph sidebar-glyph-lucide" aria-hidden="true"><Glyph strokeWidth={1.8} /></span>;
 }
 
 function Sidebar({ page, attentionCount, onNavigate, onLogout, open, onClose, collapsed, onExpand }: { page: Page; attentionCount: number; onNavigate: (page: Page) => void; onLogout: () => void; open: boolean; onClose: () => void; collapsed: boolean; onExpand: () => void }) {
@@ -749,7 +783,7 @@ function Sidebar({ page, attentionCount, onNavigate, onLogout, open, onClose, co
         <div className="sidebar-brand">
           <div className="brand-mark sidebar-logo"><span>L</span><i /><span>R</span></div>
           <div className="sidebar-brand-copy"><strong>Locações & Recebíveis</strong><span>Gestão operacional · Módulo 1</span></div>
-          <button type="button" className="sidebar-mobile-close" onClick={onClose} aria-label="Fechar navegação">×</button>
+          <button type="button" className="sidebar-mobile-close" onClick={onClose} aria-label="Fechar navegação"><X aria-hidden="true" /></button>
         </div>
         <nav aria-label="Navegação principal">
           <div className="theme-list">{groups.map((group, index) => {
@@ -771,7 +805,7 @@ function Sidebar({ page, attentionCount, onNavigate, onLogout, open, onClose, co
         <div className="sidebar-account">
           <div className="avatar-shell"><div className="avatar">AD</div><span /></div>
           <div className="account-copy"><strong>Administrativo</strong><span>Acesso principal</span></div>
-          <button type="button" className="logout-button" onClick={onLogout} aria-label="Sair do sistema" title="Sair"><span className="logout-icon" aria-hidden="true" /><em>Sair</em></button>
+          <button type="button" className="logout-button" onClick={onLogout} aria-label="Sair do sistema" title="Sair"><LogOut className="logout-icon" aria-hidden="true" /><em>Sair</em></button>
         </div>
       </footer>
     </aside>
@@ -779,17 +813,17 @@ function Sidebar({ page, attentionCount, onNavigate, onLogout, open, onClose, co
 }
 
 function PageHeading({ eyebrow, title, description, action, onAction }: { eyebrow: string; title: string; description: string; action?: string; onAction?: () => void }) {
-  return <section className="page-heading"><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p>{description}</p></div>{action && onAction && <button className="primary-button" onClick={onAction}>{action}</button>}</section>;
+  return <section className="page-heading"><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p>{description}</p></div>{action && onAction && <button className="primary-button button-with-icon" onClick={onAction}><Plus aria-hidden="true" />{action}</button>}</section>;
 }
 
 function SearchBar({ value, onChange, placeholder }: { value: string; onChange: (value: string) => void; placeholder: string }) {
-  return <div className="search-field"><span aria-hidden="true" /><input aria-label="Buscar" placeholder={placeholder} value={value} onChange={(event) => onChange(event.target.value)} /></div>;
+  return <div className="search-field"><Search aria-hidden="true" /><input aria-label="Buscar" placeholder={placeholder} value={value} onChange={(event) => onChange(event.target.value)} /></div>;
 }
 
 function FilterSelect({ label, value, onChange, children, active = false, variant = "filter", wide = false }: { label: string; value: string; onChange: (value: string) => void; children: ReactNode; active?: boolean; variant?: "filter" | "sort"; wide?: boolean }) {
   return <label className={`filter-select ${active ? "is-active" : ""} ${wide ? "filter-select-wide" : ""}`}>
     <span className="sr-only">{label}</span>
-    <span className={`filter-select-icon filter-select-icon-${variant}`} aria-hidden="true" />
+    {variant === "sort" ? <ArrowUpDown className="filter-select-icon" aria-hidden="true" /> : <SlidersHorizontal className="filter-select-icon" aria-hidden="true" />}
     <select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}>{children}</select>
     <span className="filter-select-chevron" aria-hidden="true" />
   </label>;
@@ -800,11 +834,11 @@ function PortfolioFilter({ value, onChange }: { value: string; onChange: (value:
 }
 
 function ConnectionBanner({ onRetry }: { onRetry: () => void }) {
-  return <aside className="connection-banner" role="alert"><span aria-hidden="true">!</span><div><strong>Sem conexão</strong><p>Os dados exibidos podem estar desatualizados. Reconecte para continuar salvando.</p></div><button type="button" className="secondary-button" onClick={onRetry}>Tentar novamente</button></aside>;
+  return <aside className="connection-banner" role="alert"><span aria-hidden="true"><WifiOff /></span><div><strong>Sem conexão</strong><p>Os dados exibidos podem estar desatualizados. Reconecte para continuar salvando.</p></div><button type="button" className="secondary-button button-with-icon" onClick={onRetry}><RotateCcw aria-hidden="true" />Tentar novamente</button></aside>;
 }
 
 function SystemError({ onRetry, compact = false }: { onRetry: () => void; compact?: boolean }) {
-  return <section className={`system-error ${compact ? "system-error-compact" : ""}`} role="alert"><span aria-hidden="true">!</span><div><h3>Não foi possível carregar os dados</h3><p>Confira sua conexão e tente novamente. Nenhuma alteração foi perdida.</p></div><button type="button" className="primary-button" onClick={onRetry}>Tentar novamente</button></section>;
+  return <section className={`system-error ${compact ? "system-error-compact" : ""}`} role="alert"><span aria-hidden="true"><TriangleAlert /></span><div><h3>Não foi possível carregar os dados</h3><p>Confira sua conexão e tente novamente. Nenhuma alteração foi perdida.</p></div><button type="button" className="primary-button button-with-icon" onClick={onRetry}><RotateCcw aria-hidden="true" />Tentar novamente</button></section>;
 }
 
 function AuthenticatedPageSkeleton() {
@@ -812,12 +846,12 @@ function AuthenticatedPageSkeleton() {
 }
 
 function SuccessToast({ message }: { message: Exclude<ToastMessage, null> }) {
-  return <div className="toast" role="status" aria-live="polite"><span aria-hidden="true">✓</span><div><strong>{message.message}</strong><small>Referência: {message.reference}</small></div></div>;
+  return <div className="toast" role="status" aria-live="polite"><span aria-hidden="true"><CircleCheck /></span><div><strong>{message.message}</strong><small>Referência: {message.reference}</small></div></div>;
 }
 
 function InlineFieldError({ message }: { message: string }) {
   if (!message) return null;
-  return <p className="inline-field-error" id="entity-form-error" role="alert"><span aria-hidden="true">!</span>{message}</p>;
+  return <p className="inline-field-error" id="entity-form-error" role="alert"><span aria-hidden="true"><TriangleAlert /></span>{message}</p>;
 }
 
 function TableSection({ toolbar, children, footer }: { toolbar: ReactNode; children: ReactNode; footer: ReactNode }) {
@@ -835,14 +869,14 @@ function EmptyState({ filtered, entity = "registro", mark = "00", eyebrow = "Bas
       <h3>{resolvedTitle}</h3>
       <p>{resolvedDescription}</p>
       <div className="empty-state-actions">
-        {isFiltered && onClear && <button type="button" className="primary-button" onClick={onClear}>Limpar filtros</button>}
-        {action && onAction && <button type="button" className={isFiltered ? "secondary-button" : "primary-button"} onClick={onAction}>{action}</button>}
+        {isFiltered && onClear && <button type="button" className="primary-button button-with-icon" onClick={onClear}><RotateCcw aria-hidden="true" />Limpar filtros</button>}
+        {action && onAction && <button type="button" className={`${isFiltered ? "secondary-button" : "primary-button"} button-with-icon`} onClick={onAction}><Plus aria-hidden="true" />{action}</button>}
       </div>
     </div>
     <div className="empty-state-visual" aria-hidden="true">
       <span className="empty-state-orbit"><i /></span>
       <span className="empty-state-sheet empty-state-sheet-back"><i /><i /><i /></span>
-      <span className="empty-state-sheet empty-state-sheet-front"><b>{isFiltered ? "?" : mark}</b><i /><i /><em>{isFiltered ? "⌕" : "+"}</em></span>
+      <span className="empty-state-sheet empty-state-sheet-front"><b>{isFiltered ? "?" : mark}</b><i /><i /><em>{isFiltered ? <Search /> : <Plus />}</em></span>
     </div>
   </section>;
 }
@@ -918,8 +952,8 @@ function DashboardPage({ charges, negotiations, expenses, properties, units, con
       <aside className="dashboard-executive-pulse" aria-label="Pulso da operação">
         <header><div><span>Pulso da operação</span><h2>Indicadores essenciais</h2></div><small>Atualizado hoje</small></header>
         <div className="dashboard-pulse-metrics">
-          <button type="button" onClick={() => onNavigate("Cobranças")}><i className="dashboard-pulse-ring dashboard-pulse-collection" style={{ background: `conic-gradient(#4faf81 ${collectionRate}%,#e4e9e7 ${collectionRate}% 100%)` }} aria-hidden="true"><span>{collectionRate}%</span></i><span><strong>Recebimento</strong><small>{brl.format(currentPeriodReceived)} realizados</small></span><b aria-hidden="true">→</b></button>
-          <button type="button" onClick={() => onNavigate("Unidades")}><i className="dashboard-pulse-ring dashboard-pulse-occupancy" style={{ background: `conic-gradient(#638bd4 ${occupancyRate}%,#e4e8ee ${occupancyRate}% 100%)` }} aria-hidden="true"><span>{occupancyRate}%</span></i><span><strong>Ocupação</strong><small>{occupiedUnits} de {units.length} unidades</small></span><b aria-hidden="true">→</b></button>
+          <button type="button" onClick={() => onNavigate("Cobranças")}><i className="dashboard-pulse-ring dashboard-pulse-collection" style={{ background: `conic-gradient(#4faf81 ${collectionRate}%,#e4e9e7 ${collectionRate}% 100%)` }} aria-hidden="true"><span>{collectionRate}%</span></i><span><strong>Recebimento</strong><small>{brl.format(currentPeriodReceived)} realizados</small></span><b aria-hidden="true"><ArrowRight /></b></button>
+          <button type="button" onClick={() => onNavigate("Unidades")}><i className="dashboard-pulse-ring dashboard-pulse-occupancy" style={{ background: `conic-gradient(#638bd4 ${occupancyRate}%,#e4e8ee ${occupancyRate}% 100%)` }} aria-hidden="true"><span>{occupancyRate}%</span></i><span><strong>Ocupação</strong><small>{occupiedUnits} de {units.length} unidades</small></span><b aria-hidden="true"><ArrowRight /></b></button>
         </div>
         <footer><button type="button" onClick={() => onNavigate("Cobranças")}>Cobranças <span>→</span></button><button type="button" onClick={() => onNavigate("Despesas")}>Despesas <span>→</span></button><button type="button" onClick={() => onNavigate("Contratos")}>Contratos <span>→</span></button></footer>
       </aside>
@@ -932,14 +966,14 @@ function DashboardPage({ charges, negotiations, expenses, properties, units, con
       <header className="dashboard-domain-header"><span className="dashboard-domain-index" aria-hidden="true">01</span><div><p>Operação patrimonial</p><h2 id="dashboard-operation-title">Estrutura, contratos e ocupação</h2><small>Acompanhe o uso das unidades e a estrutura locável.</small></div><b>OPERAÇÃO</b></header>
       <div className="dashboard-domain-content">
         <section className="dashboard-kpis dashboard-kpis-three" aria-label="Indicadores da operação patrimonial">
-          <button type="button" className="dashboard-kpi kpi-occupancy" onClick={() => onNavigate("Unidades")}><span>Ocupação das unidades</span><strong>{occupancyRate}%</strong><small>{occupiedUnits} de {units.length} unidades ocupadas</small><i aria-hidden="true">→</i></button>
-          <button type="button" className="dashboard-kpi kpi-available" onClick={() => onNavigate("Unidades")}><span>Unidades disponíveis</span><strong>{availableUnits}</strong><small>Espaços livres para locação</small><i aria-hidden="true">→</i></button>
-          <button type="button" className="dashboard-kpi kpi-contracts" onClick={() => onNavigate("Contratos")}><span>Contratos ativos</span><strong>{contracts.length}</strong><small>Vínculos vigentes na base</small><i aria-hidden="true">→</i></button>
+          <button type="button" className="dashboard-kpi kpi-occupancy" onClick={() => onNavigate("Unidades")}><span>Ocupação das unidades</span><strong>{occupancyRate}%</strong><small>{occupiedUnits} de {units.length} unidades ocupadas</small><i aria-hidden="true"><ArrowRight /></i></button>
+          <button type="button" className="dashboard-kpi kpi-available" onClick={() => onNavigate("Unidades")}><span>Unidades disponíveis</span><strong>{availableUnits}</strong><small>Espaços livres para locação</small><i aria-hidden="true"><ArrowRight /></i></button>
+          <button type="button" className="dashboard-kpi kpi-contracts" onClick={() => onNavigate("Contratos")}><span>Contratos ativos</span><strong>{contracts.length}</strong><small>Vínculos vigentes na base</small><i aria-hidden="true"><ArrowRight /></i></button>
         </section>
         <section className="dashboard-grid dashboard-grid-operation"><article className="dashboard-panel occupancy-panel">
           <header className="dashboard-panel-header"><div><p className="eyebrow">Desempenho operacional</p><h2>Ocupação por carteira</h2></div><span className="panel-meta">{availableUnits} unidades disponíveis</span></header>
           <div className="occupancy-list">{portfolios.map((row) => <div className="occupancy-row" key={row.portfolio}><div><strong>{row.portfolio}</strong><span>{row.occupied} de {row.total} unidades</span></div><div className="occupancy-track" role="progressbar" aria-valuenow={row.rate} aria-valuemin={0} aria-valuemax={100} aria-label={`Ocupação de ${row.portfolio}`}><i style={{ width: `${row.rate}%` }} /></div><b>{row.rate}%</b></div>)}{portfolios.length === 0 && <CompactEmptyState mark="OP" title="Ocupação ainda sem dados" description="Cadastre carteiras e unidades para formar este panorama operacional." />}</div>
-          <button type="button" className="panel-link" onClick={() => onNavigate("Unidades")}>Ver todas as unidades <span aria-hidden="true">→</span></button>
+          <button type="button" className="panel-link" onClick={() => onNavigate("Unidades")}>Ver todas as unidades <span aria-hidden="true"><ArrowRight /></span></button>
         </article>{featuredAvailability && featuredProperty ? <article className="dashboard-property-spotlight"><img src={propertyCoverImages[featuredProperty.id] ?? fallbackPropertyCover} alt={`Fachada de ${featuredProperty.name}`} width="720" height="520" /><div className="dashboard-property-spotlight-top"><span>Oportunidade do patrimônio</span><b>{featuredAvailability.units.length} {featuredAvailability.units.length === 1 ? "unidade disponível" : "unidades disponíveis"}</b></div><div className="dashboard-property-spotlight-copy"><span>{featuredProperty.portfolio}</span><h2>{featuredProperty.name}</h2><p>{featuredProperty.address}</p><div>{featuredAvailability.units.map((unit) => <b key={unit.id}>{unit.name} · {decimal.format(unit.area)} m²</b>)}</div><button type="button" onClick={() => onNavigate("Unidades")}>Explorar disponibilidade <span aria-hidden="true">→</span></button></div></article> : <article className="dashboard-availability-empty"><CompactEmptyState mark="✓" tone="success" title="Patrimônio totalmente ocupado" description="Quando uma unidade ficar disponível, ela ganhará destaque visual neste espaço." /></article>}</section>
       </div>
     </section>
@@ -947,9 +981,9 @@ function DashboardPage({ charges, negotiations, expenses, properties, units, con
       <header className="dashboard-domain-header"><span className="dashboard-domain-index" aria-hidden="true">02</span><div><p>Financeiro</p><h2 id="dashboard-financial-title">Recebíveis e despesas</h2><small>Compare entradas previstas, recebimentos e despesas.</small></div><b>FINANCEIRO</b></header>
       <div className="dashboard-domain-content">
         <section className="dashboard-kpis dashboard-kpis-three" aria-label="Indicadores financeiros">
-          <button type="button" className="dashboard-kpi kpi-receivable" onClick={() => onNavigate("Cobranças")}><span>Saldo a receber</span><strong>{brl.format(receivableBalance)}</strong><small>{openCharges.length} cobranças em aberto</small><i aria-hidden="true">→</i></button>
-          <button type="button" className="dashboard-kpi kpi-overdue" onClick={() => onNavigate("Cobranças", "Vencida")}><span>Recebíveis vencidos</span><strong>{brl.format(overdueReceivable)}</strong><small>{overdueCharges.length} {overdueCharges.length === 1 ? "cobrança exige" : "cobranças exigem"} atenção</small><i aria-hidden="true">→</i></button>
-          <button type="button" className="dashboard-kpi kpi-payable" onClick={() => onNavigate("Despesas")}><span>Despesas</span><strong>{brl.format(payableBalance)}</strong><small>{openExpenses.length} despesas em aberto</small><i aria-hidden="true">→</i></button>
+          <button type="button" className="dashboard-kpi kpi-receivable" onClick={() => onNavigate("Cobranças")}><span>Saldo a receber</span><strong>{brl.format(receivableBalance)}</strong><small>{openCharges.length} cobranças em aberto</small><i aria-hidden="true"><ArrowRight /></i></button>
+          <button type="button" className="dashboard-kpi kpi-overdue" onClick={() => onNavigate("Cobranças", "Vencida")}><span>Recebíveis vencidos</span><strong>{brl.format(overdueReceivable)}</strong><small>{overdueCharges.length} {overdueCharges.length === 1 ? "cobrança exige" : "cobranças exigem"} atenção</small><i aria-hidden="true"><ArrowRight /></i></button>
+          <button type="button" className="dashboard-kpi kpi-payable" onClick={() => onNavigate("Despesas")}><span>Despesas</span><strong>{brl.format(payableBalance)}</strong><small>{openExpenses.length} despesas em aberto</small><i aria-hidden="true"><ArrowRight /></i></button>
         </section>
         <section className="dashboard-grid dashboard-grid-main">
           <article className="dashboard-panel dashboard-cashflow">
@@ -982,11 +1016,11 @@ function ChargesPage({ charges: rows, summaryCharges, negotiations, total, searc
     <PageHeading eyebrow="Gestão de recebíveis" title="Cobranças" description="Priorize valores em risco, acompanhe acordos e registre recebimentos por competência." action="Nova cobrança" onAction={onNew} />
     <section className="charge-command-overview" aria-label="Indicadores de cobranças">
       <div className="charge-command-balance"><span>Saldo em acompanhamento</span><strong>{brl.format(pending)}</strong><small>{pendingCharges.length} {pendingCharges.length === 1 ? "cobrança ativa" : "cobranças ativas"}</small><div><span><b>{collectionRate}% recebido</b><small>{brl.format(totalReceived)} de {brl.format(totalBilled)}</small></span><i aria-hidden="true"><b style={{ width: `${collectionRate}%` }} /></i></div></div>
-      <button type="button" className="charge-command-card charge-command-overdue" aria-pressed={statusFilter === "Vencida"} onClick={() => toggleStatus("Vencida")} title="Filtrar cobranças vencidas"><span>Vencidas</span><strong>{countByStatus("Vencida")}</strong><small>{brl.format(overdueBalance)} em risco</small><i aria-hidden="true">!</i></button>
-      <button type="button" className="charge-command-card charge-command-upcoming" aria-pressed={statusFilter === "Próxima"} onClick={() => toggleStatus("Próxima")} title="Filtrar cobranças próximas"><span>Próximas</span><strong>{countByStatus("Próxima")}</strong><small>{brl.format(upcomingBalance)} a vencer</small><i aria-hidden="true">→</i></button>
-      <button type="button" className="charge-command-card charge-command-negotiated" aria-pressed={statusFilter === "Negociada"} onClick={() => toggleStatus("Negociada")} title="Filtrar cobranças negociadas"><span>Em negociação</span><strong>{countByStatus("Negociada")}</strong><small>{brl.format(negotiatedBalance)} acordados</small><i aria-hidden="true">◆</i></button>
+      <button type="button" className="charge-command-card charge-command-overdue" aria-pressed={statusFilter === "Vencida"} onClick={() => toggleStatus("Vencida")} title="Filtrar cobranças vencidas"><span>Vencidas</span><strong>{countByStatus("Vencida")}</strong><small>{brl.format(overdueBalance)} em risco</small><i aria-hidden="true"><TriangleAlert /></i></button>
+      <button type="button" className="charge-command-card charge-command-upcoming" aria-pressed={statusFilter === "Próxima"} onClick={() => toggleStatus("Próxima")} title="Filtrar cobranças próximas"><span>Próximas</span><strong>{countByStatus("Próxima")}</strong><small>{brl.format(upcomingBalance)} a vencer</small><i aria-hidden="true"><CalendarClock /></i></button>
+      <button type="button" className="charge-command-card charge-command-negotiated" aria-pressed={statusFilter === "Negociada"} onClick={() => toggleStatus("Negociada")} title="Filtrar cobranças negociadas"><span>Em negociação</span><strong>{countByStatus("Negociada")}</strong><small>{brl.format(negotiatedBalance)} acordados</small><i aria-hidden="true"><Handshake /></i></button>
     </section>
-    <TableSection toolbar={<><SearchBar value={search} onChange={setSearch} placeholder="Buscar por contrato, unidade, locatário ou item" /><PortfolioFilter value={portfolioFilter} onChange={setPortfolioFilter} /><FilterSelect label="Filtrar por situação" value={statusFilter} onChange={setStatusFilter} active={statusFilter !== "Todas"}><option>Todas</option><option>Vencida</option><option>Em aberto</option><option>Próxima</option><option>Parcial</option><option>Negociada</option><option>Recebida</option></FilterSelect><button type="button" className="secondary-button report-export-button" onClick={onReport}><span className="report-export-icon" aria-hidden="true">↓</span>Exportar relatório</button><button type="button" className="primary-button charge-mobile-new" onClick={onNew}>Nova cobrança</button></>} footer={<><span>{rows.length} de {total} cobranças</span><span>Inclusão, negociação e baixa manuais</span></>}>
+    <TableSection toolbar={<><SearchBar value={search} onChange={setSearch} placeholder="Buscar por contrato, unidade, locatário ou item" /><PortfolioFilter value={portfolioFilter} onChange={setPortfolioFilter} /><FilterSelect label="Filtrar por situação" value={statusFilter} onChange={setStatusFilter} active={statusFilter !== "Todas"}><option>Todas</option><option>Vencida</option><option>Em aberto</option><option>Próxima</option><option>Parcial</option><option>Negociada</option><option>Recebida</option></FilterSelect><button type="button" className="secondary-button report-export-button button-with-icon" onClick={onReport}><span className="report-export-icon" aria-hidden="true"><ArrowDownToLine /></span>Exportar relatório</button><button type="button" className="primary-button charge-mobile-new button-with-icon" onClick={onNew}><Plus aria-hidden="true" />Nova cobrança</button></>} footer={<><span>{rows.length} de {total} cobranças</span><span>Inclusão, negociação e baixa manuais</span></>}>
       {rows.length > 0 ? <div className="charge-ledger" aria-label="Cobranças cadastradas">{rows.map((charge) => {
         const totalValue = chargeTotal(charge);
         const receivedValue = receivedTotal(charge);
@@ -1000,7 +1034,7 @@ function ChargesPage({ charges: rows, summaryCharges, negotiations, total, searc
           <span className="charge-ledger-context"><small>{charge.contract} · {charge.competence}</small><strong>{charge.tenant}</strong><span>{charge.property} · {charge.units.join(", ")}</span></span>
           <span className="charge-ledger-due"><small>Vencimento principal</small><strong>{charge.items[0]?.dueDate ?? "Não informado"}</strong><span>{charge.items.length} {charge.items.length === 1 ? "item" : "itens"} · {charge.items.map((item) => item.name).join(" · ")}</span></span>
           <span className="charge-ledger-values"><span><small>Total previsto</small><b>{brl.format(totalValue)}</b></span><span><small>{negotiations[charge.id] ? "Saldo acordado" : "Saldo atual"}</small><strong>{brl.format(balanceValue)}</strong></span><i aria-hidden="true"><b style={{ width: `${receivedRate}%` }} /></i></span>
-          <span className="charge-ledger-arrow" aria-hidden="true">→</span>
+          <span className="charge-ledger-arrow" aria-hidden="true"><ArrowRight /></span>
         </button>;
       })}</div> : <EmptyState filtered={hasChargeFilters} entity="cobrança" mark="CO" tone="charge" eyebrow="Primeira competência" title="Transforme contratos em recebíveis" description="Crie a primeira cobrança para acompanhar vencimentos, baixas e negociações em um único fluxo." action="Nova cobrança" onAction={onNew} onClear={clearChargeFilters} />}
     </TableSection>
@@ -1071,11 +1105,11 @@ function ExpensesPage({ rows, total, categories, search, setSearch, statusFilter
     <PageHeading eyebrow="Contas a pagar" title="Despesas" description="Antecipe vencimentos, controle compromissos e acompanhe pagamentos em uma visão financeira." action="Nova despesa" onAction={onNew} />
     <section className="expense-command-overview" aria-label="Resumo financeiro das despesas" aria-live="polite">
       <div className="expense-command-payable"><span>Total a pagar</span><strong>{brl.format(totalPayable)}</strong><small>{openAccounts} {openAccounts === 1 ? "compromisso em aberto" : "compromissos em aberto"}</small><div><span><b>{paymentRate}% pago</b><small>{brl.format(totalPaid)} de {brl.format(totalCommitted)}</small></span><i aria-hidden="true"><b style={{ width: `${paymentRate}%` }} /></i></div></div>
-      <button type="button" className="expense-command-card expense-command-overdue" aria-pressed={statusFilter === "Vencido"} onClick={() => toggleExpenseStatus("Vencido")}><span>Em atraso</span><strong>{brl.format(totalOverdue)}</strong><small>{overdueAccounts} {overdueAccounts === 1 ? "despesa vencida" : "despesas vencidas"}</small><i aria-hidden="true">!</i></button>
-      <button type="button" className="expense-command-card expense-command-paid" aria-pressed={statusFilter === "Pago"} onClick={() => toggleExpenseStatus("Pago")}><span>Total pago</span><strong>{brl.format(totalPaid)}</strong><small>{paidAccounts} {paidAccounts === 1 ? "despesa quitada" : "despesas quitadas"}</small><i aria-hidden="true">✓</i></button>
-      <button type="button" className="expense-command-card expense-command-upcoming" aria-pressed={statusFilter === "Pendente"} onClick={() => toggleExpenseStatus("Pendente")}><span>Próximos 7 dias</span><strong>{nextDue}</strong><small>vencimentos a priorizar</small><i aria-hidden="true">→</i></button>
+      <button type="button" className="expense-command-card expense-command-overdue" aria-pressed={statusFilter === "Vencido"} onClick={() => toggleExpenseStatus("Vencido")}><span>Em atraso</span><strong>{brl.format(totalOverdue)}</strong><small>{overdueAccounts} {overdueAccounts === 1 ? "despesa vencida" : "despesas vencidas"}</small><i aria-hidden="true"><TriangleAlert /></i></button>
+      <button type="button" className="expense-command-card expense-command-paid" aria-pressed={statusFilter === "Pago"} onClick={() => toggleExpenseStatus("Pago")}><span>Total pago</span><strong>{brl.format(totalPaid)}</strong><small>{paidAccounts} {paidAccounts === 1 ? "despesa quitada" : "despesas quitadas"}</small><i aria-hidden="true"><CircleCheck /></i></button>
+      <button type="button" className="expense-command-card expense-command-upcoming" aria-pressed={statusFilter === "Pendente"} onClick={() => toggleExpenseStatus("Pendente")}><span>Próximos 7 dias</span><strong>{nextDue}</strong><small>vencimentos a priorizar</small><i aria-hidden="true"><CalendarClock /></i></button>
     </section>
-    <TableSection toolbar={<><SearchBar value={search} onChange={setSearch} placeholder="Buscar por fornecedor, descrição ou despesa" /><FilterSelect label="Filtrar despesas por status" value={statusFilter} onChange={setStatusFilter} active={statusFilter !== "Todas"}><option>Todas</option><option>Pendente</option><option>Pago</option><option>Vencido</option></FilterSelect><FilterSelect label="Filtrar despesas por categoria" value={categoryFilter} onChange={setCategoryFilter} active={categoryFilter !== "Todas as categorias"}><option>Todas as categorias</option>{categories.map((category) => <option key={category}>{category}</option>)}</FilterSelect><FilterSelect label="Ordenar despesas" value={`${sortKey}:${sortDirection}`} onChange={selectSort} active={`${sortKey}:${sortDirection}` !== "urgent:asc"} variant="sort" wide><option value="urgent:asc">Mais urgentes</option><option value="due:asc">Vencimento: mais próximo</option><option value="due:desc">Vencimento: mais distante</option><option value="amount:desc">Valor: maior primeiro</option><option value="amount:asc">Valor: menor primeiro</option><option value="supplier:asc">Fornecedor: A–Z</option><option value="supplier:desc">Fornecedor: Z–A</option><option value="status:asc">Status: críticos primeiro</option><option value="status:desc">Status: pagos primeiro</option></FilterSelect><button type="button" className="secondary-button expense-clear-filters" onClick={clearExpenseFilters} disabled={!hasExpenseFilters}>Limpar filtros</button><button type="button" className="primary-button expense-mobile-new" onClick={onNew}>Nova despesa</button></>} footer={<><span>{rows.length} de {total} despesas</span><span>{hasExpenseFilters ? "Resumo do resultado filtrado" : "Visão geral da base"}</span></>}>
+    <TableSection toolbar={<><SearchBar value={search} onChange={setSearch} placeholder="Buscar por fornecedor, descrição ou despesa" /><FilterSelect label="Filtrar despesas por status" value={statusFilter} onChange={setStatusFilter} active={statusFilter !== "Todas"}><option>Todas</option><option>Pendente</option><option>Pago</option><option>Vencido</option></FilterSelect><FilterSelect label="Filtrar despesas por categoria" value={categoryFilter} onChange={setCategoryFilter} active={categoryFilter !== "Todas as categorias"}><option>Todas as categorias</option>{categories.map((category) => <option key={category}>{category}</option>)}</FilterSelect><FilterSelect label="Ordenar despesas" value={`${sortKey}:${sortDirection}`} onChange={selectSort} active={`${sortKey}:${sortDirection}` !== "urgent:asc"} variant="sort" wide><option value="urgent:asc">Mais urgentes</option><option value="due:asc">Vencimento: mais próximo</option><option value="due:desc">Vencimento: mais distante</option><option value="amount:desc">Valor: maior primeiro</option><option value="amount:asc">Valor: menor primeiro</option><option value="supplier:asc">Fornecedor: A–Z</option><option value="supplier:desc">Fornecedor: Z–A</option><option value="status:asc">Status: críticos primeiro</option><option value="status:desc">Status: pagos primeiro</option></FilterSelect><button type="button" className="secondary-button expense-clear-filters button-with-icon" onClick={clearExpenseFilters} disabled={!hasExpenseFilters}><RotateCcw aria-hidden="true" />Limpar filtros</button><button type="button" className="primary-button expense-mobile-new button-with-icon" onClick={onNew}><Plus aria-hidden="true" />Nova despesa</button></>} footer={<><span>{rows.length} de {total} despesas</span><span>{hasExpenseFilters ? "Resumo do resultado filtrado" : "Visão geral da base"}</span></>}>
       {sortedRows.length > 0 ? <div className="expense-ledger" aria-label="Despesas cadastradas">{sortedRows.map((expense) => {
         const timing = expenseTiming(expense);
         const stateClass = expense.status === "Vencido" ? "expense-ledger-overdue" : timing ? "expense-ledger-soon" : expense.status === "Pago" ? "expense-ledger-paid" : "expense-ledger-pending";
@@ -1085,7 +1119,7 @@ function ExpensesPage({ rows, total, categories, search, setSearch, statusFilter
           <span className="expense-ledger-context"><small>Fornecedor / beneficiário</small><strong>{expense.supplier}</strong><span>{expense.description}</span></span>
           <span className="expense-ledger-due"><small>Vencimento</small><strong>{expense.dueDate}</strong><span className={expense.status === "Vencido" ? "timing-overdue" : "timing-soon"}>{timing || (expense.status === "Pago" ? `Pago em ${expense.paidDate}` : "Dentro do prazo")}</span></span>
           <span className="expense-ledger-value"><small>Valor da despesa</small><strong>{brl.format(expense.amount)}</strong><span>{expense.status === "Pago" ? "Compromisso quitado" : "Pagamento pendente"}</span></span>
-          <span className="expense-ledger-arrow" aria-hidden="true">→</span>
+          <span className="expense-ledger-arrow" aria-hidden="true"><ArrowRight /></span>
         </button>;
       })}</div> : <EmptyState filtered={hasExpenseFilters} entity="despesa" mark="DE" tone="expense" eyebrow="Controle financeiro" title="Registre o primeiro compromisso" description="Inclua uma despesa para antecipar vencimentos e acompanhar o ciclo de pagamentos da operação." action="Nova despesa" onAction={onNew} onClear={clearExpenseFilters} />}
     </TableSection>
@@ -1110,7 +1144,7 @@ function PortfoliosPage({ portfolios, properties, units, search, setSearch, onNe
     <section className="portfolio-controls" aria-label="Busca de carteiras">
       <SearchBar value={search} onChange={setSearch} placeholder="Buscar por carteira, titular ou CNPJ" />
       <span>{rows.length} {rows.length === 1 ? "carteira encontrada" : "carteiras encontradas"}</span>
-      <button type="button" className="primary-button portfolio-mobile-new" onClick={onNew}>Nova carteira</button>
+      <button type="button" className="primary-button portfolio-mobile-new button-with-icon" onClick={onNew}><Plus aria-hidden="true" />Nova carteira</button>
     </section>
 
     {rows.length > 0 ? <section className="portfolio-card-grid" aria-label="Portfólios cadastrados">{rows.map((portfolio) => {
@@ -1129,7 +1163,7 @@ function PortfoliosPage({ portfolios, properties, units, search, setSearch, onNe
         </div> : <div className="portfolio-empty-cover"><span>{monogram}</span><strong>Carteira pronta para receber imóveis</strong><small>Vincule o primeiro empreendimento ao portfólio.</small></div>}
 
         <div className="portfolio-card-body">
-          <header><div><span>Titular da carteira</span><h2>{portfolio.name}</h2><p>{portfolio.holder}</p></div><button type="button" className="secondary-button portfolio-edit" onClick={() => onEdit(portfolio)}>Editar carteira</button></header>
+          <header><div><span>Titular da carteira</span><h2>{portfolio.name}</h2><p>{portfolio.holder}</p></div><button type="button" className="secondary-button portfolio-edit button-with-icon" onClick={() => onEdit(portfolio)}><PencilLine aria-hidden="true" />Editar carteira</button></header>
           <div className="portfolio-document"><span>Documento do titular</span><strong>{portfolio.document}</strong></div>
           <div className="portfolio-card-metrics">
             <span>Imóveis<strong>{portfolioProperties.length}</strong></span>
@@ -1165,7 +1199,7 @@ function PropertiesPage({ properties, units, search, setSearch, portfolioFilter,
       <div className="property-insight-available"><span>Disponíveis</span><strong>{availableUnits}</strong><small>prontas para locação</small></div>
       <div className="property-insight-occupancy"><span>Ocupação</span><strong>{occupancy}%</strong><small>{occupiedUnits} unidades ocupadas</small><i aria-hidden="true"><b style={{ width: `${occupancy}%` }} /></i></div>
     </section>
-    <TableSection toolbar={<><SearchBar value={search} onChange={setSearch} placeholder="Buscar por imóvel ou endereço" /><PortfolioFilter value={portfolioFilter} onChange={setPortfolioFilter} /><button type="button" className="primary-button property-mobile-new" onClick={onNew}>Novo imóvel</button></>} footer={<><span>{rows.length} imóveis</span><span>{availableUnits} unidades disponíveis</span></>}>
+    <TableSection toolbar={<><SearchBar value={search} onChange={setSearch} placeholder="Buscar por imóvel ou endereço" /><PortfolioFilter value={portfolioFilter} onChange={setPortfolioFilter} /><button type="button" className="primary-button property-mobile-new button-with-icon" onClick={onNew}><Plus aria-hidden="true" />Novo imóvel</button></>} footer={<><span>{rows.length} imóveis</span><span>{availableUnits} unidades disponíveis</span></>}>
       {rows.length > 0 ? <div className="property-card-grid" aria-label="Imóveis cadastrados">{rows.map((property) => {
         const propertyUnits = units.filter((unit) => unit.property === property.name);
         const propertyOccupied = propertyUnits.filter((unit) => unit.occupied).length;
@@ -1211,7 +1245,7 @@ function UnitsPage({ units, properties, search, setSearch, portfolioFilter, setP
       <div className="unit-overview-available"><span>Disponíveis agora</span><strong>{availableUnits}</strong><small>prontas para novo contrato</small></div>
       <div className="unit-overview-occupancy"><span>Ocupação</span><strong>{occupancy}%</strong><small>{occupiedUnits} ocupadas · {availableUnits} livres</small><i aria-hidden="true"><b style={{ width: `${occupancy}%` }} /></i></div>
     </section>
-    <TableSection toolbar={<><SearchBar value={search} onChange={setSearch} placeholder="Buscar por unidade ou imóvel" /><PortfolioFilter value={portfolioFilter} onChange={setPortfolioFilter} /><button type="button" className="primary-button unit-mobile-new" onClick={onNew}>Nova unidade</button></>} footer={<><span>{rows.length} unidades</span><span>{availableUnits} disponíveis no filtro</span></>}>
+    <TableSection toolbar={<><SearchBar value={search} onChange={setSearch} placeholder="Buscar por unidade ou imóvel" /><PortfolioFilter value={portfolioFilter} onChange={setPortfolioFilter} /><button type="button" className="primary-button unit-mobile-new button-with-icon" onClick={onNew}><Plus aria-hidden="true" />Nova unidade</button></>} footer={<><span>{rows.length} unidades</span><span>{availableUnits} disponíveis no filtro</span></>}>
       {rows.length > 0 ? <div className="unit-card-grid" aria-label="Unidades cadastradas">{rows.map((unit) => {
         const property = properties.find((record) => record.name === unit.property);
         const propertyImage = property ? propertyCoverImages[property.id] : undefined;
@@ -1257,10 +1291,10 @@ function TenantsPage({ tenants, contracts, charges, search, setSearch, onNew, on
     <section className="tenant-overview" aria-label="Resumo dos locatários">
       <div className="tenant-overview-intro"><span>Base de relacionamentos</span><strong>{tenants.length} {tenants.length === 1 ? "locatário cadastrado" : "locatários cadastrados"}</strong><small>Pessoas e empresas conectadas à operação</small></div>
       <div className="tenant-overview-revenue"><span>Receita mensal vinculada</span><strong>{brl.format(monthlyRevenue)}</strong><small>aluguel base dos contratos ativos</small></div>
-      <button type="button" className="tenant-overview-active" aria-pressed={relationshipFilter === "Com contrato"} onClick={() => toggleRelationship("Com contrato")}><span>Com contrato</span><strong>{activeTenants.length}</strong><small>{contracts.reduce((total, contract) => total + contract.units.length, 0)} unidades ocupadas</small><i aria-hidden="true">✓</i></button>
-      <button type="button" className="tenant-overview-unlinked" aria-pressed={relationshipFilter === "Sem contrato"} onClick={() => toggleRelationship("Sem contrato")}><span>Sem vínculo ativo</span><strong>{unlinkedTenants.length}</strong><small>disponíveis para nova locação</small><i aria-hidden="true">+</i></button>
+      <button type="button" className="tenant-overview-active" aria-pressed={relationshipFilter === "Com contrato"} onClick={() => toggleRelationship("Com contrato")}><span>Com contrato</span><strong>{activeTenants.length}</strong><small>{contracts.reduce((total, contract) => total + contract.units.length, 0)} unidades ocupadas</small><i aria-hidden="true"><CircleCheck /></i></button>
+      <button type="button" className="tenant-overview-unlinked" aria-pressed={relationshipFilter === "Sem contrato"} onClick={() => toggleRelationship("Sem contrato")}><span>Sem vínculo ativo</span><strong>{unlinkedTenants.length}</strong><small>disponíveis para nova locação</small><i aria-hidden="true"><Plus /></i></button>
     </section>
-    <TableSection toolbar={<><SearchBar value={search} onChange={setSearch} placeholder="Buscar por nome, CPF ou CNPJ" /><FilterSelect label="Filtrar por vínculo" value={relationshipFilter} onChange={setRelationshipFilter} active={relationshipFilter !== "Todos"}><option>Todos</option><option>Com contrato</option><option>Sem contrato</option></FilterSelect><button type="button" className="primary-button tenant-mobile-new" onClick={onNew}>Novo locatário</button></>} footer={<><span>{rows.length} de {tenants.length} locatários</span><span>{activeTenants.length} com vínculo ativo</span></>}>
+    <TableSection toolbar={<><SearchBar value={search} onChange={setSearch} placeholder="Buscar por nome, CPF ou CNPJ" /><FilterSelect label="Filtrar por vínculo" value={relationshipFilter} onChange={setRelationshipFilter} active={relationshipFilter !== "Todos"}><option>Todos</option><option>Com contrato</option><option>Sem contrato</option></FilterSelect><button type="button" className="primary-button tenant-mobile-new button-with-icon" onClick={onNew}><Plus aria-hidden="true" />Novo locatário</button></>} footer={<><span>{rows.length} de {tenants.length} locatários</span><span>{activeTenants.length} com vínculo ativo</span></>}>
       {rows.length > 0 ? <div className="tenant-card-grid" aria-label="Locatários cadastrados">{rows.map((tenant) => {
         const tenantContracts = contracts.filter((contract) => contract.tenant === tenant.name);
         const tenantCharges = charges.filter((charge) => charge.tenant === tenant.name);
@@ -1277,7 +1311,7 @@ function TenantsPage({ tenants, contracts, charges, search, setSearch, onNew, on
             {mainContract ? <>
               <span className="tenant-card-contract"><span><small>Contrato vigente</small><strong>{mainContract.id}</strong></span><span><small>Empreendimento</small><strong>{mainContract.property}</strong></span><span><small>{mainContract.units.length === 1 ? "Unidade" : "Unidades"}</small><strong>{mainContract.units.join(" · ")}</strong></span></span>
               <span className="tenant-card-financial"><span><small>Aluguel base mensal</small><strong>{brl.format(tenantRevenue)}</strong></span><span><small>Saldo em aberto</small><strong className={attentionCharges.length ? "tenant-value-attention" : ""}>{brl.format(openBalance)}</strong></span><span><small>Cobranças</small><strong>{tenantCharges.length}</strong></span></span>
-            </> : <span className="tenant-card-empty-link"><i aria-hidden="true">+</i><span><strong>Sem contrato ativo</strong><small>Cadastro pronto para um novo vínculo de locação.</small></span></span>}
+            </> : <span className="tenant-card-empty-link"><i aria-hidden="true"><Plus /></i><span><strong>Sem contrato ativo</strong><small>Cadastro pronto para um novo vínculo de locação.</small></span></span>}
             <span className="tenant-card-arrow" aria-hidden="true">Ver relacionamento <b>→</b></span>
           </button>
           <footer><span>{mainContract ? `${tenantContracts.length} ${tenantContracts.length === 1 ? "contrato ativo" : "contratos ativos"}` : "Relacionamento em prospecção"}</span><button type="button" onClick={() => onEdit(tenant)}>Editar cadastro</button></footer>
@@ -1301,7 +1335,7 @@ function ContractsPage({ charges, search, setSearch, portfolioFilter, setPortfol
       <div><span>Unidades vinculadas</span><strong>{linkedUnits}</strong><small>espaços sob contrato</small></div>
       <div className="contract-overview-billing"><span>Cobranças geradas</span><strong>{generatedCharges}</strong><small>competências incluídas manualmente</small></div>
     </section>
-    <TableSection toolbar={<><SearchBar value={search} onChange={setSearch} placeholder="Buscar por contrato, unidade ou locatário" /><PortfolioFilter value={portfolioFilter} onChange={setPortfolioFilter} /><button type="button" className="primary-button contract-mobile-new" onClick={onNew}>Novo contrato</button></>} footer={<><span>{rows.length} contratos ativos</span><span>{brl.format(monthlyRevenue)} de receita mensal base</span></>}>
+    <TableSection toolbar={<><SearchBar value={search} onChange={setSearch} placeholder="Buscar por contrato, unidade ou locatário" /><PortfolioFilter value={portfolioFilter} onChange={setPortfolioFilter} /><button type="button" className="primary-button contract-mobile-new button-with-icon" onClick={onNew}><Plus aria-hidden="true" />Novo contrato</button></>} footer={<><span>{rows.length} contratos ativos</span><span>{brl.format(monthlyRevenue)} de receita mensal base</span></>}>
       {rows.length > 0 ? <div className="contract-card-grid" aria-label="Contratos ativos">{rows.map((contract) => {
         const [startDate, endDate] = contract.period.split(" — ");
         const contractCharges = charges.filter((charge) => charge.contract === contract.id).length;
@@ -1313,7 +1347,7 @@ function ContractsPage({ charges, search, setSearch, portfolioFilter, setPortfol
           <span className="contract-card-units"><small>{contract.units.length} {contract.units.length === 1 ? "unidade vinculada" : "unidades vinculadas"}</small><span>{contract.units.map((unit) => <b key={unit}>{unit}</b>)}</span></span>
           <span className="contract-card-value"><span><small>Aluguel base</small><strong>{brl.format(contract.rent)}</strong></span><span><small>Vencimento</small><strong>Dia {contract.due}</strong></span></span>
           <span className="contract-card-period"><span><i aria-hidden="true" /><b>{startDate}</b></span><i aria-hidden="true" /><span><i aria-hidden="true" /><b>{endDate}</b></span></span>
-          <span className="contract-card-footer"><span>Reajuste em {contract.adjustment}</span><b>{contractCharges} {contractCharges === 1 ? "cobrança" : "cobranças"} <i aria-hidden="true">→</i></b></span>
+          <span className="contract-card-footer"><span>Reajuste em {contract.adjustment}</span><b>{contractCharges} {contractCharges === 1 ? "cobrança" : "cobranças"} <i aria-hidden="true"><ArrowRight /></i></b></span>
         </button>;
       })}</div> : <EmptyState filtered={Boolean(search.trim() || portfolioFilter !== "Todas as carteiras")} entity="contrato" mark="CT" tone="contract" eyebrow="Instrumento de locação" title="Conecte patrimônio e locatário" description="Crie o primeiro contrato para definir unidades, vigência, valores e a composição das futuras cobranças." action="Novo contrato" onAction={onNew} onClear={() => { setSearch(""); setPortfolioFilter("Todas as carteiras"); }} />}
     </TableSection>
@@ -1369,14 +1403,14 @@ function RegistryDetailDrawer({ detail, properties, units, contracts, charges, d
 
   return <div className="drawer-layer" role="dialog" aria-modal="true" aria-label={`${eyebrow}: ${title}`}><button className="drawer-backdrop" onClick={onClose} /><aside className={`drawer wide-drawer registry-detail-drawer ${detail.kind === "property" ? "property-detail-drawer" : detail.kind === "unit" ? "unit-detail-drawer" : "tenant-detail-drawer"}`}>{detail.kind === "property" ? <header className="property-detail-hero">
     <img src={propertyCoverImages[detail.record.id] ?? fallbackPropertyCover} alt={`Fachada ilustrativa de ${detail.record.name}`} width="800" height="520" />
-    <div className="property-detail-hero-top"><p className="eyebrow eyebrow-light">Detalhes do imóvel</p><button type="button" className="close-button" onClick={onClose} aria-label="Fechar detalhes">×</button></div>
+    <div className="property-detail-hero-top"><p className="eyebrow eyebrow-light">Detalhes do imóvel</p><button type="button" className="close-button" onClick={onClose} aria-label="Fechar detalhes"><X aria-hidden="true" /></button></div>
     <div className="property-detail-hero-copy"><span>{detail.record.id}</span><h2>{detail.record.name}</h2><p>{detail.record.address}</p></div>
   </header> : detail.kind === "unit" ? <header className="unit-detail-hero">
     <img src={(unitProperty && propertyCoverImages[unitProperty.id]) ?? fallbackPropertyCover} alt="" width="800" height="480" />
-    <div className="property-detail-hero-top"><p className="eyebrow eyebrow-light">Detalhes da unidade</p><button type="button" className="close-button" onClick={onClose} aria-label="Fechar detalhes">×</button></div>
+    <div className="property-detail-hero-top"><p className="eyebrow eyebrow-light">Detalhes da unidade</p><button type="button" className="close-button" onClick={onClose} aria-label="Fechar detalhes"><X aria-hidden="true" /></button></div>
     <div className="property-detail-hero-copy unit-detail-hero-copy"><div><span>{detail.record.id}</span><span className={`unit-detail-hero-status ${detail.record.occupied ? "occupied" : "available"}`}>{detail.record.occupied ? "Ocupada" : "Disponível"}</span></div><h2>{detail.record.name}</h2><p>{detail.record.property}</p></div>
   </header> : <header className={`tenant-detail-hero ${tenantContracts.length ? tenantAttentionCharges.length ? "tenant-detail-hero-attention" : "tenant-detail-hero-active" : "tenant-detail-hero-unlinked"}`}>
-    <div className="tenant-detail-hero-top"><p className="eyebrow eyebrow-light">Relacionamento de locação</p><button type="button" className="close-button" onClick={onClose} aria-label="Fechar detalhes">×</button></div>
+    <div className="tenant-detail-hero-top"><p className="eyebrow eyebrow-light">Relacionamento de locação</p><button type="button" className="close-button" onClick={onClose} aria-label="Fechar detalhes"><X aria-hidden="true" /></button></div>
     <div className="tenant-detail-hero-copy"><span className="tenant-detail-avatar" aria-hidden="true">{tenantInitials(detail.record.name)}</span><div><span>{detail.record.id} · {detail.record.type === "PJ" ? "Pessoa jurídica" : "Pessoa física"}</span><h2>{detail.record.name}</h2><p>{tenantContracts.length ? `${tenantContracts.length} ${tenantContracts.length === 1 ? "contrato ativo" : "contratos ativos"} · ${tenantLinkedUnits} ${tenantLinkedUnits === 1 ? "unidade vinculada" : "unidades vinculadas"}` : "Cadastro disponível para novo vínculo"}</p></div></div>
     <i className="tenant-detail-status" aria-hidden="true">{tenantContracts.length ? tenantAttentionCharges.length ? "!" : "✓" : "+"}</i>
   </header>}<div className="drawer-body">
@@ -1398,7 +1432,7 @@ function RegistryDetailDrawer({ detail, properties, units, contracts, charges, d
         <header><span>Locação vigente</span><b>{unitContract.id}</b></header>
         <div><span>Locatário<strong>{unitContract.tenant}</strong></span><span>Aluguel base<strong>{brl.format(unitContract.rent)}</strong></span></div>
         <footer><span>{unitContract.period}</span><span>Vencimento no dia {unitContract.due}</span></footer>
-      </section> : !detail.record.occupied && <aside className="unit-availability-note"><span aria-hidden="true">+</span><div><strong>Disponível para nova locação</strong><p>Esta unidade pode ser selecionada ao cadastrar um novo contrato.</p></div></aside>}
+      </section> : !detail.record.occupied && <aside className="unit-availability-note"><span aria-hidden="true"><Plus /></span><div><strong>Disponível para nova locação</strong><p>Esta unidade pode ser selecionada ao cadastrar um novo contrato.</p></div></aside>}
       <div className="unit-detail-section-title"><span>Dados cadastrais</span><small>Informações estruturais da unidade</small></div>
     </>}
     {detail.kind === "tenant" && <>
@@ -1408,13 +1442,13 @@ function RegistryDetailDrawer({ detail, properties, units, contracts, charges, d
         <div><span>Unidades vinculadas</span><strong>{tenantLinkedUnits}</strong><small>espaços ocupados</small></div>
         <div className={tenantAttentionCharges.length ? "tenant-detail-attention" : ""}><span>Saldo em aberto</span><strong>{brl.format(tenantOpenBalance)}</strong><small>{tenantAttentionCharges.length ? `${tenantAttentionCharges.length} cobrança exige atenção` : `${tenantOpenCharges.length} cobranças abertas`}</small></div>
       </section>
-      {tenantContracts.length ? <section className="tenant-contract-panel" aria-labelledby="tenant-contracts-title"><header><div><span>Relacionamentos ativos</span><h3 id="tenant-contracts-title">Contratos e ocupação</h3></div><b>{tenantContracts.length}</b></header><div>{tenantContracts.map((contract) => <article key={contract.id}><span className="tenant-contract-id"><small>Contrato</small><strong>{contract.id}</strong></span><span><small>Empreendimento</small><strong>{contract.property}</strong></span><span><small>Aluguel base</small><strong>{brl.format(contract.rent)}</strong></span><footer><span>{contract.units.join(" · ")}</span><span>Vence dia {contract.due}</span></footer></article>)}</div></section> : <aside className="tenant-unlinked-note"><span aria-hidden="true">+</span><div><strong>Pronto para um novo contrato</strong><p>Este locatário está cadastrado, mas ainda não possui uma unidade vinculada.</p></div></aside>}
+      {tenantContracts.length ? <section className="tenant-contract-panel" aria-labelledby="tenant-contracts-title"><header><div><span>Relacionamentos ativos</span><h3 id="tenant-contracts-title">Contratos e ocupação</h3></div><b>{tenantContracts.length}</b></header><div>{tenantContracts.map((contract) => <article key={contract.id}><span className="tenant-contract-id"><small>Contrato</small><strong>{contract.id}</strong></span><span><small>Empreendimento</small><strong>{contract.property}</strong></span><span><small>Aluguel base</small><strong>{brl.format(contract.rent)}</strong></span><footer><span>{contract.units.join(" · ")}</span><span>Vence dia {contract.due}</span></footer></article>)}</div></section> : <aside className="tenant-unlinked-note"><span aria-hidden="true"><Plus /></span><div><strong>Pronto para um novo contrato</strong><p>Este locatário está cadastrado, mas ainda não possui uma unidade vinculada.</p></div></aside>}
       <section className="tenant-financial-panel" aria-labelledby="tenant-financial-title"><header><div><span>Saúde financeira</span><h3 id="tenant-financial-title">Cobranças do relacionamento</h3></div><b className={tenantAttentionCharges.length ? "has-attention" : ""}>{tenantAttentionCharges.length ? "Requer atenção" : tenantCharges.length ? "Em dia" : "Sem histórico"}</b></header>{tenantCharges.length ? <div>{tenantCharges.slice(0, 4).map((charge) => <span key={charge.id}><StatusBadge status={charge.status} /><strong>{charge.id}</strong><small>{charge.competence}</small><b>{brl.format(chargeBalance(charge))}</b></span>)}</div> : <CompactEmptyState mark="CO" tone="tenant" title="Relacionamento sem histórico financeiro" description="As cobranças vinculadas a este locatário aparecerão aqui por competência." />}</section>
       <div className="tenant-detail-section-title"><span>Dados cadastrais</span><small>Identificação do relacionamento</small></div>
     </>}
     <dl className="detail-list registry-detail-list">{fields.map((field) => <div key={field.label}><dt>{field.label}</dt><dd>{field.value}</dd></div>)}</dl>
     {categorizedDocuments ? <CategorizedDocumentManager documents={categorizedDocuments} onChange={onCategorizedDocumentsChange} /> : <section className="registry-documents" aria-labelledby="registry-documents-title"><div className="section-title"><h3 id="registry-documents-title">Documentos e imagens</h3><span>{documents.length ? `${documents.length} ${documents.length === 1 ? "anexo" : "anexos"}` : "Sem anexos"}</span></div><DocumentCollection documents={documents} emptyDescription="Nenhuma imagem ou arquivo foi anexado a este registro nesta sessão." /></section>}
-  </div><footer className={`drawer-footer ${detail.kind === "tenant" ? "tenant-detail-footer" : ""}`}><button type="button" className="secondary-button" onClick={onClose}>Fechar</button><button type="button" className="primary-button" onClick={onEdit}>Editar cadastro</button></footer></aside></div>;
+  </div><footer className={`drawer-footer ${detail.kind === "tenant" ? "tenant-detail-footer" : ""}`}><button type="button" className="secondary-button" onClick={onClose}>Fechar</button><button type="button" className="primary-button button-with-icon" onClick={onEdit}><PencilLine aria-hidden="true" />Editar cadastro</button></footer></aside></div>;
 }
 
 function ChargeDrawer({ charge, negotiation, onClose, onReceipt, onNegotiate }: { charge: Charge; negotiation?: ChargeNegotiation; onClose: () => void; onReceipt: () => void; onNegotiate: () => void }) {
@@ -1427,7 +1461,7 @@ function ChargeDrawer({ charge, negotiation, onClose, onReceipt, onNegotiate }: 
 
   return <div className="drawer-layer" role="dialog" aria-modal="true" aria-label={`Detalhes da cobrança ${charge.id}`}><button className="drawer-backdrop" onClick={onClose} aria-label="Fechar detalhes" /><aside className="drawer wide-drawer charge-detail-drawer">
     <header className={`charge-detail-hero charge-detail-hero-${statusName}`}>
-      <div className="charge-detail-hero-top"><p className="eyebrow eyebrow-light">Cobrança composta</p><button type="button" className="close-button" onClick={onClose} aria-label="Fechar detalhes">×</button></div>
+      <div className="charge-detail-hero-top"><p className="eyebrow eyebrow-light">Cobrança composta</p><button type="button" className="close-button" onClick={onClose} aria-label="Fechar detalhes"><X aria-hidden="true" /></button></div>
       <div className="charge-detail-hero-copy"><div><StatusBadge status={charge.status} /><span>{charge.competence}</span></div><h2>{charge.id}</h2><p>{charge.tenant} · {charge.property}</p></div>
       <i className="charge-detail-orbit" aria-hidden="true">R$</i>
     </header>
@@ -1442,7 +1476,7 @@ function ChargeDrawer({ charge, negotiation, onClose, onReceipt, onNegotiate }: 
     <section className="charge-detail-context" aria-labelledby="charge-context-title"><header><div><span>Origem da cobrança</span><h3 id="charge-context-title">Vínculos e competência</h3></div><b>{charge.competence}</b></header><div><span>Contrato<strong>{charge.contract}</strong></span><span>Carteira<strong>{charge.portfolio}</strong></span><span>Locatário<strong>{charge.tenant}</strong></span><span>Imóvel<strong>{charge.property}</strong></span></div><footer>{charge.units.map((unit) => <span key={unit}>{unit}</span>)}</footer></section>
     <section className="charge-items-block"><div className="section-title"><h3>Composição da cobrança</h3><span>{charge.items.length} itens</span></div><div className="charge-items">{charge.items.map((item) => <article className="charge-item" key={`${item.name}-${item.dueDate}`}><div className="charge-item-head"><strong>{item.name}</strong><span>Vence {item.dueDate}</span></div><div className="charge-item-values"><span>Previsto <b>{brl.format(item.amount)}</b></span><span>Recebido <b>{brl.format(item.received)}</b></span><span>Saldo <b>{brl.format(item.amount - item.received)}</b></span></div></article>)}</div></section>
     <section className="history-block"><div className="section-title"><h3>Histórico de recebimentos</h3><span>{receivedTotal(charge) ? "1 registro" : "Sem registros"}</span></div>{receivedTotal(charge) ? <div className="history-entry"><i /><div><strong>{brl.format(receivedTotal(charge))}</strong><span>10 ago 2026 · Baixa manual distribuída por item</span></div></div> : <CompactEmptyState mark="↓" tone="charge" title="Aguardando a primeira baixa" description="Recebimentos parciais ou integrais serão organizados aqui em ordem cronológica." />}</section>
-  </div><footer className="drawer-footer charge-drawer-footer charge-detail-footer"><button type="button" className="secondary-button drawer-footer-close" onClick={onClose}>Fechar</button>{charge.status !== "Recebida" && <><button type="button" className="secondary-button negotiation-action-button" onClick={onNegotiate}>{negotiation ? "Editar negociação" : "Negociar cobrança"}</button><button type="button" className="primary-button" onClick={onReceipt}>Registrar recebimento</button></>}</footer></aside></div>;
+  </div><footer className="drawer-footer charge-drawer-footer charge-detail-footer"><button type="button" className="secondary-button drawer-footer-close" onClick={onClose}>Fechar</button>{charge.status !== "Recebida" && <><button type="button" className="secondary-button negotiation-action-button button-with-icon" onClick={onNegotiate}><Handshake aria-hidden="true" />{negotiation ? "Editar negociação" : "Negociar cobrança"}</button><button type="button" className="primary-button button-with-icon" onClick={onReceipt}><HandCoins aria-hidden="true" />Registrar recebimento</button></>}</footer></aside></div>;
 }
 
 function ContractDrawer({ contract, charges, onClose, onCharge }: { contract: Contract; charges: Charge[]; onClose: () => void; onCharge: () => void }) {
@@ -1451,9 +1485,9 @@ function ContractDrawer({ contract, charges, onClose, onCharge }: { contract: Co
 
   return <div className="drawer-layer" role="dialog" aria-modal="true" aria-label={`Detalhes do contrato ${contract.id}`}><button className="drawer-backdrop" onClick={onClose} aria-label="Fechar detalhes" /><aside className="drawer wide-drawer contract-detail-drawer">
     <header className="contract-detail-hero">
-      <div className="contract-detail-hero-top"><p className="eyebrow eyebrow-light">Instrumento de locação</p><button type="button" className="close-button" onClick={onClose} aria-label="Fechar detalhes">×</button></div>
+      <div className="contract-detail-hero-top"><p className="eyebrow eyebrow-light">Instrumento de locação</p><button type="button" className="close-button" onClick={onClose} aria-label="Fechar detalhes"><X aria-hidden="true" /></button></div>
       <div className="contract-detail-hero-copy"><div><span>{contract.id}</span><b>Contrato ativo</b></div><h2>{contract.tenant}</h2><p>{contract.property} · {contract.portfolio}</p></div>
-      <i className="contract-detail-seal" aria-hidden="true">✓</i>
+      <i className="contract-detail-seal" aria-hidden="true"><Check /></i>
     </header>
     <div className="drawer-body">
       <section className="contract-detail-summary" aria-label={`Resumo financeiro de ${contract.id}`}>
@@ -1472,10 +1506,10 @@ function ContractDrawer({ contract, charges, onClose, onCharge }: { contract: Co
         <div className="contract-relationship-units">{contract.units.map((unit) => <span key={unit}>{unit}</span>)}</div>
       </section>
       <section className="contract-composition" aria-labelledby="contract-composition-title"><div className="section-title"><h3 id="contract-composition-title">Composição prevista</h3><span>{contract.charges.length} itens</span></div><div>{contract.charges.map((item, index) => <span key={item}><i>{String(index + 1).padStart(2, "0")}</i><strong>{item}</strong></span>)}</div></section>
-      <aside className="contract-edit-policy" aria-label="Política de alteração do contrato"><span aria-hidden="true">!</span><div><strong>Contrato ativo não pode ser editado diretamente</strong><p>Para corrigir condições, encerre a vigência atual e cadastre o substituto. Cobranças e histórico permanecem vinculados ao acordo original.</p></div></aside>
+      <aside className="contract-edit-policy" aria-label="Política de alteração do contrato"><span aria-hidden="true"><TriangleAlert /></span><div><strong>Contrato ativo não pode ser editado diretamente</strong><p>Para corrigir condições, encerre a vigência atual e cadastre o substituto. Cobranças e histórico permanecem vinculados ao acordo original.</p></div></aside>
       <InfoNote text="Consultar o contrato não cria competências automaticamente. Use “Criar cobrança” quando quiser faturar um novo período." />
     </div>
-    <footer className="drawer-footer contract-detail-footer"><button type="button" className="secondary-button" onClick={onClose}>Fechar</button><button type="button" className="primary-button" onClick={onCharge}>Criar cobrança</button></footer>
+    <footer className="drawer-footer contract-detail-footer"><button type="button" className="secondary-button" onClick={onClose}>Fechar</button><button type="button" className="primary-button button-with-icon" onClick={onCharge}><BadgeDollarSign aria-hidden="true" />Criar cobrança</button></footer>
   </aside></div>;
 }
 
@@ -1488,9 +1522,9 @@ function ExpenseDrawer({ expense, onClose, onStatusChange }: { expense: Expense;
 
   return <div className="drawer-layer" role="dialog" aria-modal="true" aria-label={`Detalhes da despesa ${expense.id}`}><button className="drawer-backdrop" onClick={onClose} aria-label="Fechar detalhes" /><aside className="drawer wide-drawer expense-detail-drawer">
     <header className={`expense-detail-hero expense-detail-hero-${statusName}`}>
-      <div className="expense-detail-hero-top"><p className="eyebrow eyebrow-light">Compromisso financeiro</p><button type="button" className="close-button" onClick={onClose} aria-label="Fechar detalhes">×</button></div>
+      <div className="expense-detail-hero-top"><p className="eyebrow eyebrow-light">Compromisso financeiro</p><button type="button" className="close-button" onClick={onClose} aria-label="Fechar detalhes"><X aria-hidden="true" /></button></div>
       <div className="expense-detail-hero-copy"><div><span>{expense.id}</span><ExpenseStatusBadge status={expense.status} /></div><h2>{expense.supplier}</h2><p>{expense.description}</p></div>
-      <i className="expense-detail-orbit" aria-hidden="true">↓</i>
+      <i className="expense-detail-orbit" aria-hidden="true"><ArrowDownToLine /></i>
     </header>
     <div className="drawer-body">
       <section className="expense-detail-summary" aria-label={`Resumo financeiro de ${expense.id}`}>
@@ -1503,7 +1537,7 @@ function ExpenseDrawer({ expense, onClose, onStatusChange }: { expense: Expense;
       {expense.status === "Pendente" && timing && <aside className="expense-alert expense-alert-soon"><span>•</span><div><strong>Vencimento próximo</strong><p>Priorize a conferência desta despesa.</p></div></aside>}
       <section className="expense-status-editor" aria-labelledby="expense-status-title"><div><h3 id="expense-status-title">Atualizar situação</h3><p>Registre a evolução operacional deste compromisso.</p></div><label>Status<select value={status} onChange={(event) => { const nextStatus = event.target.value as ExpenseStatus; setStatus(nextStatus); if (nextStatus === "Pago" && !paidIso) setPaidIso(DEMO_DATE_ISO); }}><option>Pendente</option><option>Vencido</option><option>Pago</option></select></label>{status === "Pago" && <label>Data do pagamento<input type="date" value={paidIso} onChange={(event) => setPaidIso(event.target.value)} required /></label>}</section>
     </div>
-    <footer className="drawer-footer expense-detail-footer"><button type="button" className="secondary-button" onClick={onClose}>Fechar</button><button type="button" className="primary-button" disabled={!statusChanged || (status === "Pago" && !paidIso)} onClick={() => onStatusChange(status, paidIso)}>Salvar status</button></footer>
+    <footer className="drawer-footer expense-detail-footer"><button type="button" className="secondary-button" onClick={onClose}>Fechar</button><button type="button" className="primary-button button-with-icon" disabled={!statusChanged || (status === "Pago" && !paidIso)} onClick={() => onStatusChange(status, paidIso)}><CircleCheck aria-hidden="true" />Salvar status</button></footer>
   </aside></div>;
 }
 
@@ -1692,8 +1726,8 @@ function ReceiptModal({ charge, onClose, onSave }: { charge: Charge; onClose: ()
   return <div className="modal-layer" role="dialog" aria-modal="true" aria-label="Registrar recebimento"><button className="drawer-backdrop" onClick={onClose} /><form className="receipt-modal allocation-modal" onSubmit={handleReceiptSubmit}><ModalHeader eyebrow="Baixa manual" title="Distribuir recebimento" onClose={onClose} /><div className="receipt-summary"><div><span>Valor da cobrança</span><strong>{brl.format(chargeTotal(charge))}</strong></div><div><span>Já recebido</span><strong>{brl.format(receivedTotal(charge))}</strong></div><div><span>Saldo atual</span><strong>{brl.format(currentBalance)}</strong></div></div><InlineFieldError message={receiptError} /><div className="form-grid"><label>Data do recebimento<input type="date" value={receiptDate} onChange={(event) => { setReceiptDate(event.target.value); setReviewing(false); }} disabled={reviewing} required /></label><label>Valor recebido<input type="number" inputMode="decimal" min="0.01" step="0.01" max={currentBalance} placeholder="0,00" value={receivedAmount} onChange={(event) => changeReceivedAmount(event.target.value)} disabled={reviewing} required /></label></div><section className="allocation-block"><div className="section-title"><h3>Prévia da distribuição</h3><span>{receivedAmount ? "Revise os valores por item" : "Informe o valor recebido"}</span></div>{pendingItems.map((item, index) => <label className="allocation-row" key={`${item.name}-${index}`}><span><strong>{item.name}</strong><small>Saldo {brl.format(item.amount - item.received)}</small></span><input aria-label={`Valor para ${item.name}`} type="number" min="0" step="0.01" max={item.amount - item.received} placeholder="0,00" value={allocations[index] || ""} disabled={!receivedAmount || reviewing} onChange={(event) => { setAllocations((values) => values.map((value, position) => position === index ? Number(event.target.value) : value)); setReviewing(false); }} /></label>)}<div className="allocation-total"><span>Total distribuído</span><strong>{brl.format(allocationTotal)}</strong></div></section><div className="post-balance"><span>Saldo após esta baixa</span><strong>{brl.format(Math.max(0, currentBalance - allocationTotal))}</strong></div>{reviewing && <aside className="receipt-review" role="status"><span aria-hidden="true">✓</span><div><strong>Revise antes de confirmar</strong><p>{brl.format(receivedValue)} será distribuído em {allocations.filter((value) => value > 0).length} {allocations.filter((value) => value > 0).length === 1 ? "item" : "itens"}. O saldo ficará em {brl.format(Math.max(0, currentBalance - allocationTotal))}.</p></div></aside>}<label className="standalone-label">Observação<textarea placeholder="Ex.: pagamento parcial, complemento..." rows={3} value={note} onChange={(event) => { setNote(event.target.value); setReviewing(false); }} disabled={reviewing} /></label><footer><button type="button" className="secondary-button" onClick={reviewing ? () => setReviewing(false) : onClose}>{reviewing ? "Voltar e editar" : "Cancelar"}</button><button className="primary-button" disabled={!canConfirm}>{reviewing ? "Confirmar recebimento" : "Revisar distribuição"}</button></footer></form></div>;
 }
 
-function ModalHeader({ eyebrow, title, onClose }: { eyebrow: string; title: string; onClose: () => void }) { return <header><div><p className="eyebrow">{eyebrow}</p><h2>{title}</h2></div><button type="button" className="close-button" onClick={onClose}>×</button></header>; }
-function ModalFooter({ onClose, action, pending = false, disabled = false, disabledReason }: { onClose: () => void; action: string; pending?: boolean; disabled?: boolean; disabledReason?: string }) { return <footer className="entity-form-footer"><div><span aria-hidden="true">✓</span><p><strong>Cadastro protegido</strong><small>Os campos obrigatórios são validados antes de salvar.</small></p></div><button type="button" className="secondary-button" onClick={onClose} disabled={pending}>Cancelar</button><button className="primary-button" disabled={pending || disabled} aria-busy={pending} title={disabled ? disabledReason : undefined}>{pending ? "Salvando…" : action}</button></footer>; }
+function ModalHeader({ eyebrow, title, onClose }: { eyebrow: string; title: string; onClose: () => void }) { return <header><div><p className="eyebrow">{eyebrow}</p><h2>{title}</h2></div><button type="button" className="close-button" onClick={onClose} aria-label="Fechar"><X aria-hidden="true" /></button></header>; }
+function ModalFooter({ onClose, action, pending = false, disabled = false, disabledReason }: { onClose: () => void; action: string; pending?: boolean; disabled?: boolean; disabledReason?: string }) { return <footer className="entity-form-footer"><div><span aria-hidden="true"><Check /></span><p><strong>Cadastro protegido</strong><small>Os campos obrigatórios são validados antes de salvar.</small></p></div><button type="button" className="secondary-button" onClick={onClose} disabled={pending}>Cancelar</button><button className="primary-button button-with-icon" disabled={pending || disabled} aria-busy={pending} title={disabled ? disabledReason : undefined}>{!pending && <CircleCheck aria-hidden="true" />}{pending ? "Salvando…" : action}</button></footer>; }
 
 function EntityFormSection({ index, title, description, children, className = "" }: { index: string; title: string; description: string; children: ReactNode; className?: string }) {
   return <section className={`entity-form-section full-field ${className}`}><header><span>{index}</span><div><h3>{title}</h3><p>{description}</p></div></header><div className="entity-form-section-fields">{children}</div></section>;
@@ -1836,7 +1870,7 @@ function EntityForm({ kind, portfolio, property, unit, tenant, documents: initia
     }
     if (formError) setFormError("");
   };
-  return <div className="modal-layer" role="dialog" aria-modal="true" aria-label={config[1]}><button className="drawer-backdrop" onClick={closeForm} aria-label="Fechar formulário" /><form className={`receipt-modal entity-modal entity-${kind}-modal`} noValidate onSubmit={handleSubmit} onInputCapture={clearFieldError}><header className="entity-form-hero"><span className="entity-form-mark" aria-hidden="true">{presentation.mark}</span><div><p>{presentation.label}</p><h2>{config[1]}</h2><span>{presentation.description}</span></div><b>{portfolio || property || unit || tenant ? "Modo de edição" : "Novo cadastro"}</b><button type="button" className="close-button" onClick={closeForm} aria-label="Fechar formulário">×</button></header><div className="entity-modal-body"><InlineFieldError message={formError || chargeBusinessError} /><div className="form-grid entity-grid">
+  return <div className="modal-layer" role="dialog" aria-modal="true" aria-label={config[1]}><button className="drawer-backdrop" onClick={closeForm} aria-label="Fechar formulário" /><form className={`receipt-modal entity-modal entity-${kind}-modal`} noValidate onSubmit={handleSubmit} onInputCapture={clearFieldError}><header className="entity-form-hero"><span className="entity-form-mark" aria-hidden="true">{presentation.mark}</span><div><p>{presentation.label}</p><h2>{config[1]}</h2><span>{presentation.description}</span></div><b>{portfolio || property || unit || tenant ? "Modo de edição" : "Novo cadastro"}</b><button type="button" className="close-button" onClick={closeForm} aria-label="Fechar formulário"><X aria-hidden="true" /></button></header><div className="entity-modal-body"><InlineFieldError message={formError || chargeBusinessError} /><div className="form-grid entity-grid">
     {kind === "portfolio" && <><EntityFormSection index="01" title="Identificação da carteira" description="Defina como esta estrutura será reconhecida no sistema."><label className="full-field">Nome da carteira<input name="portfolioName" placeholder="Ex.: Carteira Atlas" defaultValue={portfolio?.name ?? ""} required /></label></EntityFormSection><EntityFormSection index="02" title="Titularidade" description="Associe a pessoa ou empresa responsável pela carteira."><label>Titular<input name="portfolioHolder" placeholder="Razão social ou nome" defaultValue={portfolio?.holder ?? ""} required /></label><label>CPF / CNPJ do titular<input name="portfolioDocument" placeholder="Documento fictício nesta demonstração" defaultValue={portfolio?.document ?? ""} required /></label></EntityFormSection></>}
     {kind === "property" && <EntityFormSection index="01" title="Identificação do imóvel" description="Vincule o empreendimento à carteira e informe sua localização."><label>Carteira<select name="propertyPortfolio" defaultValue={property?.portfolio ?? portfolioOptions[0].name} required>{portfolioOptions.map((portfolio) => <option key={portfolio.id}>{portfolio.name}</option>)}</select></label><label>Nome do imóvel<input name="propertyName" placeholder="Ex.: Centro Empresarial" defaultValue={property?.name ?? ""} required /></label><label className="full-field">Endereço principal<input name="propertyAddress" placeholder="Logradouro, número e bairro" defaultValue={property?.address ?? ""} required /></label></EntityFormSection>}
     {kind === "unit" && <EntityFormSection index="01" title="Dados da unidade" description="Identifique o espaço e registre suas características locáveis."><label>Imóvel<select name="unitProperty" defaultValue={unit?.property ?? propertyOptions[0].name} required>{propertyOptions.map((property) => <option key={property.id}>{property.name}</option>)}</select></label><label>Identificação da unidade<input name="unitName" placeholder="Ex.: Sala 101" defaultValue={unit?.name ?? ""} required /></label><label>Área privativa<span className="input-with-suffix"><input name="unitArea" type="number" inputMode="decimal" min="0.01" step="0.01" placeholder="Ex.: 42" defaultValue={unit?.area ?? ""} required /><span className="input-suffix" aria-hidden="true">m²</span></span></label><label>Status inicial<select name="unitStatus" defaultValue={unit?.occupied ? "Ocupada" : "Disponível"} disabled={Boolean(unit?.occupied)} aria-describedby={unit?.occupied ? "unit-occupancy-help" : undefined}><option>Disponível</option><option>Ocupada</option></select>{unit?.occupied && <small id="unit-occupancy-help" className="field-help">Ocupação definida por contrato ativo.</small>}</label></EntityFormSection>}
