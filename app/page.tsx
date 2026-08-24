@@ -456,6 +456,7 @@ export default function Home() {
   const categorizedDocumentsByOwnerRef = useRef(categorizedDocumentsByOwner);
   const [expenseRecords, setExpenseRecords] = useState<Expense[]>(expenses);
   const [toast, setToast] = useState<ToastMessage>(null);
+  const toastTimerRef = useRef<number | null>(null);
   const [contentState, setContentState] = useState<ContentState>("ready");
   const [online, setOnline] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -465,6 +466,7 @@ export default function Home() {
   useEffect(() => { categorizedDocumentsByOwnerRef.current = categorizedDocumentsByOwner; }, [categorizedDocumentsByOwner]);
   useEffect(() => () => revokeDocumentUrls(Object.values(documentsByOwnerRef.current).flat()), []);
   useEffect(() => () => revokeDocumentUrls(Object.values(categorizedDocumentsByOwnerRef.current).flatMap(flattenCategorizedDocuments)), []);
+  useEffect(() => () => { if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current); }, []);
 
   useEffect(() => {
     const handleOffline = () => { setOnline(false); setContentState("error"); };
@@ -497,8 +499,14 @@ export default function Home() {
   }), [categoryFilter, expenseRecords, search, statusFilter]);
 
   const notify = (message: string, reference: string) => {
+    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
     setToast({ message, reference });
-    window.setTimeout(() => setToast(null), 4200);
+    toastTimerRef.current = window.setTimeout(() => { setToast(null); toastTimerRef.current = null; }, 4200);
+  };
+  const dismissToast = () => {
+    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = null;
+    setToast(null);
   };
   const changePage = (next: Page) => {
     if (next !== page) setContentState("loading");
@@ -684,7 +692,7 @@ export default function Home() {
         {!online && <ConnectionBanner onRetry={retryContent} />}
         {contentState === "loading" && <AuthenticatedPageSkeleton />}
         {contentState === "error" && <SystemError onRetry={retryContent} />}
-        {contentState === "ready" && <FilterStateContext.Provider value={Boolean(search || portfolioFilter !== "Todas as carteiras" || statusFilter !== "Todas" || categoryFilter !== "Todas as categorias")}><>
+        {contentState === "ready" && <FilterStateContext.Provider value={Boolean(search || portfolioFilter !== "Todas as carteiras" || statusFilter !== "Todas" || categoryFilter !== "Todas as categorias")}><div className="page-enter" key={page}>
           {page === "Visão geral" && <DashboardPage charges={chargeRecords} negotiations={negotiationsByCharge} expenses={expenseRecords} properties={propertyRecords} units={unitRecords} contracts={contracts} onNavigate={(next, status) => { changePage(next); if (status) setStatusFilter(status); }} />}
           {page === "Cobranças" && <ChargesPage charges={filteredCharges} summaryCharges={chargesInScope} negotiations={negotiationsByCharge} total={chargeRecords.length} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} statusFilter={statusFilter} setStatusFilter={setStatusFilter} onOpen={setSelectedCharge} onNew={() => { setChargeSourceContract(null); setForm("charge"); }} onReport={() => setReportOpen(true)} />}
           {page === "Carteiras" && <PortfoliosPage portfolios={portfolioRecords} properties={propertyRecords} units={unitRecords} search={search} setSearch={setSearch} onNew={() => { setEditingPortfolio(null); setForm("portfolio"); }} onEdit={(portfolio) => { setEditingPortfolio(portfolio); setForm("portfolio"); }} />}
@@ -693,7 +701,7 @@ export default function Home() {
           {page === "Locatários" && <TenantsPage tenants={tenantRecords} contracts={contracts} charges={chargeRecords} search={search} setSearch={setSearch} onNew={() => { setEditingTenant(null); setForm("tenant"); }} onOpen={(tenant) => setRegistryDetail({ kind: "tenant", record: tenant })} onEdit={(tenant) => { setEditingTenant(tenant); setForm("tenant"); }} />}
           {page === "Contratos" && <ContractsPage charges={chargeRecords} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} onNew={() => setForm("contract")} onOpen={setSelectedContract} />}
           {page === "Despesas" && <ExpensesPage rows={filteredExpenses} total={expenseRecords.length} categories={Array.from(new Set(expenseRecords.map((expense) => expense.category)))} search={search} setSearch={setSearch} statusFilter={statusFilter} setStatusFilter={setStatusFilter} categoryFilter={categoryFilter} setCategoryFilter={setCategoryFilter} onOpen={setSelectedExpense} onNew={() => setForm("expense")} />}
-        </></FilterStateContext.Provider>}
+        </div></FilterStateContext.Provider>}
       </div>
     </section>
     {selectedCharge && <ChargeDrawer charge={selectedCharge} negotiation={negotiationsByCharge[selectedCharge.id]} onClose={() => { setSelectedCharge(null); setNegotiationOpen(false); }} onReceipt={() => setReceiptOpen(true)} onNegotiate={() => setNegotiationOpen(true)} />}
@@ -709,7 +717,7 @@ export default function Home() {
     {negotiationOpen && selectedCharge && <NegotiationModal charge={selectedCharge} negotiation={negotiationsByCharge[selectedCharge.id]} onClose={() => setNegotiationOpen(false)} onSave={saveNegotiation} />}
     {reportOpen && <ReportExportModal initialPortfolio={portfolioFilter} portfolioOptions={portfolioRecords} propertyOptions={propertyRecords} tenantOptions={tenantRecords} chargeOptions={chargeRecords} onClose={() => setReportOpen(false)} onExported={(filename) => notify("Relatório contábil gerado e pronto para download.", filename)} />}
     {form && <EntityForm kind={form} portfolio={form === "portfolio" ? editingPortfolio : null} property={form === "property" ? editingProperty : null} unit={form === "unit" ? editingUnit : null} tenant={form === "tenant" ? editingTenant : null} documents={form === "tenant" && editingTenant ? documentsByOwner[editingTenant.id] ?? [] : []} categorizedDocuments={form === "property" && editingProperty ? categorizedDocumentsByOwner[editingProperty.id] ?? createEmptyCategorizedDocuments() : form === "unit" && editingUnit ? categorizedDocumentsByOwner[editingUnit.id] ?? createEmptyCategorizedDocuments() : undefined} chargeSourceContract={form === "charge" ? chargeSourceContract : null} portfolioOptions={portfolioRecords} propertyOptions={propertyRecords} unitOptions={unitRecords} tenantOptions={tenantRecords} onClose={() => { setForm(null); setEditingPortfolio(null); setEditingProperty(null); setEditingUnit(null); setEditingTenant(null); setChargeSourceContract(null); }} onSave={saveForm} />}
-    {toast && <SuccessToast message={toast} />}
+    {toast && <SuccessToast message={toast} onClose={dismissToast} />}
   </main>;
 }
 
@@ -845,8 +853,13 @@ function AuthenticatedPageSkeleton() {
   return <div className="page-skeleton" role="status" aria-live="polite"><span className="sr-only">Carregando conteúdo</span><div className="skeleton-heading"><i /><i /></div><div className="skeleton-cards">{Array.from({ length: 4 }, (_, index) => <i key={index} />)}</div><div className="skeleton-table"><i />{Array.from({ length: 5 }, (_, index) => <span key={index}><b /><b /><b /><b /></span>)}</div></div>;
 }
 
-function SuccessToast({ message }: { message: Exclude<ToastMessage, null> }) {
-  return <div className="toast" role="status" aria-live="polite"><span aria-hidden="true"><CircleCheck /></span><div><strong>{message.message}</strong><small>Referência: {message.reference}</small></div></div>;
+function SuccessToast({ message, onClose }: { message: Exclude<ToastMessage, null>; onClose: () => void }) {
+  return <div className="toast" role="status" aria-live="polite" aria-atomic="true">
+    <span className="toast-icon" aria-hidden="true"><CircleCheck /></span>
+    <div><strong>{message.message}</strong><small>Referência: {message.reference}</small></div>
+    <button type="button" className="toast-close" onClick={onClose} aria-label="Fechar notificação"><X aria-hidden="true" /></button>
+    <i className="toast-progress" aria-hidden="true" />
+  </div>;
 }
 
 function InlineFieldError({ message }: { message: string }) {
@@ -1727,7 +1740,7 @@ function ReceiptModal({ charge, onClose, onSave }: { charge: Charge; onClose: ()
 }
 
 function ModalHeader({ eyebrow, title, onClose }: { eyebrow: string; title: string; onClose: () => void }) { return <header><div><p className="eyebrow">{eyebrow}</p><h2>{title}</h2></div><button type="button" className="close-button" onClick={onClose} aria-label="Fechar"><X aria-hidden="true" /></button></header>; }
-function ModalFooter({ onClose, action, pending = false, disabled = false, disabledReason }: { onClose: () => void; action: string; pending?: boolean; disabled?: boolean; disabledReason?: string }) { return <footer className="entity-form-footer"><div><span aria-hidden="true"><Check /></span><p><strong>Cadastro protegido</strong><small>Os campos obrigatórios são validados antes de salvar.</small></p></div><button type="button" className="secondary-button" onClick={onClose} disabled={pending}>Cancelar</button><button className="primary-button button-with-icon" disabled={pending || disabled} aria-busy={pending} title={disabled ? disabledReason : undefined}>{!pending && <CircleCheck aria-hidden="true" />}{pending ? "Salvando…" : action}</button></footer>; }
+function ModalFooter({ onClose, action, pending = false, disabled = false, disabledReason }: { onClose: () => void; action: string; pending?: boolean; disabled?: boolean; disabledReason?: string }) { return <footer className="entity-form-footer"><div><span aria-hidden="true"><Check /></span><p><strong>Cadastro protegido</strong><small>Os campos obrigatórios são validados antes de salvar.</small></p></div><button type="button" className="secondary-button" onClick={onClose} disabled={pending}>Cancelar</button><button className="primary-button button-with-icon" disabled={pending || disabled} aria-busy={pending} title={disabled ? disabledReason : undefined}>{pending ? <><span className="spinner button-spinner" aria-hidden="true" />Salvando…</> : <><CircleCheck aria-hidden="true" />{action}</>}</button></footer>; }
 
 function EntityFormSection({ index, title, description, children, className = "" }: { index: string; title: string; description: string; children: ReactNode; className?: string }) {
   return <section className={`entity-form-section full-field ${className}`}><header><span>{index}</span><div><h3>{title}</h3><p>{description}</p></div></header><div className="entity-form-section-fields">{children}</div></section>;
