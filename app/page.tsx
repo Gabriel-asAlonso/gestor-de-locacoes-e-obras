@@ -652,7 +652,7 @@ export default function Home() {
         {contentState === "loading" && <AuthenticatedPageSkeleton />}
         {contentState === "error" && <SystemError onRetry={retryContent} />}
         {contentState === "ready" && <FilterStateContext.Provider value={Boolean(search || portfolioFilter !== "Todas as carteiras" || statusFilter !== "Todas" || categoryFilter !== "Todas as categorias")}><>
-          {page === "Visão geral" && <DashboardPage charges={chargeRecords} negotiations={negotiationsByCharge} expenses={expenseRecords} units={unitRecords} contracts={contracts} onNavigate={(next, status) => { changePage(next); if (status) setStatusFilter(status); }} />}
+          {page === "Visão geral" && <DashboardPage charges={chargeRecords} negotiations={negotiationsByCharge} expenses={expenseRecords} properties={propertyRecords} units={unitRecords} contracts={contracts} onNavigate={(next, status) => { changePage(next); if (status) setStatusFilter(status); }} />}
           {page === "Cobranças" && <ChargesPage charges={filteredCharges} summaryCharges={chargesInScope} negotiations={negotiationsByCharge} total={chargeRecords.length} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} statusFilter={statusFilter} setStatusFilter={setStatusFilter} onOpen={setSelectedCharge} onNew={() => { setChargeSourceContract(null); setForm("charge"); }} onReport={() => setReportOpen(true)} />}
           {page === "Carteiras" && <PortfoliosPage portfolios={portfolioRecords} properties={propertyRecords} units={unitRecords} search={search} setSearch={setSearch} onNew={() => { setEditingPortfolio(null); setForm("portfolio"); }} onEdit={(portfolio) => { setEditingPortfolio(portfolio); setForm("portfolio"); }} />}
           {page === "Imóveis" && <PropertiesPage properties={propertyRecords} units={unitRecords} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} onNew={() => { setEditingProperty(null); setForm("property"); }} onOpen={(property) => setRegistryDetail({ kind: "property", record: property })} />}
@@ -836,7 +836,7 @@ function tenantInitials(name: string) {
   return words.slice(0, 2).map((word) => word[0]).join("").toUpperCase();
 }
 
-function DashboardPage({ charges, negotiations, expenses, units, contracts, onNavigate }: { charges: Charge[]; negotiations: Record<string, ChargeNegotiation>; expenses: Expense[]; units: Unit[]; contracts: Contract[]; onNavigate: (page: Page, status?: string) => void }) {
+function DashboardPage({ charges, negotiations, expenses, properties, units, contracts, onNavigate }: { charges: Charge[]; negotiations: Record<string, ChargeNegotiation>; expenses: Expense[]; properties: Property[]; units: Unit[]; contracts: Contract[]; onNavigate: (page: Page, status?: string) => void }) {
   const openCharges = charges.filter((charge) => charge.status !== "Recebida");
   const overdueCharges = charges.filter((charge) => charge.status === "Vencida");
   const partialCharges = charges.filter((charge) => charge.status === "Parcial");
@@ -845,6 +845,15 @@ function DashboardPage({ charges, negotiations, expenses, units, contracts, onNa
   const receivableBalance = openCharges.reduce((sum, charge) => sum + operationalChargeBalance(charge, negotiations[charge.id]), 0);
   const overdueReceivable = overdueCharges.reduce((sum, charge) => sum + chargeBalance(charge), 0);
   const payableBalance = openExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+  const currentPeriodCharges = charges.filter((charge) => charge.competence === "08/2026");
+  const currentPeriodBilled = currentPeriodCharges.reduce((sum, charge) => sum + chargeTotal(charge), 0);
+  const currentPeriodReceived = currentPeriodCharges.reduce((sum, charge) => sum + receivedTotal(charge), 0);
+  const currentPeriodExpenses = expenses.reduce((sum, expense) => sum + expense.amount, 0);
+  const currentPeriodPaidExpenses = expenses.filter((expense) => expense.status === "Pago").reduce((sum, expense) => sum + expense.amount, 0);
+  const projectedResult = currentPeriodBilled - currentPeriodExpenses;
+  const realizedResult = currentPeriodReceived - currentPeriodPaidExpenses;
+  const collectionRate = currentPeriodBilled ? Math.round((currentPeriodReceived / currentPeriodBilled) * 100) : 0;
+  const priorityValue = overdueReceivable + overdueExpenses.reduce((sum, expense) => sum + expense.amount, 0) + partialCharges.reduce((sum, charge) => sum + chargeBalance(charge), 0);
   const occupiedUnits = units.filter((unit) => unit.occupied).length;
   const availableUnits = units.length - occupiedUnits;
   const occupancyRate = units.length ? Math.round((occupiedUnits / units.length) * 100) : 0;
@@ -874,10 +883,28 @@ function DashboardPage({ charges, negotiations, expenses, units, contracts, onNa
     const occupied = portfolioUnits.filter((unit) => unit.occupied).length;
     return { portfolio, occupied, total: portfolioUnits.length, rate: portfolioUnits.length ? Math.round((occupied / portfolioUnits.length) * 100) : 0 };
   });
+  const availabilityByProperty = Array.from(new Set(units.filter((unit) => !unit.occupied).map((unit) => unit.property))).map((property) => ({ property, units: units.filter((unit) => unit.property === property && !unit.occupied) })).sort((left, right) => right.units.length - left.units.length);
+  const featuredAvailability = availabilityByProperty[0];
+  const featuredProperty = featuredAvailability ? properties.find((property) => property.name === featuredAvailability.property) : undefined;
   return <>
-    <PageHeading eyebrow="12 de agosto de 2026" title="Visão geral" description="Uma leitura clara da operação patrimonial e da posição financeira." />
-    <article className="dashboard-panel attention-panel financial-attention dashboard-priorities-first">
-      <header className="dashboard-panel-header"><div><p className="eyebrow">Prioridades financeiras</p><h2>Valores que exigem atenção</h2></div><span className="attention-count">{overdueCharges.length + overdueExpenses.length + partialCharges.length}</span></header>
+    <section className="dashboard-executive-hero" aria-labelledby="dashboard-title">
+      <div className="dashboard-executive-main">
+        <header><div><span className="dashboard-live-dot" aria-hidden="true" /><span>12 de agosto de 2026</span></div><b>Agosto de 2026</b></header>
+        <div className="dashboard-executive-copy"><p>Painel executivo</p><h1 id="dashboard-title">Visão geral</h1><span>Uma leitura integrada da operação patrimonial e da posição financeira.</span></div>
+        <div className="dashboard-result"><span>Resultado projetado do período</span><strong className={projectedResult >= 0 ? "positive" : "negative"}>{brl.format(projectedResult)}</strong><small>Recebíveis previstos menos despesas cadastradas</small></div>
+        <div className="dashboard-result-breakdown"><span><small>Recebíveis previstos</small><strong>{brl.format(currentPeriodBilled)}</strong></span><i aria-hidden="true">−</i><span><small>Despesas do período</small><strong>{brl.format(currentPeriodExpenses)}</strong></span><i aria-hidden="true">=</i><span><small>Fluxo realizado</small><strong className={realizedResult >= 0 ? "positive" : "negative"}>{brl.format(realizedResult)}</strong></span></div>
+      </div>
+      <aside className="dashboard-executive-pulse" aria-label="Pulso da operação">
+        <header><div><span>Pulso da operação</span><h2>Indicadores essenciais</h2></div><small>Atualizado hoje</small></header>
+        <div className="dashboard-pulse-metrics">
+          <button type="button" onClick={() => onNavigate("Cobranças")}><i className="dashboard-pulse-ring dashboard-pulse-collection" style={{ background: `conic-gradient(#4faf81 ${collectionRate}%,#e4e9e7 ${collectionRate}% 100%)` }} aria-hidden="true"><span>{collectionRate}%</span></i><span><strong>Recebimento</strong><small>{brl.format(currentPeriodReceived)} realizados</small></span><b aria-hidden="true">→</b></button>
+          <button type="button" onClick={() => onNavigate("Unidades")}><i className="dashboard-pulse-ring dashboard-pulse-occupancy" style={{ background: `conic-gradient(#638bd4 ${occupancyRate}%,#e4e8ee ${occupancyRate}% 100%)` }} aria-hidden="true"><span>{occupancyRate}%</span></i><span><strong>Ocupação</strong><small>{occupiedUnits} de {units.length} unidades</small></span><b aria-hidden="true">→</b></button>
+        </div>
+        <footer><button type="button" onClick={() => onNavigate("Cobranças")}>Cobranças <span>→</span></button><button type="button" onClick={() => onNavigate("Despesas")}>Despesas <span>→</span></button><button type="button" onClick={() => onNavigate("Contratos")}>Contratos <span>→</span></button></footer>
+      </aside>
+    </section>
+    <article className="dashboard-panel attention-panel financial-attention dashboard-priorities-first dashboard-priority-center">
+      <header className="dashboard-panel-header"><div><p className="eyebrow">Central de prioridades</p><h2>Valores que exigem atenção</h2><span>{priorityValue ? `${brl.format(priorityValue)} concentrados em pendências financeiras` : "Nenhuma pendência crítica no momento"}</span></div><span className="attention-count">{overdueCharges.length + overdueExpenses.length + partialCharges.length}</span></header>
       <div className="attention-list">{overdueCharges.map((charge) => <button type="button" key={charge.id} onClick={() => onNavigate("Cobranças", "Vencida")}><i className="attention-danger" /><span><strong>{charge.tenant}</strong><small>{charge.id} · cobrança vencida</small></span><b>{brl.format(chargeBalance(charge))}</b></button>)}{overdueExpenses.map((expense) => <button type="button" key={expense.id} onClick={() => onNavigate("Despesas", "Vencido")}><i className="attention-danger" /><span><strong>{expense.supplier}</strong><small>{expense.id} · despesa vencida</small></span><b>{brl.format(expense.amount)}</b></button>)}{partialCharges.map((charge) => <button type="button" key={charge.id} onClick={() => onNavigate("Cobranças", "Parcial")}><i className="attention-warning" /><span><strong>{charge.tenant}</strong><small>{charge.id} · baixa parcial</small></span><b>{brl.format(chargeBalance(charge))}</b></button>)}</div>
     </article>
     <section className="dashboard-domain dashboard-domain-operation" aria-labelledby="dashboard-operation-title">
@@ -888,11 +915,11 @@ function DashboardPage({ charges, negotiations, expenses, units, contracts, onNa
           <button type="button" className="dashboard-kpi kpi-available" onClick={() => onNavigate("Unidades")}><span>Unidades disponíveis</span><strong>{availableUnits}</strong><small>Espaços livres para locação</small><i aria-hidden="true">→</i></button>
           <button type="button" className="dashboard-kpi kpi-contracts" onClick={() => onNavigate("Contratos")}><span>Contratos ativos</span><strong>{contracts.length}</strong><small>Vínculos vigentes na base</small><i aria-hidden="true">→</i></button>
         </section>
-        <article className="dashboard-panel occupancy-panel">
+        <section className="dashboard-grid dashboard-grid-operation"><article className="dashboard-panel occupancy-panel">
           <header className="dashboard-panel-header"><div><p className="eyebrow">Desempenho operacional</p><h2>Ocupação por carteira</h2></div><span className="panel-meta">{availableUnits} unidades disponíveis</span></header>
           <div className="occupancy-list">{portfolios.map((row) => <div className="occupancy-row" key={row.portfolio}><div><strong>{row.portfolio}</strong><span>{row.occupied} de {row.total} unidades</span></div><div className="occupancy-track" role="progressbar" aria-valuenow={row.rate} aria-valuemin={0} aria-valuemax={100} aria-label={`Ocupação de ${row.portfolio}`}><i style={{ width: `${row.rate}%` }} /></div><b>{row.rate}%</b></div>)}</div>
           <button type="button" className="panel-link" onClick={() => onNavigate("Unidades")}>Ver todas as unidades <span aria-hidden="true">→</span></button>
-        </article>
+        </article>{featuredAvailability && featuredProperty && <article className="dashboard-property-spotlight"><img src={propertyCoverImages[featuredProperty.id] ?? fallbackPropertyCover} alt={`Fachada de ${featuredProperty.name}`} width="720" height="520" /><div className="dashboard-property-spotlight-top"><span>Oportunidade do patrimônio</span><b>{featuredAvailability.units.length} {featuredAvailability.units.length === 1 ? "unidade disponível" : "unidades disponíveis"}</b></div><div className="dashboard-property-spotlight-copy"><span>{featuredProperty.portfolio}</span><h2>{featuredProperty.name}</h2><p>{featuredProperty.address}</p><div>{featuredAvailability.units.map((unit) => <b key={unit.id}>{unit.name} · {decimal.format(unit.area)} m²</b>)}</div><button type="button" onClick={() => onNavigate("Unidades")}>Explorar disponibilidade <span aria-hidden="true">→</span></button></div></article>}</section>
       </div>
     </section>
     <section className="dashboard-domain dashboard-domain-financial" aria-labelledby="dashboard-financial-title">
