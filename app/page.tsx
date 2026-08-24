@@ -655,7 +655,7 @@ export default function Home() {
           {page === "Visão geral" && <DashboardPage charges={chargeRecords} negotiations={negotiationsByCharge} expenses={expenseRecords} units={unitRecords} contracts={contracts} onNavigate={(next, status) => { changePage(next); if (status) setStatusFilter(status); }} />}
           {page === "Cobranças" && <ChargesPage charges={filteredCharges} summaryCharges={chargesInScope} negotiations={negotiationsByCharge} total={chargeRecords.length} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} statusFilter={statusFilter} setStatusFilter={setStatusFilter} onOpen={setSelectedCharge} onNew={() => { setChargeSourceContract(null); setForm("charge"); }} onReport={() => setReportOpen(true)} />}
           {page === "Carteiras" && <PortfoliosPage portfolios={portfolioRecords} properties={propertyRecords} units={unitRecords} search={search} setSearch={setSearch} onNew={() => { setEditingPortfolio(null); setForm("portfolio"); }} onEdit={(portfolio) => { setEditingPortfolio(portfolio); setForm("portfolio"); }} />}
-          {page === "Imóveis" && <PropertiesPage properties={propertyRecords} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} onNew={() => { setEditingProperty(null); setForm("property"); }} onOpen={(property) => setRegistryDetail({ kind: "property", record: property })} />}
+          {page === "Imóveis" && <PropertiesPage properties={propertyRecords} units={unitRecords} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} onNew={() => { setEditingProperty(null); setForm("property"); }} onOpen={(property) => setRegistryDetail({ kind: "property", record: property })} />}
           {page === "Unidades" && <UnitsPage units={unitRecords} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} onNew={() => { setEditingUnit(null); setForm("unit"); }} onOpen={(unit) => setRegistryDetail({ kind: "unit", record: unit })} onEdit={(unit) => { setEditingUnit(unit); setForm("unit"); }} />}
           {page === "Locatários" && <TenantsPage tenants={tenantRecords} search={search} setSearch={setSearch} onNew={() => { setEditingTenant(null); setForm("tenant"); }} onOpen={(tenant) => setRegistryDetail({ kind: "tenant", record: tenant })} onEdit={(tenant) => { setEditingTenant(tenant); setForm("tenant"); }} />}
           {page === "Contratos" && <ContractsPage search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} onNew={() => setForm("contract")} onOpen={setSelectedContract} />}
@@ -665,7 +665,7 @@ export default function Home() {
     </section>
     {selectedCharge && <ChargeDrawer charge={selectedCharge} negotiation={negotiationsByCharge[selectedCharge.id]} onClose={() => { setSelectedCharge(null); setNegotiationOpen(false); }} onReceipt={() => setReceiptOpen(true)} onNegotiate={() => setNegotiationOpen(true)} />}
     {selectedContract && <ContractDrawer contract={selectedContract} onClose={() => setSelectedContract(null)} onCharge={() => { setChargeSourceContract(selectedContract); setSelectedContract(null); setForm("charge"); }} />}
-    {registryDetail && <RegistryDetailDrawer detail={registryDetail} documents={registryDetail.kind === "tenant" ? documentsByOwner[registryDetail.record.id] ?? [] : []} categorizedDocuments={registryDetail.kind === "property" || registryDetail.kind === "unit" ? categorizedDocumentsByOwner[registryDetail.record.id] ?? createEmptyCategorizedDocuments() : undefined} onCategorizedDocumentsChange={(nextDocuments) => updateRegistryDocuments(registryDetail.record.id, nextDocuments)} onClose={() => setRegistryDetail(null)} onEdit={editRegistryDetail} />}
+    {registryDetail && <RegistryDetailDrawer detail={registryDetail} units={unitRecords} documents={registryDetail.kind === "tenant" ? documentsByOwner[registryDetail.record.id] ?? [] : []} categorizedDocuments={registryDetail.kind === "property" || registryDetail.kind === "unit" ? categorizedDocumentsByOwner[registryDetail.record.id] ?? createEmptyCategorizedDocuments() : undefined} onCategorizedDocumentsChange={(nextDocuments) => updateRegistryDocuments(registryDetail.record.id, nextDocuments)} onClose={() => setRegistryDetail(null)} onEdit={editRegistryDetail} />}
     {selectedExpense && <ExpenseDrawer expense={selectedExpense} onClose={() => setSelectedExpense(null)} onStatusChange={(status, paidIso) => {
       const paidDate = status === "Pago" && paidIso ? formatExpenseDate(paidIso) : null;
       setExpenseRecords((records) => records.map((record) => record.id === selectedExpense.id ? { ...record, status, paidDate } : record));
@@ -1071,24 +1071,51 @@ function PortfoliosPage({ portfolios, properties, units, search, setSearch, onNe
   </>;
 }
 
-function PropertiesPage({ properties, search, setSearch, portfolioFilter, setPortfolioFilter, onNew, onOpen }: { properties: Property[]; search: string; setSearch: (value: string) => void; portfolioFilter: string; setPortfolioFilter: (value: string) => void; onNew: () => void; onOpen: (property: Property) => void }) {
+function PropertiesPage({ properties, units, search, setSearch, portfolioFilter, setPortfolioFilter, onNew, onOpen }: { properties: Property[]; units: Unit[]; search: string; setSearch: (value: string) => void; portfolioFilter: string; setPortfolioFilter: (value: string) => void; onNew: () => void; onOpen: (property: Property) => void }) {
   const rows = properties.filter((property) => `${property.name}${property.address}${property.id}`.toLowerCase().includes(search.toLowerCase()) && (portfolioFilter === "Todas as carteiras" || property.portfolio === portfolioFilter));
-  return <><PageHeading eyebrow="Estrutura patrimonial" title="Imóveis" description="Mantenha o endereço principal e a carteira de cada empreendimento." action="Novo imóvel" onAction={onNew} /><TableSection toolbar={<><SearchBar value={search} onChange={setSearch} placeholder="Buscar por imóvel ou endereço" /><PortfolioFilter value={portfolioFilter} onChange={setPortfolioFilter} /></>} footer={<><span>{rows.length} imóveis</span><span>Carteira → imóvel → unidade</span></>}>
-    {rows.length > 0 ? <div className="property-card-grid" aria-label="Imóveis cadastrados">{rows.map((property) => <button type="button" className="property-card" key={property.id} onClick={() => onOpen(property)} aria-label={`Abrir detalhes de ${property.name}`}>
-      <span className="property-card-media">
-        <img src={propertyCoverImages[property.id] ?? fallbackPropertyCover} alt={`Fachada ilustrativa de ${property.name}`} width="640" height="400" loading="lazy" />
-        <span className="property-card-id">{property.id}</span>
-      </span>
-      <span className="property-card-body">
-        <strong>{property.name}</strong>
-        <span className="property-card-address">{property.address}</span>
-        <span className="property-card-meta">
-          <b>{property.portfolio}</b>
-          <span>{property.units} {property.units === 1 ? "unidade" : "unidades"}</span>
-        </span>
-      </span>
-    </button>)}</div> : <EmptyState entity="imóvel" />}
-  </TableSection></>;
+  const visibleNames = new Set(rows.map((property) => property.name));
+  const visibleUnits = units.filter((unit) => visibleNames.has(unit.property));
+  const occupiedUnits = visibleUnits.filter((unit) => unit.occupied).length;
+  const availableUnits = visibleUnits.length - occupiedUnits;
+  const occupancy = visibleUnits.length ? Math.round((occupiedUnits / visibleUnits.length) * 100) : 0;
+  const visiblePortfolios = new Set(rows.map((property) => property.portfolio)).size;
+
+  return <><PageHeading eyebrow="Estrutura patrimonial" title="Imóveis" description="Reconheça cada empreendimento e acompanhe sua ocupação em uma única visão." action="Novo imóvel" onAction={onNew} />
+    <section className="property-insight-strip" aria-label="Resumo dos imóveis exibidos">
+      <div className="property-insight-main"><span>Patrimônio em foco</span><strong>{rows.length} {rows.length === 1 ? "empreendimento" : "empreendimentos"}</strong><small>Distribuídos em {visiblePortfolios} {visiblePortfolios === 1 ? "carteira" : "carteiras"}</small></div>
+      <div><span>Unidades</span><strong>{visibleUnits.length}</strong><small>estrutura locável</small></div>
+      <div className="property-insight-available"><span>Disponíveis</span><strong>{availableUnits}</strong><small>prontas para locação</small></div>
+      <div className="property-insight-occupancy"><span>Ocupação</span><strong>{occupancy}%</strong><small>{occupiedUnits} unidades ocupadas</small><i aria-hidden="true"><b style={{ width: `${occupancy}%` }} /></i></div>
+    </section>
+    <TableSection toolbar={<><SearchBar value={search} onChange={setSearch} placeholder="Buscar por imóvel ou endereço" /><PortfolioFilter value={portfolioFilter} onChange={setPortfolioFilter} /><button type="button" className="primary-button property-mobile-new" onClick={onNew}>Novo imóvel</button></>} footer={<><span>{rows.length} imóveis</span><span>{availableUnits} unidades disponíveis</span></>}>
+      {rows.length > 0 ? <div className="property-card-grid" aria-label="Imóveis cadastrados">{rows.map((property) => {
+        const propertyUnits = units.filter((unit) => unit.property === property.name);
+        const propertyOccupied = propertyUnits.filter((unit) => unit.occupied).length;
+        const propertyAvailable = propertyUnits.length - propertyOccupied;
+        const propertyOccupancy = propertyUnits.length ? Math.round((propertyOccupied / propertyUnits.length) * 100) : 0;
+
+        return <button type="button" className="property-card" key={property.id} onClick={() => onOpen(property)} aria-label={`Abrir detalhes de ${property.name}. Ocupação de ${propertyOccupancy}%`}>
+          <span className="property-card-media">
+            <img src={propertyCoverImages[property.id] ?? fallbackPropertyCover} alt={`Fachada ilustrativa de ${property.name}`} width="640" height="400" loading="lazy" />
+            <span className="property-card-id">{property.id}</span>
+            <span className={`property-card-availability ${propertyAvailable === 0 ? "property-card-full" : ""}`}>{propertyAvailable === 0 ? "Ocupação total" : `${propertyAvailable} ${propertyAvailable === 1 ? "disponível" : "disponíveis"}`}</span>
+          </span>
+          <span className="property-card-body">
+            <strong>{property.name}</strong>
+            <span className="property-card-address"><i aria-hidden="true" />{property.address}</span>
+            <span className="property-card-meta">
+              <b>{property.portfolio}</b>
+              <span>{propertyUnits.length} {propertyUnits.length === 1 ? "unidade" : "unidades"}</span>
+            </span>
+            <span className="property-card-occupancy">
+              <span><strong>{propertyOccupancy}% ocupado</strong><small>{propertyOccupied} ocupadas · {propertyAvailable} livres</small></span>
+              <i aria-hidden="true"><b style={{ width: `${propertyOccupancy}%` }} /></i>
+            </span>
+          </span>
+        </button>;
+      })}</div> : <EmptyState entity="imóvel" />}
+    </TableSection>
+  </>;
 }
 
 function UnitsPage({ units, search, setSearch, portfolioFilter, setPortfolioFilter, onNew, onOpen, onEdit }: { units: Unit[]; search: string; setSearch: (value: string) => void; portfolioFilter: string; setPortfolioFilter: (value: string) => void; onNew: () => void; onOpen: (unit: Unit) => void; onEdit: (unit: Unit) => void }) {
@@ -1108,10 +1135,14 @@ function ContractsPage({ search, setSearch, portfolioFilter, setPortfolioFilter,
 
 function InfoNote({ text }: { text: string }) { return <aside className="info-note"><span>i</span><p>{text}</p></aside>; }
 
-function RegistryDetailDrawer({ detail, documents, categorizedDocuments, onCategorizedDocumentsChange, onClose, onEdit }: { detail: RegistryDetail; documents: LocalDocument[]; categorizedDocuments?: CategorizedDocuments; onCategorizedDocumentsChange: (documents: CategorizedDocuments) => void; onClose: () => void; onEdit: () => void }) {
+function RegistryDetailDrawer({ detail, units, documents, categorizedDocuments, onCategorizedDocumentsChange, onClose, onEdit }: { detail: RegistryDetail; units: Unit[]; documents: LocalDocument[]; categorizedDocuments?: CategorizedDocuments; onCategorizedDocumentsChange: (documents: CategorizedDocuments) => void; onClose: () => void; onEdit: () => void }) {
   let eyebrow = "Detalhes do cadastro";
   const title = detail.record.name;
   let fields: Array<{ label: string; value: ReactNode }>;
+  const propertyUnits = detail.kind === "property" ? units.filter((unit) => unit.property === detail.record.name) : [];
+  const propertyOccupied = propertyUnits.filter((unit) => unit.occupied).length;
+  const propertyAvailable = propertyUnits.length - propertyOccupied;
+  const propertyOccupancy = propertyUnits.length ? Math.round((propertyOccupied / propertyUnits.length) * 100) : 0;
 
   if (detail.kind === "property") {
     eyebrow = "Detalhes do imóvel";
@@ -1140,7 +1171,18 @@ function RegistryDetailDrawer({ detail, documents, categorizedDocuments, onCateg
     ];
   }
 
-  return <div className="drawer-layer" role="dialog" aria-modal="true" aria-label={`${eyebrow}: ${title}`}><button className="drawer-backdrop" onClick={onClose} /><aside className="drawer wide-drawer registry-detail-drawer"><header className="drawer-header"><div><p className="eyebrow">{eyebrow}</p><h2>{title}</h2></div><button type="button" className="close-button" onClick={onClose} aria-label="Fechar detalhes">×</button></header><div className="drawer-body">
+  return <div className="drawer-layer" role="dialog" aria-modal="true" aria-label={`${eyebrow}: ${title}`}><button className="drawer-backdrop" onClick={onClose} /><aside className={`drawer wide-drawer registry-detail-drawer ${detail.kind === "property" ? "property-detail-drawer" : ""}`}>{detail.kind === "property" ? <header className="property-detail-hero">
+    <img src={propertyCoverImages[detail.record.id] ?? fallbackPropertyCover} alt={`Fachada ilustrativa de ${detail.record.name}`} width="800" height="520" />
+    <div className="property-detail-hero-top"><p className="eyebrow eyebrow-light">Detalhes do imóvel</p><button type="button" className="close-button" onClick={onClose} aria-label="Fechar detalhes">×</button></div>
+    <div className="property-detail-hero-copy"><span>{detail.record.id}</span><h2>{detail.record.name}</h2><p>{detail.record.address}</p></div>
+  </header> : <header className="drawer-header"><div><p className="eyebrow">{eyebrow}</p><h2>{title}</h2></div><button type="button" className="close-button" onClick={onClose} aria-label="Fechar detalhes">×</button></header>}<div className="drawer-body">
+    {detail.kind === "property" && <section className="property-detail-summary" aria-label={`Ocupação de ${detail.record.name}`}>
+      <div><span>Carteira</span><strong>{detail.record.portfolio}</strong></div>
+      <div><span>Unidades</span><strong>{propertyUnits.length}</strong></div>
+      <div><span>Ocupadas</span><strong>{propertyOccupied}</strong></div>
+      <div className="property-detail-availability"><span>Disponíveis</span><strong>{propertyAvailable}</strong></div>
+      <div className="property-detail-progress"><span><strong>{propertyOccupancy}% de ocupação</strong><small>{propertyAvailable ? `${propertyAvailable} ${propertyAvailable === 1 ? "unidade disponível" : "unidades disponíveis"}` : "Empreendimento totalmente ocupado"}</small></span><i aria-hidden="true"><b style={{ width: `${propertyOccupancy}%` }} /></i></div>
+    </section>}
     <dl className="detail-list registry-detail-list">{fields.map((field) => <div key={field.label}><dt>{field.label}</dt><dd>{field.value}</dd></div>)}</dl>
     {categorizedDocuments ? <CategorizedDocumentManager documents={categorizedDocuments} onChange={onCategorizedDocumentsChange} /> : <section className="registry-documents" aria-labelledby="registry-documents-title"><div className="section-title"><h3 id="registry-documents-title">Documentos e imagens</h3><span>{documents.length ? `${documents.length} ${documents.length === 1 ? "anexo" : "anexos"}` : "Sem anexos"}</span></div><DocumentCollection documents={documents} emptyDescription="Nenhuma imagem ou arquivo foi anexado a este registro nesta sessão." /></section>}
   </div><footer className="drawer-footer"><button type="button" className="secondary-button" onClick={onClose}>Fechar</button><button type="button" className="primary-button" onClick={onEdit}>Editar cadastro</button></footer></aside></div>;
