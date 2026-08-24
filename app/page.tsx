@@ -10,6 +10,13 @@ import {
   suggestedAccountingReportFilename,
 } from "./accounting-report";
 import type { AccountingReportDownload } from "./accounting-report-workbook";
+import {
+  buildNegotiationSchedule,
+  calculateNegotiationTotals,
+  validateNegotiationTerms,
+  type ChargeNegotiation,
+  type NegotiationTerms,
+} from "./charge-negotiation";
 import { CategorizedDocumentManager, DocumentCollection, DocumentManager } from "./document-manager";
 import {
   createEmptyCategorizedDocuments,
@@ -19,7 +26,7 @@ import {
   type LocalDocument,
 } from "./local-documents";
 
-type Status = "Vencida" | "Em aberto" | "Próxima" | "Parcial" | "Recebida";
+type Status = "Vencida" | "Em aberto" | "Próxima" | "Parcial" | "Negociada" | "Recebida";
 type ExpenseStatus = "Pendente" | "Pago" | "Vencido";
 type Page = "Visão geral" | "Carteiras" | "Imóveis" | "Unidades" | "Locatários" | "Contratos" | "Cobranças" | "Despesas";
 type FormKind = "portfolio" | "property" | "unit" | "tenant" | "contract" | "charge" | "expense" | null;
@@ -225,6 +232,7 @@ const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const chargeTotal = (charge: Charge) => charge.items.reduce((sum, item) => sum + item.amount, 0);
 const receivedTotal = (charge: Charge) => charge.items.reduce((sum, item) => sum + item.received, 0);
 const chargeBalance = (charge: Charge) => chargeTotal(charge) - receivedTotal(charge);
+const operationalChargeBalance = (charge: Charge, negotiation?: ChargeNegotiation) => negotiation?.negotiatedTotal ?? chargeBalance(charge);
 
 const FOCUSABLE_ELEMENTS = [
   "a[href]",
@@ -391,6 +399,7 @@ export default function Home() {
   const [statusFilter, setStatusFilter] = useState("Todas");
   const [categoryFilter, setCategoryFilter] = useState("Todas as categorias");
   const [selectedCharge, setSelectedCharge] = useState<Charge | null>(null);
+  const [negotiationOpen, setNegotiationOpen] = useState(false);
   const [selectedContract, setSelectedContract] = useState<Contract | null>(null);
   const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null);
   const [registryDetail, setRegistryDetail] = useState<RegistryDetail | null>(null);
@@ -406,6 +415,8 @@ export default function Home() {
   const [editingUnit, setEditingUnit] = useState<Unit | null>(null);
   const [tenantRecords, setTenantRecords] = useState<Tenant[]>(tenants);
   const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
+  const [chargeRecords, setChargeRecords] = useState<Charge[]>(charges);
+  const [negotiationsByCharge, setNegotiationsByCharge] = useState<Record<string, ChargeNegotiation>>({});
   const [documentsByOwner, setDocumentsByOwner] = useState<Record<string, LocalDocument[]>>({});
   const documentsByOwnerRef = useRef(documentsByOwner);
   const [categorizedDocumentsByOwner, setCategorizedDocumentsByOwner] = useState<Record<string, CategorizedDocuments>>({});
@@ -439,12 +450,12 @@ export default function Home() {
     };
   }, []);
 
-  const chargeAttentionCount = charges.filter((charge) => charge.status === "Vencida" || charge.status === "Parcial").length;
-  const chargesInScope = useMemo(() => charges.filter((charge) => {
+  const chargeAttentionCount = chargeRecords.filter((charge) => charge.status === "Vencida" || charge.status === "Parcial").length;
+  const chargesInScope = useMemo(() => chargeRecords.filter((charge) => {
     const query = search.trim().toLowerCase();
     const matchesSearch = !query || [charge.id, charge.contract, charge.property, charge.tenant, charge.competence, ...charge.units, ...charge.items.map((item) => item.name)].some((value) => value.toLowerCase().includes(query));
     return matchesSearch && (portfolioFilter === "Todas as carteiras" || charge.portfolio === portfolioFilter);
-  }), [portfolioFilter, search]);
+  }), [chargeRecords, portfolioFilter, search]);
   const filteredCharges = useMemo(() => chargesInScope.filter((charge) => statusFilter === "Todas" || charge.status === statusFilter), [chargesInScope, statusFilter]);
   const filteredExpenses = useMemo(() => expenseRecords.filter((expense) => {
     const query = search.trim().toLowerCase();
@@ -485,6 +496,14 @@ export default function Home() {
     setReceiptOpen(false);
     setSelectedCharge(null);
     notify("Recebimento registrado e distribuído entre os itens.", selectedCharge?.id ?? "COB-DEMO");
+  };
+  const saveNegotiation = (negotiation: ChargeNegotiation) => {
+    const updating = Boolean(negotiationsByCharge[negotiation.chargeId]);
+    setNegotiationsByCharge((current) => ({ ...current, [negotiation.chargeId]: negotiation }));
+    setChargeRecords((records) => records.map((charge) => charge.id === negotiation.chargeId ? { ...charge, status: "Negociada" } : charge));
+    setSelectedCharge((charge) => charge?.id === negotiation.chargeId ? { ...charge, status: "Negociada" } : charge);
+    setNegotiationOpen(false);
+    notify(updating ? "Condições da negociação atualizadas." : "Negociação registrada com sucesso.", negotiation.id);
   };
   const saveForm = (data: FormData, documents?: FormDocuments) => {
     const references: Record<Exclude<FormKind, null>, string> = {
@@ -633,8 +652,8 @@ export default function Home() {
         {contentState === "loading" && <AuthenticatedPageSkeleton />}
         {contentState === "error" && <SystemError onRetry={retryContent} />}
         {contentState === "ready" && <FilterStateContext.Provider value={Boolean(search || portfolioFilter !== "Todas as carteiras" || statusFilter !== "Todas" || categoryFilter !== "Todas as categorias")}><>
-          {page === "Visão geral" && <DashboardPage charges={charges} expenses={expenseRecords} units={unitRecords} contracts={contracts} onNavigate={(next, status) => { changePage(next); if (status) setStatusFilter(status); }} />}
-          {page === "Cobranças" && <ChargesPage charges={filteredCharges} summaryCharges={chargesInScope} total={charges.length} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} statusFilter={statusFilter} setStatusFilter={setStatusFilter} onOpen={setSelectedCharge} onNew={() => { setChargeSourceContract(null); setForm("charge"); }} onReport={() => setReportOpen(true)} />}
+          {page === "Visão geral" && <DashboardPage charges={chargeRecords} negotiations={negotiationsByCharge} expenses={expenseRecords} units={unitRecords} contracts={contracts} onNavigate={(next, status) => { changePage(next); if (status) setStatusFilter(status); }} />}
+          {page === "Cobranças" && <ChargesPage charges={filteredCharges} summaryCharges={chargesInScope} negotiations={negotiationsByCharge} total={chargeRecords.length} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} statusFilter={statusFilter} setStatusFilter={setStatusFilter} onOpen={setSelectedCharge} onNew={() => { setChargeSourceContract(null); setForm("charge"); }} onReport={() => setReportOpen(true)} />}
           {page === "Carteiras" && <PortfoliosPage portfolios={portfolioRecords} search={search} setSearch={setSearch} onNew={() => { setEditingPortfolio(null); setForm("portfolio"); }} onEdit={(portfolio) => { setEditingPortfolio(portfolio); setForm("portfolio"); }} />}
           {page === "Imóveis" && <PropertiesPage properties={propertyRecords} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} onNew={() => { setEditingProperty(null); setForm("property"); }} onOpen={(property) => setRegistryDetail({ kind: "property", record: property })} />}
           {page === "Unidades" && <UnitsPage units={unitRecords} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} onNew={() => { setEditingUnit(null); setForm("unit"); }} onOpen={(unit) => setRegistryDetail({ kind: "unit", record: unit })} onEdit={(unit) => { setEditingUnit(unit); setForm("unit"); }} />}
@@ -644,7 +663,7 @@ export default function Home() {
         </></FilterStateContext.Provider>}
       </div>
     </section>
-    {selectedCharge && <ChargeDrawer charge={selectedCharge} onClose={() => setSelectedCharge(null)} onReceipt={() => setReceiptOpen(true)} />}
+    {selectedCharge && <ChargeDrawer charge={selectedCharge} negotiation={negotiationsByCharge[selectedCharge.id]} onClose={() => { setSelectedCharge(null); setNegotiationOpen(false); }} onReceipt={() => setReceiptOpen(true)} onNegotiate={() => setNegotiationOpen(true)} />}
     {selectedContract && <ContractDrawer contract={selectedContract} onClose={() => setSelectedContract(null)} onCharge={() => { setChargeSourceContract(selectedContract); setSelectedContract(null); setForm("charge"); }} />}
     {registryDetail && <RegistryDetailDrawer detail={registryDetail} documents={registryDetail.kind === "tenant" ? documentsByOwner[registryDetail.record.id] ?? [] : []} categorizedDocuments={registryDetail.kind === "property" || registryDetail.kind === "unit" ? categorizedDocumentsByOwner[registryDetail.record.id] ?? createEmptyCategorizedDocuments() : undefined} onCategorizedDocumentsChange={(nextDocuments) => updateRegistryDocuments(registryDetail.record.id, nextDocuments)} onClose={() => setRegistryDetail(null)} onEdit={editRegistryDetail} />}
     {selectedExpense && <ExpenseDrawer expense={selectedExpense} onClose={() => setSelectedExpense(null)} onStatusChange={(status, paidIso) => {
@@ -654,7 +673,8 @@ export default function Home() {
       notify("Status da despesa atualizado.", selectedExpense.id);
     }} />}
     {receiptOpen && selectedCharge && <ReceiptModal charge={selectedCharge} onClose={() => setReceiptOpen(false)} onSave={saveReceipt} />}
-    {reportOpen && <ReportExportModal initialPortfolio={portfolioFilter} portfolioOptions={portfolioRecords} propertyOptions={propertyRecords} tenantOptions={tenantRecords} chargeOptions={charges} onClose={() => setReportOpen(false)} onExported={(filename) => notify("Relatório contábil gerado e pronto para download.", filename)} />}
+    {negotiationOpen && selectedCharge && <NegotiationModal charge={selectedCharge} negotiation={negotiationsByCharge[selectedCharge.id]} onClose={() => setNegotiationOpen(false)} onSave={saveNegotiation} />}
+    {reportOpen && <ReportExportModal initialPortfolio={portfolioFilter} portfolioOptions={portfolioRecords} propertyOptions={propertyRecords} tenantOptions={tenantRecords} chargeOptions={chargeRecords} onClose={() => setReportOpen(false)} onExported={(filename) => notify("Relatório contábil gerado e pronto para download.", filename)} />}
     {form && <EntityForm kind={form} portfolio={form === "portfolio" ? editingPortfolio : null} property={form === "property" ? editingProperty : null} unit={form === "unit" ? editingUnit : null} tenant={form === "tenant" ? editingTenant : null} documents={form === "tenant" && editingTenant ? documentsByOwner[editingTenant.id] ?? [] : []} categorizedDocuments={form === "property" && editingProperty ? categorizedDocumentsByOwner[editingProperty.id] ?? createEmptyCategorizedDocuments() : form === "unit" && editingUnit ? categorizedDocumentsByOwner[editingUnit.id] ?? createEmptyCategorizedDocuments() : undefined} chargeSourceContract={form === "charge" ? chargeSourceContract : null} portfolioOptions={portfolioRecords} propertyOptions={propertyRecords} unitOptions={unitRecords} tenantOptions={tenantRecords} onClose={() => { setForm(null); setEditingPortfolio(null); setEditingProperty(null); setEditingUnit(null); setEditingTenant(null); setChargeSourceContract(null); }} onSave={saveForm} />}
     {toast && <SuccessToast message={toast} />}
   </main>;
@@ -785,20 +805,20 @@ function EmptyState({ filtered, entity = "registro" }: { filtered?: boolean; ent
 }
 function UnitPills({ values }: { values: string[] }) { return <div className="tag-list">{values.map((value) => <span key={value}>{value}</span>)}</div>; }
 
-function DashboardPage({ charges, expenses, units, contracts, onNavigate }: { charges: Charge[]; expenses: Expense[]; units: Unit[]; contracts: Contract[]; onNavigate: (page: Page, status?: string) => void }) {
+function DashboardPage({ charges, negotiations, expenses, units, contracts, onNavigate }: { charges: Charge[]; negotiations: Record<string, ChargeNegotiation>; expenses: Expense[]; units: Unit[]; contracts: Contract[]; onNavigate: (page: Page, status?: string) => void }) {
   const openCharges = charges.filter((charge) => charge.status !== "Recebida");
   const overdueCharges = charges.filter((charge) => charge.status === "Vencida");
   const partialCharges = charges.filter((charge) => charge.status === "Parcial");
   const openExpenses = expenses.filter((expense) => expense.status !== "Pago");
   const overdueExpenses = expenses.filter((expense) => expense.status === "Vencido");
-  const receivableBalance = openCharges.reduce((sum, charge) => sum + chargeBalance(charge), 0);
+  const receivableBalance = openCharges.reduce((sum, charge) => sum + operationalChargeBalance(charge, negotiations[charge.id]), 0);
   const overdueReceivable = overdueCharges.reduce((sum, charge) => sum + chargeBalance(charge), 0);
   const payableBalance = openExpenses.reduce((sum, expense) => sum + expense.amount, 0);
   const occupiedUnits = units.filter((unit) => unit.occupied).length;
   const availableUnits = units.length - occupiedUnits;
   const occupancyRate = units.length ? Math.round((occupiedUnits / units.length) * 100) : 0;
-  const statusRows = (["Vencida", "Parcial", "Próxima", "Em aberto", "Recebida"] as Status[]).map((status) => ({ status, count: charges.filter((charge) => charge.status === status).length }));
-  const statusColors: Record<Status, string> = { Vencida: "#b44853", Parcial: "#c18424", "Próxima": "#4b78cf", "Em aberto": "#8693a5", Recebida: "#2d7b58" };
+  const statusRows = (["Vencida", "Parcial", "Negociada", "Próxima", "Em aberto", "Recebida"] as Status[]).map((status) => ({ status, count: charges.filter((charge) => charge.status === status).length }));
+  const statusColors: Record<Status, string> = { Vencida: "#b44853", Parcial: "#c18424", Negociada: "#7657a5", "Próxima": "#4b78cf", "Em aberto": "#8693a5", Recebida: "#2d7b58" };
   let donutStart = 0;
   const donutStops = statusRows.filter((row) => row.count > 0).map((row) => {
     const start = donutStart;
@@ -865,9 +885,9 @@ function DashboardPage({ charges, expenses, units, contracts, onNavigate }: { ch
   </>;
 }
 
-function ChargesPage({ charges: rows, summaryCharges, total, search, setSearch, portfolioFilter, setPortfolioFilter, statusFilter, setStatusFilter, onOpen, onNew, onReport }: { charges: Charge[]; summaryCharges: Charge[]; total: number; search: string; setSearch: (value: string) => void; portfolioFilter: string; setPortfolioFilter: (value: string) => void; statusFilter: string; setStatusFilter: (value: string) => void; onOpen: (charge: Charge) => void; onNew: () => void; onReport: () => void }) {
+function ChargesPage({ charges: rows, summaryCharges, negotiations, total, search, setSearch, portfolioFilter, setPortfolioFilter, statusFilter, setStatusFilter, onOpen, onNew, onReport }: { charges: Charge[]; summaryCharges: Charge[]; negotiations: Record<string, ChargeNegotiation>; total: number; search: string; setSearch: (value: string) => void; portfolioFilter: string; setPortfolioFilter: (value: string) => void; statusFilter: string; setStatusFilter: (value: string) => void; onOpen: (charge: Charge) => void; onNew: () => void; onReport: () => void }) {
   const pendingCharges = summaryCharges.filter((charge) => charge.status !== "Recebida");
-  const pending = pendingCharges.reduce((sum, charge) => sum + chargeBalance(charge), 0);
+  const pending = pendingCharges.reduce((sum, charge) => sum + operationalChargeBalance(charge, negotiations[charge.id]), 0);
   const countByStatus = (status: Status) => pendingCharges.filter((charge) => charge.status === status).length;
   const toggleStatus = (status: Status) => setStatusFilter(statusFilter === status ? "Todas" : status);
   return <>
@@ -878,8 +898,8 @@ function ChargesPage({ charges: rows, summaryCharges, total, search, setSearch, 
       <button type="button" className="summary-card summary-card-button summary-card-upcoming" aria-pressed={statusFilter === "Próxima"} onClick={() => toggleStatus("Próxima")} title="Filtrar cobranças próximas"><span>Próximas</span><strong>{countByStatus("Próxima")}</strong><small>Nos próximos dias</small></button>
       <button type="button" className="summary-card summary-card-button summary-card-partial" aria-pressed={statusFilter === "Parcial"} onClick={() => toggleStatus("Parcial")} title="Filtrar cobranças com baixa parcial"><span>Baixa parcial</span><strong>{countByStatus("Parcial")}</strong><small>Saldo distribuído por item</small></button>
     </section>
-    <TableSection toolbar={<><SearchBar value={search} onChange={setSearch} placeholder="Buscar por contrato, unidade, locatário ou item" /><PortfolioFilter value={portfolioFilter} onChange={setPortfolioFilter} /><FilterSelect label="Filtrar por situação" value={statusFilter} onChange={setStatusFilter} active={statusFilter !== "Todas"}><option>Todas</option><option>Vencida</option><option>Em aberto</option><option>Próxima</option><option>Parcial</option><option>Recebida</option></FilterSelect><button type="button" className="secondary-button report-export-button" onClick={onReport}><span className="report-export-icon" aria-hidden="true">↓</span>Exportar relatório</button></>} footer={<><span>{rows.length} de {total} cobranças</span><span>Inclusão e baixa manuais</span></>}>
-      <table className="charges-table"><thead><tr><th>Cobrança</th><th>Contrato / unidades</th><th>Locatário</th><th>Competência</th><th>Composição</th><th>Total</th><th>Saldo</th><th>Situação</th></tr></thead><tbody>{rows.map((charge) => <tr key={charge.id} onClick={() => onOpen(charge)} tabIndex={0} onKeyDown={(event) => event.key === "Enter" && onOpen(charge)}><td><strong>{charge.id}</strong><small>{charge.portfolio}</small></td><td><strong>{charge.contract}</strong><small>{charge.property}</small><UnitPills values={charge.units} /></td><td>{charge.tenant}</td><td>{charge.competence}</td><td>{charge.items.length} {charge.items.length === 1 ? "item" : "itens"}<small>{charge.items.map((item) => item.name).join(" · ")}</small></td><td>{brl.format(chargeTotal(charge))}</td><td><strong>{brl.format(chargeBalance(charge))}</strong></td><td><StatusBadge status={charge.status} /></td></tr>)}</tbody></table>{rows.length === 0 && <EmptyState />}
+    <TableSection toolbar={<><SearchBar value={search} onChange={setSearch} placeholder="Buscar por contrato, unidade, locatário ou item" /><PortfolioFilter value={portfolioFilter} onChange={setPortfolioFilter} /><FilterSelect label="Filtrar por situação" value={statusFilter} onChange={setStatusFilter} active={statusFilter !== "Todas"}><option>Todas</option><option>Vencida</option><option>Em aberto</option><option>Próxima</option><option>Parcial</option><option>Negociada</option><option>Recebida</option></FilterSelect><button type="button" className="secondary-button report-export-button" onClick={onReport}><span className="report-export-icon" aria-hidden="true">↓</span>Exportar relatório</button></>} footer={<><span>{rows.length} de {total} cobranças</span><span>Inclusão, negociação e baixa manuais</span></>}>
+      <table className="charges-table"><thead><tr><th>Cobrança</th><th>Contrato / unidades</th><th>Locatário</th><th>Competência</th><th>Composição</th><th>Total</th><th>Saldo</th><th>Situação</th></tr></thead><tbody>{rows.map((charge) => <tr key={charge.id} onClick={() => onOpen(charge)} tabIndex={0} onKeyDown={(event) => event.key === "Enter" && onOpen(charge)}><td><strong>{charge.id}</strong><small>{charge.portfolio}</small></td><td><strong>{charge.contract}</strong><small>{charge.property}</small><UnitPills values={charge.units} /></td><td>{charge.tenant}</td><td>{charge.competence}</td><td>{charge.items.length} {charge.items.length === 1 ? "item" : "itens"}<small>{charge.items.map((item) => item.name).join(" · ")}</small></td><td>{brl.format(chargeTotal(charge))}</td><td><strong>{brl.format(operationalChargeBalance(charge, negotiations[charge.id]))}</strong>{negotiations[charge.id] && <small>Valor do acordo</small>}</td><td><StatusBadge status={charge.status} /></td></tr>)}</tbody></table>{rows.length === 0 && <EmptyState />}
     </TableSection>
   </>;
 }
@@ -1048,8 +1068,16 @@ function RegistryDetailDrawer({ detail, documents, categorizedDocuments, onCateg
   </div><footer className="drawer-footer"><button type="button" className="secondary-button" onClick={onClose}>Fechar</button><button type="button" className="primary-button" onClick={onEdit}>Editar cadastro</button></footer></aside></div>;
 }
 
-function ChargeDrawer({ charge, onClose, onReceipt }: { charge: Charge; onClose: () => void; onReceipt: () => void }) {
-  return <div className="drawer-layer" role="dialog" aria-modal="true" aria-label="Detalhes da cobrança"><button className="drawer-backdrop" onClick={onClose} /><aside className="drawer wide-drawer"><header className="drawer-header"><div><p className="eyebrow">Cobrança composta</p><h2>{charge.id}</h2></div><button className="close-button" onClick={onClose}>×</button></header><div className="drawer-body"><div className="contract-identity"><StatusBadge status={charge.status} /><span>{charge.competence}</span></div><section className="balance-panel"><span>Saldo atual</span><strong>{brl.format(chargeBalance(charge))}</strong><small>de {brl.format(chargeTotal(charge))}</small></section><dl className="detail-list"><div><dt>Carteira</dt><dd>{charge.portfolio}</dd></div><div><dt>Contrato</dt><dd>{charge.contract}</dd></div><div><dt>Imóvel</dt><dd>{charge.property}</dd></div><div><dt>Unidades</dt><dd><UnitPills values={charge.units} /></dd></div><div><dt>Locatário</dt><dd>{charge.tenant}</dd></div></dl><section className="charge-items-block"><div className="section-title"><h3>Composição da cobrança</h3><span>{charge.items.length} itens</span></div><div className="charge-items">{charge.items.map((item) => <article className="charge-item" key={`${item.name}-${item.dueDate}`}><div className="charge-item-head"><strong>{item.name}</strong><span>Vence {item.dueDate}</span></div><div className="charge-item-values"><span>Previsto <b>{brl.format(item.amount)}</b></span><span>Recebido <b>{brl.format(item.received)}</b></span><span>Saldo <b>{brl.format(item.amount - item.received)}</b></span></div></article>)}</div></section><section className="history-block"><div className="section-title"><h3>Histórico de recebimentos</h3><span>{receivedTotal(charge) ? "1 registro" : "Sem registros"}</span></div>{receivedTotal(charge) ? <div className="history-entry"><i /><div><strong>{brl.format(receivedTotal(charge))}</strong><span>10 ago 2026 · Baixa manual distribuída por item</span></div></div> : <div className="history-empty">Nenhuma baixa registrada nesta cobrança.</div>}</section></div><footer className="drawer-footer"><button className="secondary-button" onClick={onClose}>Fechar</button>{charge.status !== "Recebida" && <button className="primary-button" onClick={onReceipt}>Registrar recebimento</button>}</footer></aside></div>;
+function ChargeDrawer({ charge, negotiation, onClose, onReceipt, onNegotiate }: { charge: Charge; negotiation?: ChargeNegotiation; onClose: () => void; onReceipt: () => void; onNegotiate: () => void }) {
+  const lastInstallment = negotiation?.schedule.at(-1);
+  return <div className="drawer-layer" role="dialog" aria-modal="true" aria-label="Detalhes da cobrança"><button className="drawer-backdrop" onClick={onClose} /><aside className="drawer wide-drawer"><header className="drawer-header"><div><p className="eyebrow">Cobrança composta</p><h2>{charge.id}</h2></div><button className="close-button" onClick={onClose} aria-label="Fechar detalhes">×</button></header><div className="drawer-body">
+    <div className="contract-identity"><StatusBadge status={charge.status} /><span>{charge.competence}</span></div>
+    <section className={`balance-panel ${negotiation ? "negotiated-balance-panel" : ""}`}><span>{negotiation ? "Saldo original negociado" : "Saldo atual"}</span><strong>{brl.format(chargeBalance(charge))}</strong><small>de {brl.format(chargeTotal(charge))}</small></section>
+    {negotiation && <section className="negotiation-card" aria-labelledby="negotiation-card-title"><div className="section-title"><h3 id="negotiation-card-title">Acordo de negociação</h3><span>{negotiation.id}</span></div><div className="negotiation-card-values"><span>Total acordado<strong>{brl.format(negotiation.negotiatedTotal)}</strong></span><span>Entrada prevista<strong>{brl.format(negotiation.downPayment)}</strong></span><span>Parcelamento<strong>{negotiation.installmentCount}× de {brl.format(negotiation.schedule[0]?.amount ?? 0)}</strong></span></div><dl className="negotiation-card-meta"><div><dt>Motivo</dt><dd>{negotiation.reason}</dd></div><div><dt>Forma de pagamento</dt><dd>{negotiation.paymentMethod}</dd></div><div><dt>Período</dt><dd>{formatExpenseDate(negotiation.firstDueDate)}{lastInstallment && negotiation.installmentCount > 1 ? ` — ${formatExpenseDate(lastInstallment.dueDate)}` : ""}</dd></div></dl>{negotiation.notes && <p>{negotiation.notes}</p>}</section>}
+    <dl className="detail-list"><div><dt>Carteira</dt><dd>{charge.portfolio}</dd></div><div><dt>Contrato</dt><dd>{charge.contract}</dd></div><div><dt>Imóvel</dt><dd>{charge.property}</dd></div><div><dt>Unidades</dt><dd><UnitPills values={charge.units} /></dd></div><div><dt>Locatário</dt><dd>{charge.tenant}</dd></div></dl>
+    <section className="charge-items-block"><div className="section-title"><h3>Composição da cobrança</h3><span>{charge.items.length} itens</span></div><div className="charge-items">{charge.items.map((item) => <article className="charge-item" key={`${item.name}-${item.dueDate}`}><div className="charge-item-head"><strong>{item.name}</strong><span>Vence {item.dueDate}</span></div><div className="charge-item-values"><span>Previsto <b>{brl.format(item.amount)}</b></span><span>Recebido <b>{brl.format(item.received)}</b></span><span>Saldo <b>{brl.format(item.amount - item.received)}</b></span></div></article>)}</div></section>
+    <section className="history-block"><div className="section-title"><h3>Histórico de recebimentos</h3><span>{receivedTotal(charge) ? "1 registro" : "Sem registros"}</span></div>{receivedTotal(charge) ? <div className="history-entry"><i /><div><strong>{brl.format(receivedTotal(charge))}</strong><span>10 ago 2026 · Baixa manual distribuída por item</span></div></div> : <div className="history-empty">Nenhuma baixa registrada nesta cobrança.</div>}</section>
+  </div><footer className="drawer-footer charge-drawer-footer"><button className="secondary-button drawer-footer-close" onClick={onClose}>Fechar</button>{charge.status !== "Recebida" && <><button className="secondary-button negotiation-action-button" onClick={onNegotiate}>{negotiation ? "Editar negociação" : "Negociar cobrança"}</button><button className="primary-button" onClick={onReceipt}>Registrar recebimento</button></>}</footer></aside></div>;
 }
 
 function ContractDrawer({ contract, onClose, onCharge }: { contract: Contract; onClose: () => void; onCharge: () => void }) {
@@ -1134,6 +1162,72 @@ function ReportExportModal({ initialPortfolio, portfolioOptions, propertyOptions
   };
 
   return <div className="modal-layer" role="dialog" aria-modal="true" aria-label="Exportar relatório contábil"><button className="drawer-backdrop" onClick={onClose} aria-label="Fechar exportação" /><form className="receipt-modal report-modal" onSubmit={handleExport}><ModalHeader eyebrow="Relatório contábil" title="Exportar relação de aluguéis" onClose={onClose} /><div className="report-modal-body"><p className="report-intro">Gere uma planilha no mesmo formato do modelo contábil, por carteira ou com todas as carteiras reunidas.</p><InlineFieldError message={exportError || preview.error || noRowsMessage} /><div className="form-grid report-form-grid"><label className="full-field">Escopo do relatório<select value={portfolioScope} onChange={(event) => { setPortfolioScope(event.target.value); setGeneratedDownload(null); setExportError(""); }}><option value={ALL_REPORT_PORTFOLIOS}>Todas as carteiras · relatório geral</option>{portfolioOptions.map((portfolio) => <option value={portfolio.name} key={portfolio.id}>{portfolio.name} · {portfolio.holder}</option>)}</select></label><label>Competência<input type="month" value={competenceInput} onChange={(event) => { setCompetenceInput(event.target.value); setGeneratedDownload(null); setExportError(""); }} required /></label><label>Nome do arquivo<input value={filename} onChange={(event) => { setFilenameOverride(event.target.value); setGeneratedDownload(null); setExportError(""); }} spellCheck={false} required /></label></div>{preview.model && <section className="report-preview" aria-live="polite"><div className="section-title"><h3>Prévia da exportação</h3><span>{preview.model.isGeneral ? "Relatório geral" : "Carteira específica"}</span></div><div className="report-preview-values"><span>Competência<strong>{preview.model.month.toLocaleLowerCase("pt-BR")} de {preview.model.year}</strong></span><span>Locações<strong>{preview.model.rows.length}</strong></span><span>Total de aluguéis<strong>{brl.format(preview.model.total)}</strong></span></div><p><span aria-hidden="true">i</span> Somente o item <strong>Aluguel</strong> entra no relatório. O arquivo é criado e baixado localmente, sem envio de dados.</p></section>}{generatedDownload && <aside className="report-download-ready" role="status"><span aria-hidden="true">✓</span><div><strong>Arquivo gerado com sucesso</strong><p>{generatedDownload.filename}</p></div><a className="secondary-button" href={generatedDownload.objectUrl} download={generatedDownload.filename}>Baixar novamente</a></aside>}</div><footer><button type="button" className="secondary-button" onClick={onClose} disabled={exporting}>{generatedDownload ? "Fechar" : "Cancelar"}</button><button className="primary-button" disabled={exporting || !preview.model || preview.model.rows.length === 0} aria-busy={exporting}>{exporting ? "Gerando planilha…" : generatedDownload ? "Gerar novamente" : "Gerar e baixar .xlsx"}</button></footer></form></div>;
+}
+
+function NegotiationModal({ charge, negotiation, onClose, onSave }: { charge: Charge; negotiation?: ChargeNegotiation; onClose: () => void; onSave: (negotiation: ChargeNegotiation) => void }) {
+  const originalBalance = chargeBalance(charge);
+  const moneyInput = (value: number | undefined) => value ? String(value) : "";
+  const [discount, setDiscount] = useState(moneyInput(negotiation?.discount));
+  const [surcharge, setSurcharge] = useState(moneyInput(negotiation?.surcharge));
+  const [downPayment, setDownPayment] = useState(moneyInput(negotiation?.downPayment));
+  const [installmentCount, setInstallmentCount] = useState(String(negotiation?.installmentCount ?? 3));
+  const [firstDueDate, setFirstDueDate] = useState(negotiation?.firstDueDate ?? "2026-09-10");
+  const [reason, setReason] = useState(negotiation?.reason ?? "");
+  const [paymentMethod, setPaymentMethod] = useState(negotiation?.paymentMethod ?? "Boleto bancário");
+  const [notes, setNotes] = useState(negotiation?.notes ?? "");
+  const [formError, setFormError] = useState("");
+  const terms: NegotiationTerms = {
+    originalBalance,
+    discount: discount === "" ? 0 : Number(discount),
+    surcharge: surcharge === "" ? 0 : Number(surcharge),
+    downPayment: downPayment === "" ? 0 : Number(downPayment),
+    installmentCount: Number(installmentCount),
+    firstDueDate,
+  };
+  const totals = calculateNegotiationTotals(terms);
+  const termsError = validateNegotiationTerms(terms, DEMO_DATE_ISO);
+  const schedule = termsError ? [] : buildNegotiationSchedule(firstDueDate, terms.installmentCount, totals.financedAmount);
+  const firstInstallment = schedule[0]?.amount ?? 0;
+  const clearError = () => setFormError("");
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const error = termsError || (!reason ? "Selecione o motivo da negociação." : "") || (!paymentMethod ? "Selecione a forma de pagamento." : "");
+    if (error) {
+      setFormError(error);
+      return;
+    }
+    onSave({
+      ...terms,
+      id: negotiation?.id ?? `NEG-${charge.id.replace("COB-", "")}`,
+      chargeId: charge.id,
+      negotiatedTotal: totals.negotiatedTotal,
+      financedAmount: totals.financedAmount,
+      schedule,
+      reason,
+      paymentMethod,
+      notes: notes.trim(),
+      createdAt: negotiation?.createdAt ?? DEMO_DATE_ISO,
+      updatedAt: DEMO_DATE_ISO,
+    });
+  };
+
+  return <div className="modal-layer" role="dialog" aria-modal="true" aria-label={`Negociar cobrança ${charge.id}`}><button className="drawer-backdrop" onClick={onClose} aria-label="Fechar negociação" /><form className="receipt-modal negotiation-modal" noValidate onSubmit={handleSubmit}><ModalHeader eyebrow={negotiation ? "Revisão do acordo" : "Cobrança em aberto"} title={negotiation ? `Editar negociação ${charge.id}` : `Negociar ${charge.id}`} onClose={onClose} /><div className="negotiation-modal-body">
+    <div className="negotiation-context"><div><span>Locatário</span><strong>{charge.tenant}</strong></div><div><span>Competência</span><strong>{charge.competence}</strong></div><div><span>Saldo atual</span><strong>{brl.format(originalBalance)}</strong></div></div>
+    <InlineFieldError message={formError || termsError} />
+    <section className="negotiation-section" aria-labelledby="negotiation-values-title"><div className="negotiation-section-heading"><span aria-hidden="true">01</span><div><h3 id="negotiation-values-title">Condições financeiras</h3><p>Defina desconto, acréscimos e uma entrada prevista.</p></div></div><div className="negotiation-fields-grid">
+      <label>Desconto<input type="number" inputMode="decimal" min="0" max={originalBalance} step="0.01" placeholder="0,00" value={discount} onChange={(event) => { setDiscount(event.target.value); clearError(); }} /><small>Reduz o saldo original.</small></label>
+      <label>Acréscimos<input type="number" inputMode="decimal" min="0" step="0.01" placeholder="0,00" value={surcharge} onChange={(event) => { setSurcharge(event.target.value); clearError(); }} /><small>Multas, juros ou encargos acordados.</small></label>
+      <label>Entrada prevista<input type="number" inputMode="decimal" min="0" max={Math.max(0, totals.negotiatedTotal - 0.01)} step="0.01" placeholder="0,00" value={downPayment} onChange={(event) => { setDownPayment(event.target.value); clearError(); }} /><small>Não será registrada como recebida automaticamente.</small></label>
+    </div></section>
+    <section className="negotiation-section" aria-labelledby="negotiation-installments-title"><div className="negotiation-section-heading"><span aria-hidden="true">02</span><div><h3 id="negotiation-installments-title">Parcelamento e vencimentos</h3><p>Monte o calendário mensal para o saldo após a entrada.</p></div></div><div className="negotiation-fields-grid negotiation-installment-fields">
+      <label>Número de parcelas<input type="number" inputMode="numeric" min="1" max="24" step="1" value={installmentCount} onChange={(event) => { setInstallmentCount(event.target.value); clearError(); }} required /></label>
+      <label>Primeiro vencimento<input type="date" min={DEMO_DATE_ISO} value={firstDueDate} onChange={(event) => { setFirstDueDate(event.target.value); clearError(); }} required /></label>
+      <label>Forma de pagamento<select value={paymentMethod} onChange={(event) => { setPaymentMethod(event.target.value); clearError(); }} required><option>Boleto bancário</option><option>Pix</option><option>Transferência bancária</option><option>Débito automático</option></select></label>
+      <label>Motivo da negociação<select value={reason} onChange={(event) => { setReason(event.target.value); clearError(); }} required><option value="" disabled>Selecione o motivo</option><option>Atraso temporário</option><option>Readequação de fluxo</option><option>Contestação parcial</option><option>Acordo comercial</option><option>Outro</option></select></label>
+    </div></section>
+    <section className="negotiation-preview" aria-labelledby="negotiation-preview-title"><div className="section-title"><h3 id="negotiation-preview-title">Resumo do acordo</h3><span>{schedule.length ? `${schedule.length} ${schedule.length === 1 ? "parcela" : "parcelas"}` : "Revise as condições"}</span></div><div className="negotiation-preview-values"><span>Saldo original<strong>{brl.format(originalBalance)}</strong></span><span>Desconto<strong className="negotiation-discount">− {brl.format(terms.discount)}</strong></span><span>Acréscimos<strong>+ {brl.format(terms.surcharge)}</strong></span><span>Total acordado<strong>{brl.format(totals.negotiatedTotal)}</strong></span><span>Entrada prevista<strong>{brl.format(terms.downPayment)}</strong></span><span>Saldo parcelado<strong>{brl.format(totals.financedAmount)}</strong></span></div>{schedule.length > 0 && <div className="negotiation-schedule"><div className="negotiation-schedule-heading"><span>Calendário previsto</span><strong>{terms.installmentCount}× a partir de {brl.format(firstInstallment)}</strong></div><ol>{schedule.map((installment) => <li key={installment.number}><span>{String(installment.number).padStart(2, "0")}</span><strong>{formatExpenseDate(installment.dueDate)}</strong><b>{brl.format(installment.amount)}</b></li>)}</ol></div>}</section>
+    <label className="standalone-label negotiation-notes">Observações<textarea rows={3} maxLength={500} placeholder="Registre condições adicionais ou o histórico do contato." value={notes} onChange={(event) => { setNotes(event.target.value); clearError(); }} /><small>{notes.length}/500 caracteres</small></label>
+  </div><footer><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button className="primary-button" disabled={Boolean(termsError)}>{negotiation ? "Salvar alterações" : "Confirmar negociação"}</button></footer></form></div>;
 }
 
 function ReceiptModal({ charge, onClose, onSave }: { charge: Charge; onClose: () => void; onSave: (event: FormEvent) => void }) {
