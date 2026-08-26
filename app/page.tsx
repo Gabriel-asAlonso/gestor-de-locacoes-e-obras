@@ -22,12 +22,18 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  MoreHorizontal,
+  Ban,
+  Paperclip,
+  Pause,
   PencilLine,
+  Play,
   Plus,
   ReceiptText,
   RotateCcw,
   Search,
   SlidersHorizontal,
+  Trash2,
   TriangleAlert,
   UsersRound,
   WalletCards,
@@ -35,6 +41,33 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
+import {
+  createWorkDetailMock,
+  type WorkActivity,
+  type WorkActivityStatus,
+  type WorkFinancialEntry,
+  type WorkJournalEntry,
+  type WorkPendingItem,
+  type WorkTeamAllocation,
+} from "./work-detail-mocks";
+import {
+  createWorkTeamPeople,
+  type WorkCostMode,
+  type WorkPerson,
+  type WorkPersonAllocation,
+  type WorkPersonStatus,
+  type WorkPersonType,
+} from "./work-team-mocks";
+import {
+  createWorkFinancialMock,
+  type WorkBudgetQuote,
+  type WorkBudgetStatus,
+  type WorkCashMovement,
+  type WorkCashMovementStatus,
+  type WorkCashMovementType,
+  type WorkExpense as WorkModuleExpense,
+  type WorkExpenseStatus,
+} from "./work-financial-mocks";
 import {
   ALL_REPORT_PORTFOLIOS,
   buildAccountingReportModel,
@@ -58,14 +91,63 @@ import {
   type CategorizedDocuments,
   type LocalDocument,
 } from "./local-documents";
+import {
+  workAttentionRecords,
+  workCommitments,
+  workRecords,
+  type WorkAttention,
+  type WorkInterventionType,
+  type WorkPriority,
+  type WorkRecord,
+  type WorkStatus,
+} from "./works-mocks";
 
 type Status = "Vencida" | "Em aberto" | "Próxima" | "Parcial" | "Negociada" | "Recebida";
 type ExpenseStatus = "Pendente" | "Pago" | "Vencido";
-type Page = "Visão geral" | "Carteiras" | "Imóveis" | "Unidades" | "Locatários" | "Contratos" | "Cobranças" | "Despesas";
+type AppModule = "Módulo 1" | "Módulo 2";
+type Page = "Visão geral" | "Carteiras" | "Imóveis" | "Unidades" | "Locatários" | "Contratos" | "Cobranças" | "Despesas" | "Obras" | "Nova obra" | "Detalhe da obra" | "Cronograma" | "Equipe" | "Financeiro";
 type FormKind = "portfolio" | "property" | "unit" | "tenant" | "contract" | "charge" | "expense" | null;
 type ContentState = "ready" | "loading" | "error";
 type ToastMessage = { message: string; reference: string } | null;
 type FormDocuments = LocalDocument[] | CategorizedDocuments;
+type WorkFormDraft = {
+  interventionType: WorkInterventionType;
+  title: string;
+  property: string;
+  unit: string;
+  description: string;
+  priority: WorkPriority;
+  manager: string;
+  team: string[];
+  startDateIso: string;
+  endDateIso: string;
+  status: WorkStatus;
+  budget: string;
+  reserve: string;
+  notes: string;
+  attachments: string[];
+};
+type WorkFormErrorKey = keyof WorkFormDraft | "dateRange";
+type WorkFormErrors = Partial<Record<WorkFormErrorKey, string>>;
+type WorkDetailTab = "Resumo" | "Planejamento" | "Equipe" | "Financeiro" | "Diário e arquivos";
+type WorkDetailAction =
+  | { type: "update" | "activity" | "expense" | "budget" | "team" | "cash" }
+  | { type: "block" | "reprogram"; activity: WorkActivity }
+  | null;
+type WorkScheduleActivity = WorkActivity & {
+  workId: string;
+  workTitle: string;
+  property: string;
+  reprogramReason?: string;
+};
+type WorkScheduleAction = { type: "new" } | { type: "reprogram"; activity: WorkScheduleActivity } | null;
+type WorkTeamPageAction = { type: "new" } | { type: "edit" | "allocate"; person: WorkPerson } | null;
+type WorkFinanceTab = "Orçamentos" | "Gastos" | "Caixa";
+type WorkFinanceAction =
+  | { type: "budget" | "expense" | "cash" }
+  | { type: "select"; budget: WorkBudgetQuote }
+  | { type: "pay"; expense: WorkModuleExpense }
+  | null;
 type Portfolio = {
   id: string;
   name: string;
@@ -360,6 +442,17 @@ const EXPENSE_CATEGORY_OPTIONS = ["Condomínio", "Manutenção", "Seguros", "Tel
 const FINANCIAL_ACCOUNT_OPTIONS = ["Banco Operacional", "Conta de Recebíveis", "Caixa administrativo"];
 const PAYMENT_METHOD_OPTIONS = ["Boleto bancário", "Pix", "Transferência bancária", "Débito automático", "Dinheiro"];
 const DOCUMENT_TYPE_OPTIONS = ["Nota fiscal", "Boleto", "Guia", "Recibo", "Contrato", "Outro"];
+const WORKS_DEMO_DATE_ISO = "2026-08-24";
+const WORK_INTERVENTION_OPTIONS: WorkInterventionType[] = ["Obra", "Reforma", "Reparo", "Manutenção", "Emergência"];
+const WORK_PRIORITY_OPTIONS: WorkPriority[] = ["Baixa", "Média", "Alta", "Urgente"];
+const WORK_TEAM_OPTIONS = [
+  { name: "Rafael Almeida", role: "Engenheiro responsável" },
+  { name: "Carlos Mendes", role: "Supervisor de campo" },
+  { name: "Marina Costa", role: "Arquiteta" },
+  { name: "Patrícia Nunes", role: "Coordenadora de obras" },
+  { name: "Lucas Rocha", role: "Técnico de manutenção" },
+  { name: "Ana Beatriz Lima", role: "Assistente operacional" },
+];
 
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const decimal = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 });
@@ -579,6 +672,7 @@ export default function Home() {
   useDialogManagement();
   const [authenticated, setAuthenticated] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [activeModule, setActiveModule] = useState<AppModule>("Módulo 1");
   const [page, setPage] = useState<Page>("Visão geral");
   const [search, setSearch] = useState("");
   const [portfolioFilter, setPortfolioFilter] = useState("Todas as carteiras");
@@ -610,12 +704,17 @@ export default function Home() {
   const [categorizedDocumentsByOwner, setCategorizedDocumentsByOwner] = useState<Record<string, CategorizedDocuments>>({});
   const categorizedDocumentsByOwnerRef = useRef(categorizedDocumentsByOwner);
   const [expenseRecords, setExpenseRecords] = useState<Expense[]>(expenses);
+  const [workRecordState, setWorkRecordState] = useState<WorkRecord[]>(workRecords);
+  const [editingWork, setEditingWork] = useState<WorkRecord | null>(null);
+  const [selectedWork, setSelectedWork] = useState<WorkRecord | null>(null);
+  const [workFormOrigin, setWorkFormOrigin] = useState<"Obras" | "Detalhe da obra">("Obras");
+  const [financeWorkFilter, setFinanceWorkFilter] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastMessage>(null);
   const toastTimerRef = useRef<number | null>(null);
   const [contentState, setContentState] = useState<ContentState>("ready");
   const [online, setOnline] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   useEffect(() => { documentsByOwnerRef.current = documentsByOwner; }, [documentsByOwner]);
   useEffect(() => { categorizedDocumentsByOwnerRef.current = categorizedDocumentsByOwner; }, [categorizedDocumentsByOwner]);
@@ -670,9 +769,75 @@ export default function Home() {
     setPortfolioFilter("Todas as carteiras");
     setStatusFilter("Todas");
     setCategoryFilter("Todas as categorias");
+    if (next !== "Financeiro") setFinanceWorkFilter(null);
     setMenuOpen(false);
-    setSidebarCollapsed(true);
+    setSidebarCollapsed(activeModule === "Módulo 1");
     if (next !== page) window.setTimeout(() => setContentState(navigator.onLine ? "ready" : "error"), 450);
+  };
+  const changeModule = (next: AppModule) => {
+    if (next === activeModule) return;
+    setContentState("loading");
+    setActiveModule(next);
+    setPage("Visão geral");
+    setSearch("");
+    setPortfolioFilter("Todas as carteiras");
+    setStatusFilter("Todas");
+    setCategoryFilter("Todas as categorias");
+    setSelectedCharge(null);
+    setSelectedContract(null);
+    setSelectedExpense(null);
+    setRegistryDetail(null);
+    setReceiptOpen(false);
+    setNegotiationOpen(false);
+    setReportOpen(false);
+    setForm(null);
+    setEditingWork(null);
+    setSelectedWork(null);
+    setFinanceWorkFilter(null);
+    setMenuOpen(false);
+    setSidebarCollapsed(false);
+    window.setTimeout(() => setContentState(navigator.onLine ? "ready" : "error"), 300);
+  };
+  const beginNewWork = () => {
+    setEditingWork(null);
+    setWorkFormOrigin("Obras");
+    changePage("Nova obra");
+  };
+  const beginEditWork = (work: WorkRecord) => {
+    setEditingWork(work);
+    setWorkFormOrigin(page === "Detalhe da obra" ? "Detalhe da obra" : "Obras");
+    changePage("Nova obra");
+  };
+  const leaveWorkForm = () => {
+    setEditingWork(null);
+    changePage(workFormOrigin === "Detalhe da obra" && selectedWork ? "Detalhe da obra" : "Obras");
+  };
+  const saveWork = (nextWork: WorkRecord) => {
+    const isEditing = workRecordState.some((work) => work.id === nextWork.id);
+    setWorkRecordState((current) => isEditing
+      ? current.map((work) => work.id === nextWork.id ? nextWork : work)
+      : [nextWork, ...current]);
+    setEditingWork(null);
+    setSelectedWork(nextWork);
+    notify(isEditing ? "Obra atualizada nesta sessão." : "Obra adicionada à demonstração.", nextWork.id);
+    changePage("Detalhe da obra");
+  };
+  const openWorkDetail = (work: WorkRecord) => {
+    setSelectedWork(work);
+    changePage("Detalhe da obra");
+  };
+  const openWorkFinance = (work: WorkRecord) => {
+    setFinanceWorkFilter(work.id);
+    changePage("Financeiro");
+  };
+  const updateWorkFromDetail = (nextWork: WorkRecord, message: string) => {
+    setWorkRecordState((current) => current.map((work) => work.id === nextWork.id ? nextWork : work));
+    setSelectedWork(nextWork);
+    notify(message, nextWork.id);
+  };
+  const updateWorkFromSchedule = (nextWork: WorkRecord, message: string) => {
+    setWorkRecordState((current) => current.map((work) => work.id === nextWork.id ? nextWork : work));
+    notify(message, nextWork.id);
   };
   const retryContent = () => {
     setContentState("loading");
@@ -978,26 +1143,33 @@ export default function Home() {
   if (!authenticated) return <Login loading={loading} onSubmit={login} />;
 
   return <main className={`app-shell ${sidebarCollapsed ? "app-shell-sidebar-collapsed" : ""}`}>
-    <Sidebar page={page} attentionCount={chargeAttentionCount} onNavigate={changePage} onLogout={() => setAuthenticated(false)} open={menuOpen} onClose={() => setMenuOpen(false)} collapsed={sidebarCollapsed} onExpand={() => setSidebarCollapsed(false)} />
+    <Sidebar module={activeModule} page={page} attentionCount={chargeAttentionCount} onModuleChange={changeModule} onNavigate={changePage} onLogout={() => setAuthenticated(false)} open={menuOpen} onClose={() => setMenuOpen(false)} collapsed={sidebarCollapsed} onExpand={() => setSidebarCollapsed(false)} />
     <section className="workspace" onClick={() => !sidebarCollapsed && setSidebarCollapsed(true)}>
       <header className="topbar">
         <button className="menu-button" onClick={() => setMenuOpen(true)} aria-label="Abrir navegação"><Menu aria-hidden="true" /></button>
-        <div><span className="breadcrumb">Módulo 1 /</span> {page}</div>
+        <div><span className="breadcrumb">{activeModule} /</span> {page}</div>
         <div className="topbar-context"><span className="context-dot" /> Dados fictícios</div>
       </header>
       <div className="content">
         {!online && <ConnectionBanner onRetry={retryContent} />}
         {contentState === "loading" && <AuthenticatedPageSkeleton />}
         {contentState === "error" && <SystemError onRetry={retryContent} />}
-        {contentState === "ready" && <FilterStateContext.Provider value={Boolean(search || portfolioFilter !== "Todas as carteiras" || statusFilter !== "Todas" || categoryFilter !== "Todas as categorias")}><div className="page-enter" key={page}>
-          {page === "Visão geral" && <DashboardPage charges={chargeRecords} negotiations={negotiationsByCharge} expenses={expenseRecords} properties={propertyRecords} units={unitRecords} contracts={contractRecords} onNavigate={(next, status) => { changePage(next); if (status) setStatusFilter(status); }} />}
-          {page === "Cobranças" && <ChargesPage charges={filteredCharges} summaryCharges={chargesInScope} negotiations={negotiationsByCharge} total={chargeRecords.length} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} statusFilter={statusFilter} setStatusFilter={setStatusFilter} onOpen={setSelectedCharge} onNew={() => { setChargeSourceContract(null); setForm("charge"); }} onReport={() => setReportOpen(true)} />}
-          {page === "Carteiras" && <PortfoliosPage portfolios={portfolioRecords} properties={propertyRecords} units={unitRecords} search={search} setSearch={setSearch} onNew={() => { setEditingPortfolio(null); setForm("portfolio"); }} onEdit={(portfolio) => { setEditingPortfolio(portfolio); setForm("portfolio"); }} />}
-          {page === "Imóveis" && <PropertiesPage properties={propertyRecords} units={unitRecords} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} onNew={() => { setEditingProperty(null); setForm("property"); }} onOpen={(property) => setRegistryDetail({ kind: "property", record: property })} />}
-          {page === "Unidades" && <UnitsPage units={unitRecords} properties={propertyRecords} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} onNew={() => { setEditingUnit(null); setForm("unit"); }} onOpen={(unit) => setRegistryDetail({ kind: "unit", record: unit })} onEdit={(unit) => { setEditingUnit(unit); setForm("unit"); }} />}
-          {page === "Locatários" && <TenantsPage tenants={tenantRecords} contracts={contractRecords} charges={chargeRecords} search={search} setSearch={setSearch} onNew={() => { setEditingTenant(null); setForm("tenant"); }} onOpen={(tenant) => setRegistryDetail({ kind: "tenant", record: tenant })} onEdit={(tenant) => { setEditingTenant(tenant); setForm("tenant"); }} />}
-          {page === "Contratos" && <ContractsPage contracts={contractRecords} charges={chargeRecords} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} onNew={() => setForm("contract")} onOpen={setSelectedContract} />}
-          {page === "Despesas" && <ExpensesPage rows={filteredExpenses} total={expenseRecords.length} categories={Array.from(new Set(expenseRecords.map((expense) => expense.category)))} search={search} setSearch={setSearch} statusFilter={statusFilter} setStatusFilter={setStatusFilter} categoryFilter={categoryFilter} setCategoryFilter={setCategoryFilter} onOpen={setSelectedExpense} onNew={() => setForm("expense")} />}
+        {contentState === "ready" && <FilterStateContext.Provider value={Boolean(search || portfolioFilter !== "Todas as carteiras" || statusFilter !== "Todas" || categoryFilter !== "Todas as categorias")}><div className="page-enter" key={`${activeModule}-${page}`}>
+          {activeModule === "Módulo 1" && page === "Visão geral" && <DashboardPage charges={chargeRecords} negotiations={negotiationsByCharge} expenses={expenseRecords} properties={propertyRecords} units={unitRecords} contracts={contractRecords} onNavigate={(next, status) => { changePage(next); if (status) setStatusFilter(status); }} />}
+          {activeModule === "Módulo 2" && page === "Visão geral" && <WorksDashboardPage works={workRecordState} onNewWork={beginNewWork} onOpenWork={openWorkDetail} />}
+          {activeModule === "Módulo 2" && page === "Obras" && <WorksListPage works={workRecordState} onNewWork={beginNewWork} onEditWork={beginEditWork} onOpenWork={openWorkDetail} />}
+          {activeModule === "Módulo 2" && page === "Nova obra" && <WorkFormPage work={editingWork} works={workRecordState} properties={propertyRecords} units={unitRecords} onCancel={leaveWorkForm} onSave={saveWork} />}
+          {activeModule === "Módulo 2" && page === "Detalhe da obra" && selectedWork && <WorkDetailPage key={selectedWork.id} work={selectedWork} onBack={() => { setSelectedWork(null); changePage("Obras"); }} onEdit={() => beginEditWork(selectedWork)} onOpenFinance={() => openWorkFinance(selectedWork)} onUpdateWork={updateWorkFromDetail} onNotify={notify} />}
+          {activeModule === "Módulo 2" && page === "Cronograma" && <WorksSchedulePage works={workRecordState} onOpenWork={openWorkDetail} onUpdateWork={updateWorkFromSchedule} onNotify={notify} />}
+          {activeModule === "Módulo 2" && page === "Equipe" && <WorksTeamPage works={workRecordState} onOpenWork={openWorkDetail} onNotify={notify} />}
+          {activeModule === "Módulo 2" && page === "Financeiro" && <WorksFinancialPage works={workRecordState} initialWorkId={financeWorkFilter} onOpenWork={openWorkDetail} onNotify={notify} />}
+          {activeModule === "Módulo 1" && page === "Cobranças" && <ChargesPage charges={filteredCharges} summaryCharges={chargesInScope} negotiations={negotiationsByCharge} total={chargeRecords.length} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} statusFilter={statusFilter} setStatusFilter={setStatusFilter} onOpen={setSelectedCharge} onNew={() => { setChargeSourceContract(null); setForm("charge"); }} onReport={() => setReportOpen(true)} />}
+          {activeModule === "Módulo 1" && page === "Carteiras" && <PortfoliosPage portfolios={portfolioRecords} properties={propertyRecords} units={unitRecords} search={search} setSearch={setSearch} onNew={() => { setEditingPortfolio(null); setForm("portfolio"); }} onEdit={(portfolio) => { setEditingPortfolio(portfolio); setForm("portfolio"); }} />}
+          {activeModule === "Módulo 1" && page === "Imóveis" && <PropertiesPage properties={propertyRecords} units={unitRecords} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} onNew={() => { setEditingProperty(null); setForm("property"); }} onOpen={(property) => setRegistryDetail({ kind: "property", record: property })} />}
+          {activeModule === "Módulo 1" && page === "Unidades" && <UnitsPage units={unitRecords} properties={propertyRecords} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} onNew={() => { setEditingUnit(null); setForm("unit"); }} onOpen={(unit) => setRegistryDetail({ kind: "unit", record: unit })} onEdit={(unit) => { setEditingUnit(unit); setForm("unit"); }} />}
+          {activeModule === "Módulo 1" && page === "Locatários" && <TenantsPage tenants={tenantRecords} contracts={contractRecords} charges={chargeRecords} search={search} setSearch={setSearch} onNew={() => { setEditingTenant(null); setForm("tenant"); }} onOpen={(tenant) => setRegistryDetail({ kind: "tenant", record: tenant })} onEdit={(tenant) => { setEditingTenant(tenant); setForm("tenant"); }} />}
+          {activeModule === "Módulo 1" && page === "Contratos" && <ContractsPage contracts={contractRecords} charges={chargeRecords} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} onNew={() => setForm("contract")} onOpen={setSelectedContract} />}
+          {activeModule === "Módulo 1" && page === "Despesas" && <ExpensesPage rows={filteredExpenses} total={expenseRecords.length} categories={Array.from(new Set(expenseRecords.map((expense) => expense.category)))} search={search} setSearch={setSearch} statusFilter={statusFilter} setStatusFilter={setStatusFilter} categoryFilter={categoryFilter} setCategoryFilter={setCategoryFilter} onOpen={setSelectedExpense} onNew={() => setForm("expense")} />}
         </div></FilterStateContext.Provider>}
       </div>
     </section>
@@ -1066,12 +1238,13 @@ function SidebarGlyph({ name }: { name: string }) {
     "Operação": ClipboardList, "Estrutura": Landmark, "Locação": KeyRound, "Financeiro": WalletCards,
     "Visão geral": LayoutDashboard, "Carteiras": BriefcaseBusiness, "Imóveis": Building2, "Unidades": DoorOpen,
     "Locatários": UsersRound, "Contratos": FileSignature, "Cobranças": BadgeDollarSign, "Despesas": ReceiptText,
+    "Obras": ClipboardList, "Cronograma": CalendarClock, "Equipe": UsersRound,
   };
   const Glyph = glyphs[name] ?? FileSignature;
   return <span className="sidebar-glyph sidebar-glyph-lucide" aria-hidden="true"><Glyph strokeWidth={1.8} /></span>;
 }
 
-function Sidebar({ page, attentionCount, onNavigate, onLogout, open, onClose, collapsed, onExpand }: { page: Page; attentionCount: number; onNavigate: (page: Page) => void; onLogout: () => void; open: boolean; onClose: () => void; collapsed: boolean; onExpand: () => void }) {
+function Sidebar({ module, page, attentionCount, onModuleChange, onNavigate, onLogout, open, onClose, collapsed, onExpand }: { module: AppModule; page: Page; attentionCount: number; onModuleChange: (module: AppModule) => void; onNavigate: (page: Page) => void; onLogout: () => void; open: boolean; onClose: () => void; collapsed: boolean; onExpand: () => void }) {
   const [openTheme, setOpenTheme] = useState<string | null>("Operação");
   const groups: Array<{ name: string; description: string; pages: Array<{ name: Page; count?: number }> }> = [
     { name: "Operação", description: "Acompanhamento diário", pages: [{ name: "Visão geral" }] },
@@ -1079,19 +1252,30 @@ function Sidebar({ page, attentionCount, onNavigate, onLogout, open, onClose, co
     { name: "Locação", description: "Contratos e recebíveis", pages: [{ name: "Contratos" }, { name: "Cobranças", count: attentionCount }] },
     { name: "Financeiro", description: "Obrigações financeiras", pages: [{ name: "Despesas" }] },
   ];
+  const worksItems: Array<{ name: string; description: string; page?: Page }> = [
+    { name: "Visão geral", description: "Prioridades e andamento", page: "Visão geral" },
+    { name: "Obras", description: "Cadastros e execução", page: "Obras" },
+    { name: "Cronograma", description: "Agenda e calendário", page: "Cronograma" },
+    { name: "Equipe", description: "Pessoas e alocações", page: "Equipe" },
+    { name: "Financeiro", description: "Orçamentos, gastos e caixa", page: "Financeiro" },
+  ];
   const compact = collapsed && !open;
   const item = (name: Page, count?: number) => <button type="button" onClick={() => onNavigate(name)} className={`nav-item ${page === name ? "active" : ""}`} aria-current={page === name ? "page" : undefined} title={compact ? name : undefined}><SidebarGlyph name={name} /><span className="nav-item-label">{name}</span>{count !== undefined && <b>{count}</b>}</button>;
   return <>
     {open && <button className="mobile-backdrop" onClick={onClose} aria-label="Fechar navegação" />}
-    <aside className={`sidebar ${open ? "sidebar-open" : ""} ${compact ? "sidebar-collapsed" : ""}`} aria-label="Navegação do Módulo 1" onClick={() => { if (compact) onExpand(); }}>
+    <aside className={`sidebar ${open ? "sidebar-open" : ""} ${compact ? "sidebar-collapsed" : ""}`} aria-label={`Navegação do ${module}`} onClick={() => { if (compact) onExpand(); }}>
       <div className="sidebar-main">
         <div className="sidebar-brand">
           <div className="brand-mark sidebar-logo"><span>L</span><i /><span>R</span></div>
-          <div className="sidebar-brand-copy"><strong>Locações & Recebíveis</strong><span>Gestão operacional · Módulo 1</span></div>
+          <div className="sidebar-brand-copy"><strong>Locações & Recebíveis</strong><span>Gestão operacional · {module}</span></div>
           <button type="button" className="sidebar-mobile-close" onClick={onClose} aria-label="Fechar navegação"><X aria-hidden="true" /></button>
         </div>
-        <nav aria-label="Navegação principal">
-          <div className="theme-list">{groups.map((group, index) => {
+        <div className="module-switcher" role="group" aria-label="Selecionar módulo">
+          <button type="button" className={module === "Módulo 1" ? "active" : ""} aria-pressed={module === "Módulo 1"} onClick={() => onModuleChange("Módulo 1")}><b>01</b><span><strong>Locações</strong><small>Patrimônio e recebíveis</small></span></button>
+          <button type="button" className={module === "Módulo 2" ? "active" : ""} aria-pressed={module === "Módulo 2"} onClick={() => onModuleChange("Módulo 2")}><b>02</b><span><strong>Obras</strong><small>Planejamento e execução</small></span></button>
+        </div>
+        <nav aria-label={`Navegação principal do ${module}`}>
+          {module === "Módulo 1" ? <div className="theme-list">{groups.map((group, index) => {
             const expanded = openTheme === group.name;
             const hasActivePage = group.pages.some((entry) => entry.name === page);
             const regionId = `sidebar-theme-${index}`;
@@ -1102,7 +1286,10 @@ function Sidebar({ page, attentionCount, onNavigate, onLogout, open, onClose, co
               </button>
               {expanded && !compact && <div className="theme-pages" id={regionId}>{group.pages.map((entry) => <div key={entry.name}>{item(entry.name, entry.count)}</div>)}</div>}
             </section>;
-          })}</div>
+          })}</div> : <div className="works-sidebar-menu">{worksItems.map((entry) => {
+            const active = entry.page === page || (entry.page === "Obras" && (page === "Nova obra" || page === "Detalhe da obra"));
+            return <button type="button" key={entry.name} className={active ? "active" : ""} disabled={!entry.page} aria-current={active ? "page" : undefined} onClick={() => entry.page && onNavigate(entry.page)}><SidebarGlyph name={entry.name} /><span><strong>{entry.name}</strong><small>{entry.description}</small></span>{!entry.page && <b>Em breve</b>}</button>;
+          })}</div>}
         </nav>
       </div>
       <footer className="sidebar-footer">
@@ -1199,6 +1386,1077 @@ function tenantInitials(name: string) {
   const ignoredWords = new Set(["ltda.", "ltda", "s/a", "sa", "de", "da", "do", "dos", "das"]);
   const words = name.split(/\s+/).filter((word) => word && !ignoredWords.has(word.toLowerCase()));
   return words.slice(0, 2).map((word) => word[0]).join("").toUpperCase();
+}
+
+function WorkStatusBadge({ status }: { status: WorkStatus }) {
+  const statusClass: Record<WorkStatus, string> = {
+    Planejada: "planned",
+    "Em andamento": "active",
+    Pausada: "paused",
+    Concluída: "completed",
+    Cancelada: "cancelled",
+  };
+  return <span className={`work-status work-status-${statusClass[status]}`}><i aria-hidden="true" />{status}</span>;
+}
+
+function WorkAttentionIcon({ kind }: { kind: WorkAttention["kind"] }) {
+  if (kind === "schedule") return <CalendarClock aria-hidden="true" />;
+  if (kind === "update") return <ClipboardList aria-hidden="true" />;
+  if (kind === "payment" || kind === "cost" || kind === "budget") return <HandCoins aria-hidden="true" />;
+  return <TriangleAlert aria-hidden="true" />;
+}
+
+function WorksDashboardPage({ works, onNewWork, onOpenWork }: { works: WorkRecord[]; onNewWork: () => void; onOpenWork: (work: WorkRecord) => void }) {
+  const [propertyFilter, setPropertyFilter] = useState("Todos os imóveis");
+  const [periodFilter, setPeriodFilter] = useState("Agosto de 2026");
+  const properties = Array.from(new Set(works.map((work) => work.property))).sort((left, right) => left.localeCompare(right, "pt-BR"));
+  const periodRange = periodFilter === "Agosto de 2026"
+    ? { start: "2026-08-01", end: "2026-08-31" }
+    : periodFilter === "Próximos 30 dias"
+      ? { start: "2026-08-24", end: "2026-09-23" }
+      : null;
+  const matchesProperty = (property: string) => propertyFilter === "Todos os imóveis" || property === propertyFilter;
+  const matchesDate = (start: string, end: string) => !periodRange || (start <= periodRange.end && end >= periodRange.start);
+  const scopedWorks = works.filter((work) => matchesProperty(work.property) && matchesDate(work.startDateIso, work.endDateIso));
+  const scopedWorkIds = new Set(scopedWorks.map((work) => work.id));
+  const attentions = workAttentionRecords.filter((attention) => scopedWorkIds.has(attention.workId));
+  const commitments = workCommitments.filter((commitment) => scopedWorkIds.has(commitment.workId) && (!periodRange || (commitment.dateIso >= periodRange.start && commitment.dateIso <= periodRange.end)));
+  const activeWorks = scopedWorks.filter((work) => work.status === "Em andamento" || work.status === "Pausada").sort((left, right) => {
+    const riskOrder = { "Em atraso": 0, Atenção: 1, "Dentro do prazo": 2, Concluída: 3 };
+    return riskOrder[left.risk] - riskOrder[right.risk] || left.endDateIso.localeCompare(right.endDateIso);
+  });
+  const inProgress = scopedWorks.filter((work) => work.status === "Em andamento").length;
+  const delayed = scopedWorks.filter((work) => work.risk === "Em atraso").length;
+  const spent = scopedWorks.filter((work) => work.status !== "Cancelada").reduce((sum, work) => sum + work.spent, 0);
+  const projectedBalance = scopedWorks.filter((work) => work.status !== "Cancelada").reduce((sum, work) => sum + work.projectedCashBalance, 0);
+  const filtersActive = propertyFilter !== "Todos os imóveis" || periodFilter !== "Agosto de 2026";
+  const openAttention = (attention: WorkAttention) => {
+    const work = works.find((record) => record.id === attention.workId);
+    if (work) onOpenWork(work);
+  };
+
+  return <div className="works-dashboard">
+    <section className="works-dashboard-heading" aria-labelledby="works-dashboard-title">
+      <div><p className="eyebrow">Módulo 2 · Gestão de Obras</p><h1 id="works-dashboard-title">Visão geral</h1><p>Acompanhe primeiro o que precisa de atenção e depois o andamento das obras.</p></div>
+      <button type="button" className="primary-button button-with-icon works-new-button" onClick={onNewWork}><Plus aria-hidden="true" />Nova obra</button>
+    </section>
+
+    <section className="works-dashboard-toolbar" aria-label="Filtros da visão geral">
+      <div className="works-dashboard-date"><span><CalendarClock aria-hidden="true" /></span><div><strong>Posição da operação</strong><small>24 de agosto de 2026 · dados demonstrativos</small></div></div>
+      <div className="works-dashboard-filters">
+        <label><span>Imóvel</span><select value={propertyFilter} onChange={(event) => setPropertyFilter(event.target.value)} aria-label="Filtrar visão geral por imóvel"><option>Todos os imóveis</option>{properties.map((property) => <option key={property}>{property}</option>)}</select></label>
+        <label><span>Período</span><select value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value)} aria-label="Filtrar visão geral por período"><option>Agosto de 2026</option><option>Próximos 30 dias</option><option>Todo o período</option></select></label>
+        <button type="button" className="secondary-button button-with-icon works-clear-filters" disabled={!filtersActive} onClick={() => { setPropertyFilter("Todos os imóveis"); setPeriodFilter("Agosto de 2026"); }}><RotateCcw aria-hidden="true" />Limpar</button>
+      </div>
+    </section>
+
+    <article className="works-attention-panel" aria-labelledby="works-attention-title">
+      <header><div><p className="eyebrow">Prioridades do dia</p><h2 id="works-attention-title">O que precisa de atenção</h2><span>Os itens mais urgentes aparecem primeiro.</span></div><b>{attentions.length}</b></header>
+      {attentions.length > 0 ? <div className="works-attention-list">{attentions.slice(0, 5).map((attention) => <button type="button" key={attention.id} className={`works-attention-item works-attention-${attention.tone}`} onClick={() => openAttention(attention)}><i><WorkAttentionIcon kind={attention.kind} /></i><span><strong>{attention.title}</strong><small>{attention.description}</small><em>{attention.workId} · {attention.meta}</em></span><ArrowRight aria-hidden="true" /></button>)}</div> : <CompactEmptyState mark="✓" tone="success" title="Nada exige atenção neste filtro" description="Troque o imóvel ou o período para consultar outras obras." />}
+    </article>
+
+    <section className="works-metrics" aria-label="Indicadores essenciais das obras">
+      <article className="works-metric works-metric-active"><span><ClipboardList aria-hidden="true" /></span><div><small>Obras em andamento</small><strong>{inProgress}</strong><p>{activeWorks.length} obras ativas ou pausadas</p></div></article>
+      <article className="works-metric works-metric-danger"><span><TriangleAlert aria-hidden="true" /></span><div><small>Obras em atraso</small><strong>{delayed}</strong><p>{delayed === 1 ? "1 obra requer ação hoje" : `${delayed} obras requerem ação hoje`}</p></div></article>
+      <article className="works-metric works-metric-spent"><span><HandCoins aria-hidden="true" /></span><div><small>Total gasto</small><strong>{brl.format(spent)}</strong><p>No período e imóvel selecionados</p></div></article>
+      <article className={`works-metric ${projectedBalance < 0 ? "works-metric-danger" : "works-metric-balance"}`}><span><WalletCards aria-hidden="true" /></span><div><small>Saldo projetado</small><strong>{brl.format(projectedBalance)}</strong><p>Previsão das obras do filtro</p></div></article>
+    </section>
+
+    <section className="works-dashboard-grid">
+      <article className="works-active-panel" aria-labelledby="works-active-title">
+        <header><div><p className="eyebrow">Execução</p><h2 id="works-active-title">Obras em andamento</h2><span>Progresso, próxima atividade e prazo em uma única leitura.</span></div><b>{activeWorks.length}</b></header>
+        {activeWorks.length > 0 ? <div className="works-active-list">{activeWorks.slice(0, 5).map((work) => <button type="button" className="works-active-row" key={work.id} onClick={() => onOpenWork(work)}>
+          <span className="works-active-identity"><small>{work.id} · {work.property}</small><strong>{work.title}</strong><em>{work.manager}</em></span>
+          <span className="works-active-next"><small>Próxima atividade</small><strong>{work.nextActivity}</strong><em>{work.lastUpdateLabel}</em></span>
+          <span className="works-active-progress"><span><small>Progresso</small><strong>{work.progress}%</strong></span><i role="progressbar" aria-valuenow={work.progress} aria-valuemin={0} aria-valuemax={100} aria-label={`Progresso de ${work.title}`}><b style={{ width: `${work.progress}%` }} /></i></span>
+          <span className="works-active-deadline"><WorkStatusBadge status={work.status} /><small className={`work-risk work-risk-${work.risk === "Em atraso" ? "danger" : work.risk === "Atenção" ? "warning" : "ok"}`}>{work.risk}</small><strong>{work.endLabel}</strong></span>
+          <ArrowRight aria-hidden="true" />
+        </button>)}</div> : <CompactEmptyState mark="OB" title="Nenhuma obra ativa neste filtro" description="Escolha outro imóvel ou período para visualizar o andamento." />}
+      </article>
+
+      <aside className="works-commitments-panel" aria-labelledby="works-commitments-title">
+        <header><div><p className="eyebrow">Próximas datas</p><h2 id="works-commitments-title">Agenda das obras</h2></div><CalendarClock aria-hidden="true" /></header>
+        {commitments.length > 0 ? <div className="works-commitments-list">{commitments.slice(0, 5).map((commitment) => {
+          const work = works.find((record) => record.id === commitment.workId);
+          return <button type="button" key={commitment.id} onClick={() => work && onOpenWork(work)}><time dateTime={commitment.dateIso}><strong>{commitment.day}</strong><small>{commitment.month}</small></time><span><strong>{commitment.title}</strong><small>{commitment.description}</small><em className={`commitment-${commitment.status === "Atrasado" ? "danger" : commitment.status === "Hoje" ? "today" : "next"}`}>{commitment.status}</em></span><ArrowRight aria-hidden="true" /></button>;
+        })}</div> : <CompactEmptyState mark="00" title="Sem compromissos neste período" description="As próximas atividades das obras aparecerão aqui." />}
+      </aside>
+    </section>
+  </div>;
+}
+
+function WorksListPage({ works, onNewWork, onEditWork, onOpenWork }: { works: WorkRecord[]; onNewWork: () => void; onEditWork: (work: WorkRecord) => void; onOpenWork: (work: WorkRecord) => void }) {
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("Todas as situações");
+  const [propertyFilter, setPropertyFilter] = useState("Todos os imóveis");
+  const [managerFilter, setManagerFilter] = useState("Todos os responsáveis");
+  const [priorityFilter, setPriorityFilter] = useState("Todas as prioridades");
+  const [periodFilter, setPeriodFilter] = useState("Todo o período");
+  const [onlyDelayed, setOnlyDelayed] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [sortBy, setSortBy] = useState("priority");
+  const properties = Array.from(new Set(works.map((work) => work.property))).sort((left, right) => left.localeCompare(right, "pt-BR"));
+  const managers = Array.from(new Set(works.map((work) => work.manager))).sort((left, right) => left.localeCompare(right, "pt-BR"));
+  const periodRange = periodFilter === "Agosto de 2026"
+    ? { start: "2026-08-01", end: "2026-08-31" }
+    : periodFilter === "Próximos 30 dias"
+      ? { start: "2026-08-24", end: "2026-09-23" }
+      : null;
+  const normalizedQuery = query.trim().toLocaleLowerCase("pt-BR");
+  const priorityRank: Record<WorkRecord["priority"], number> = { Urgente: 0, Alta: 1, Média: 2, Baixa: 3 };
+  const filteredWorks = works.filter((work) => {
+    const searchable = [work.id, work.title, work.property, work.unit ?? "", work.manager, work.nextActivity].join(" ").toLocaleLowerCase("pt-BR");
+    const matchesQuery = !normalizedQuery || searchable.includes(normalizedQuery);
+    const matchesStatus = statusFilter === "Todas as situações" || work.status === statusFilter;
+    const matchesProperty = propertyFilter === "Todos os imóveis" || work.property === propertyFilter;
+    const matchesManager = managerFilter === "Todos os responsáveis" || work.manager === managerFilter;
+    const matchesPriority = priorityFilter === "Todas as prioridades" || work.priority === priorityFilter;
+    const matchesPeriod = !periodRange || (work.startDateIso <= periodRange.end && work.endDateIso >= periodRange.start);
+    const matchesDelay = !onlyDelayed || work.risk === "Em atraso";
+    return matchesQuery && matchesStatus && matchesProperty && matchesManager && matchesPriority && matchesPeriod && matchesDelay;
+  }).sort((left, right) => {
+    if (sortBy === "due") return left.endDateIso.localeCompare(right.endDateIso) || priorityRank[left.priority] - priorityRank[right.priority];
+    if (sortBy === "updated") return right.updatedAtIso.localeCompare(left.updatedAtIso);
+    if (sortBy === "budget") return right.budget - left.budget;
+    return priorityRank[left.priority] - priorityRank[right.priority] || left.endDateIso.localeCompare(right.endDateIso);
+  });
+  const filtersActive = Boolean(query || statusFilter !== "Todas as situações" || propertyFilter !== "Todos os imóveis" || managerFilter !== "Todos os responsáveis" || priorityFilter !== "Todas as prioridades" || periodFilter !== "Todo o período" || onlyDelayed);
+  const clearFilters = () => {
+    setQuery("");
+    setStatusFilter("Todas as situações");
+    setPropertyFilter("Todos os imóveis");
+    setManagerFilter("Todos os responsáveis");
+    setPriorityFilter("Todas as prioridades");
+    setPeriodFilter("Todo o período");
+    setOnlyDelayed(false);
+  };
+
+  return <div className="works-list-page">
+    <section className="works-dashboard-heading works-list-heading" aria-labelledby="works-list-title">
+      <div><p className="eyebrow">Módulo 2 · Gestão de Obras</p><h1 id="works-list-title">Obras</h1><p>Localize obras, reparos e manutenções sem precisar abrir cada cadastro.</p></div>
+      <button type="button" className="primary-button button-with-icon works-new-button" onClick={onNewWork}><Plus aria-hidden="true" />Nova obra</button>
+    </section>
+
+    <section className="works-list-controls" aria-label="Busca e filtros de obras">
+      <div className="works-list-primary-controls">
+        <div className="works-list-search"><Search aria-hidden="true" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por obra, código ou imóvel" aria-label="Buscar obras" /></div>
+        <label className={statusFilter !== "Todas as situações" ? "active" : ""}><span>Situação</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option>Todas as situações</option><option>Planejada</option><option>Em andamento</option><option>Pausada</option><option>Concluída</option><option>Cancelada</option></select></label>
+        <label className={propertyFilter !== "Todos os imóveis" ? "active" : ""}><span>Imóvel</span><select value={propertyFilter} onChange={(event) => setPropertyFilter(event.target.value)}><option>Todos os imóveis</option>{properties.map((property) => <option key={property}>{property}</option>)}</select></label>
+        <label className={managerFilter !== "Todos os responsáveis" ? "active" : ""}><span>Responsável</span><select value={managerFilter} onChange={(event) => setManagerFilter(event.target.value)}><option>Todos os responsáveis</option>{managers.map((manager) => <option key={manager}>{manager}</option>)}</select></label>
+        <button type="button" className={`secondary-button button-with-icon works-more-filters ${advancedOpen ? "active" : ""}`} aria-expanded={advancedOpen} aria-controls="works-advanced-filters" onClick={() => setAdvancedOpen((current) => !current)}><SlidersHorizontal aria-hidden="true" />Mais filtros{priorityFilter !== "Todas as prioridades" || periodFilter !== "Todo o período" || onlyDelayed ? <b aria-label="Filtros adicionais ativos">!</b> : null}</button>
+      </div>
+      {advancedOpen && <div className="works-list-advanced" id="works-advanced-filters">
+        <label className={priorityFilter !== "Todas as prioridades" ? "active" : ""}><span>Prioridade</span><select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)}><option>Todas as prioridades</option><option>Urgente</option><option>Alta</option><option>Média</option><option>Baixa</option></select></label>
+        <label className={periodFilter !== "Todo o período" ? "active" : ""}><span>Período</span><select value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value)}><option>Todo o período</option><option>Agosto de 2026</option><option>Próximos 30 dias</option></select></label>
+        <label className="works-delayed-check"><input type="checkbox" checked={onlyDelayed} onChange={(event) => setOnlyDelayed(event.target.checked)} /><span><strong>Somente obras atrasadas</strong><small>Mostra obras que já ultrapassaram o prazo.</small></span></label>
+      </div>}
+      <footer><span aria-live="polite"><strong>{filteredWorks.length}</strong> de {works.length} obras</span><button type="button" className="text-button button-with-icon" disabled={!filtersActive} onClick={clearFilters}><RotateCcw aria-hidden="true" />Limpar filtros</button></footer>
+    </section>
+
+    <section className="works-catalog" aria-labelledby="works-catalog-title">
+      <header><div><p className="eyebrow">Consulta operacional</p><h2 id="works-catalog-title">Obras cadastradas</h2><span>Abra os detalhes ou edite os dados principais de uma obra.</span></div><label><ArrowUpDown aria-hidden="true" /><span className="sr-only">Ordenar obras</span><select value={sortBy} onChange={(event) => setSortBy(event.target.value)} aria-label="Ordenar obras"><option value="priority">Maior prioridade</option><option value="due">Prazo mais próximo</option><option value="updated">Atualização mais recente</option><option value="budget">Maior valor previsto</option></select></label></header>
+      {filteredWorks.length > 0 ? <div className="works-catalog-list" aria-label="Lista de obras">{filteredWorks.map((work) => <article className="works-catalog-row" key={work.id}>
+        <span className="works-catalog-identity"><small>{work.id}<b className={`work-priority work-priority-${work.priority.toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[\u0300-\u036f]/g, "")}`}>{work.priority}</b></small><strong>{work.title}</strong><em>{work.property}{work.unit ? ` · ${work.unit}` : ""}</em></span>
+        <span className="works-catalog-manager"><small>Responsável</small><strong>{work.manager}</strong><em>{work.nextActivity}</em></span>
+        <span className="works-catalog-progress"><span><small>Progresso</small><strong>{work.progress}%</strong></span><i role="progressbar" aria-valuenow={work.progress} aria-valuemin={0} aria-valuemax={100} aria-label={`Progresso de ${work.title}`}><b style={{ width: `${work.progress}%` }} /></i><em>{work.lastUpdateLabel}</em></span>
+        <span className="works-catalog-deadline"><small>Prazo final</small><strong>{work.endLabel}</strong><em className={`work-risk work-risk-${work.risk === "Em atraso" ? "danger" : work.risk === "Atenção" ? "warning" : "ok"}`}>{work.risk}</em></span>
+        <span className="works-catalog-finance"><small>Gasto / previsto</small><strong>{brl.format(work.spent)}</strong><em>de {brl.format(work.budget)}</em></span>
+        <span className="works-catalog-status"><WorkStatusBadge status={work.status} /></span>
+        <span className="works-catalog-actions"><button type="button" className="works-catalog-edit" onClick={() => onEditWork(work)} aria-label={`Editar ${work.title}`}><PencilLine aria-hidden="true" />Editar</button><button type="button" className="works-catalog-open" onClick={() => onOpenWork(work)} aria-label={`Abrir ${work.title}`}>Abrir<ArrowRight aria-hidden="true" /></button></span>
+      </article>)}</div> : <div className="works-catalog-empty"><CompactEmptyState mark="00" title="Nenhuma obra encontrada" description="Ajuste a busca ou limpe os filtros para visualizar outros registros." /><button type="button" className="secondary-button button-with-icon" onClick={clearFilters}><RotateCcw aria-hidden="true" />Limpar filtros</button></div>}
+    </section>
+  </div>;
+}
+
+function WorkPersonStatusBadge({ status }: { status: WorkPersonStatus }) {
+  return <span className={`work-person-status work-person-${status === "Ativa" ? "active" : "inactive"}`}><i />{status}</span>;
+}
+
+function WorksTeamPage({ works, onOpenWork, onNotify }: { works: WorkRecord[]; onOpenWork: (work: WorkRecord) => void; onNotify: (message: string, reference: string) => void }) {
+  const [people, setPeople] = useState<WorkPerson[]>(() => createWorkTeamPeople(works));
+  const [query, setQuery] = useState("");
+  const [workFilter, setWorkFilter] = useState("Todas as obras");
+  const [typeFilter, setTypeFilter] = useState("Todos os tipos");
+  const [statusFilter, setStatusFilter] = useState("Todas as situações");
+  const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
+  const [action, setAction] = useState<WorkTeamPageAction>(null);
+  const selectedPerson = people.find((person) => person.id === selectedPersonId) ?? null;
+  const normalizedQuery = query.trim().toLocaleLowerCase("pt-BR");
+  const filteredPeople = people.filter((person) => {
+    const matchesQuery = !normalizedQuery || [person.id, person.name, person.role, person.contact].join(" ").toLocaleLowerCase("pt-BR").includes(normalizedQuery);
+    const matchesWork = workFilter === "Todas as obras" || person.allocations.some((allocation) => allocation.workId === workFilter);
+    const matchesType = typeFilter === "Todos os tipos" || person.type === typeFilter;
+    const matchesStatus = statusFilter === "Todas as situações" || person.status === statusFilter;
+    return matchesQuery && matchesWork && matchesType && matchesStatus;
+  }).sort((left, right) => Number(right.status === "Ativa") - Number(left.status === "Ativa") || right.lateActivities - left.lateActivities || left.name.localeCompare(right.name, "pt-BR"));
+  const filtersActive = Boolean(query || workFilter !== "Todas as obras" || typeFilter !== "Todos os tipos" || statusFilter !== "Todas as situações");
+  const activePeople = people.filter((person) => person.status === "Ativa");
+  const employees = activePeople.filter((person) => person.type === "Funcionário");
+  const contractors = activePeople.filter((person) => person.type === "Prestador");
+  const withLateActivities = activePeople.filter((person) => person.lateActivities > 0).sort((left, right) => right.lateActivities - left.lateActivities);
+  const activeAllocations = activePeople.flatMap((person) => person.allocations.filter((allocation) => allocation.status === "Atual"));
+  const unallocated = activePeople.filter((person) => !person.allocations.some((allocation) => allocation.status === "Atual"));
+  const openRelatedWork = (workId: string) => {
+    const work = works.find((record) => record.id === workId);
+    if (work) onOpenWork(work);
+  };
+  const clearFilters = () => {
+    setQuery("");
+    setWorkFilter("Todas as obras");
+    setTypeFilter("Todos os tipos");
+    setStatusFilter("Todas as situações");
+  };
+  const savePerson = (formData: FormData, person?: WorkPerson) => {
+    const value = (name: string) => String(formData.get(name) ?? "").trim();
+    const costRate = Number(formData.get("costRate") ?? 0);
+    const nextPerson: WorkPerson = {
+      id: person?.id ?? nextRecordId("PES", people),
+      name: value("name"),
+      type: value("type") as WorkPersonType,
+      role: value("role"),
+      contact: value("contact"),
+      costMode: value("costMode") ? value("costMode") as WorkCostMode : undefined,
+      costRate: costRate > 0 ? costRate : undefined,
+      status: value("status") as WorkPersonStatus,
+      notes: value("notes") || undefined,
+      activeActivities: person?.activeActivities ?? 0,
+      lateActivities: person?.lateActivities ?? 0,
+      allocations: person?.allocations ?? [],
+    };
+    setPeople((current) => person ? current.map((item) => item.id === person.id ? nextPerson : item) : [nextPerson, ...current]);
+    setSelectedPersonId(nextPerson.id);
+    setAction(null);
+    onNotify(person ? "Dados da pessoa atualizados nesta sessão." : "Pessoa adicionada à equipe demonstrativa.", nextPerson.id);
+  };
+  const allocatePerson = (person: WorkPerson, formData: FormData) => {
+    const value = (name: string) => String(formData.get(name) ?? "").trim();
+    const allocation: WorkPersonAllocation = { id: nextRecordId("ALO", people.flatMap((item) => item.allocations)), workId: value("workId"), role: value("role"), startDateIso: value("startDateIso"), endDateIso: value("endDateIso"), status: "Atual" };
+    setPeople((current) => current.map((item) => item.id === person.id ? { ...item, status: "Ativa", activeActivities: item.activeActivities + 1, allocations: [allocation, ...item.allocations] } : item));
+    setAction(null);
+    onNotify("Nova alocação registrada nesta sessão.", allocation.id);
+  };
+  const togglePersonStatus = (person: WorkPerson) => {
+    if (person.status === "Ativa" && !window.confirm(`Inativar ${person.name} sem apagar o histórico?`)) return;
+    const nextStatus: WorkPersonStatus = person.status === "Ativa" ? "Inativa" : "Ativa";
+    setPeople((current) => current.map((item) => item.id === person.id ? { ...item, status: nextStatus, activeActivities: nextStatus === "Inativa" ? 0 : item.activeActivities, allocations: nextStatus === "Inativa" ? item.allocations.map((allocation) => allocation.status === "Atual" ? { ...allocation, status: "Encerrada" as const } : allocation) : item.allocations } : item));
+    onNotify(nextStatus === "Inativa" ? "Pessoa inativada; histórico preservado." : "Pessoa reativada na equipe.", person.id);
+  };
+
+  return <>
+    <div className="works-team-page">
+      <section className="works-dashboard-heading team-page-heading" aria-labelledby="team-page-title"><div><p className="eyebrow">Módulo 2 · Gestão de Obras</p><h1 id="team-page-title">Equipe</h1><p>Veja quem está alocado, quais atividades estão atrasadas e onde cada pessoa atua.</p></div><button type="button" className="primary-button button-with-icon works-new-button" onClick={() => setAction({ type: "new" })}><Plus aria-hidden="true" />Adicionar pessoa</button></section>
+
+      <aside className="team-scope-note"><UsersRound aria-hidden="true" /><span><strong>Gestão operacional da equipe</strong>Esta página não controla folha, benefícios, férias, ponto legal ou documentos pessoais sensíveis.</span></aside>
+
+      <section className="team-metrics" aria-label="Indicadores da equipe"><article><span><UsersRound aria-hidden="true" /></span><div><small>Pessoas ativas</small><strong>{activePeople.length}</strong><p>{activeAllocations.length} alocações atuais</p></div></article><article><span><BriefcaseBusiness aria-hidden="true" /></span><div><small>Funcionários</small><strong>{employees.length}</strong><p>Equipe interna demonstrativa</p></div></article><article><span><Handshake aria-hidden="true" /></span><div><small>Prestadores</small><strong>{contractors.length}</strong><p>Especialistas externos ativos</p></div></article><article className={withLateActivities.length ? "team-metric-danger" : ""}><span><TriangleAlert aria-hidden="true" /></span><div><small>Com atividades atrasadas</small><strong>{withLateActivities.length}</strong><p>{withLateActivities.reduce((total, person) => total + person.lateActivities, 0)} atividades exigem atenção</p></div></article></section>
+
+      {(withLateActivities.length > 0 || unallocated.length > 0) && <section className="team-attention-panel" aria-labelledby="team-attention-title"><header><div><p className="eyebrow">Prioridades de alocação</p><h2 id="team-attention-title">O que precisa de atenção</h2></div><b>{withLateActivities.length + unallocated.length}</b></header><div>{withLateActivities.slice(0, 4).map((person) => <button type="button" key={person.id} className="team-attention-danger" onClick={() => setSelectedPersonId(person.id)}><TriangleAlert aria-hidden="true" /><span><strong>{person.name}</strong><small>{person.lateActivities} {person.lateActivities === 1 ? "atividade atrasada" : "atividades atrasadas"}</small></span><ArrowRight aria-hidden="true" /></button>)}{unallocated.slice(0, 2).map((person) => <button type="button" key={person.id} onClick={() => setSelectedPersonId(person.id)}><UsersRound aria-hidden="true" /><span><strong>{person.name}</strong><small>Sem alocação atual</small></span><ArrowRight aria-hidden="true" /></button>)}</div></section>}
+
+      <section className="team-list-controls" aria-label="Busca e filtros da equipe"><div className="team-search"><Search aria-hidden="true" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por nome, função ou contato" aria-label="Buscar pessoas" /></div><label><span>Obra</span><select value={workFilter} onChange={(event) => setWorkFilter(event.target.value)}><option>Todas as obras</option>{works.map((work) => <option key={work.id} value={work.id}>{work.id} · {work.title}</option>)}</select></label><label><span>Tipo</span><select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}><option>Todos os tipos</option><option>Funcionário</option><option>Prestador</option></select></label><label><span>Situação</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option>Todas as situações</option><option>Ativa</option><option>Inativa</option></select></label><button type="button" className="secondary-button button-with-icon" disabled={!filtersActive} onClick={clearFilters}><RotateCcw aria-hidden="true" />Limpar</button><footer><span><strong>{filteredPeople.length}</strong> de {people.length} pessoas</span><small>Selecione uma pessoa para ver contatos, custos e histórico.</small></footer></section>
+
+      <section className="team-people-panel" aria-labelledby="team-people-title"><header><div><p className="eyebrow">Pessoas cadastradas</p><h2 id="team-people-title">Equipe das obras</h2></div><span>{activePeople.length} ativas · {people.length - activePeople.length} inativas</span></header>{filteredPeople.length > 0 ? <div className="team-people-list">{filteredPeople.map((person) => { const currentAllocations = person.allocations.filter((allocation) => allocation.status === "Atual"); return <article key={person.id} className={person.status === "Inativa" ? "inactive" : ""}><span className="team-person-avatar">{person.name.split(" ").slice(0, 2).map((name) => name[0]).join("")}</span><div className="team-person-identity"><small>{person.id} · {person.type}</small><strong>{person.name}</strong><em>{person.role}</em></div><div className="team-person-contact"><small>Contato</small><strong>{person.contact}</strong></div><div className="team-person-works"><small>Obras atuais</small>{currentAllocations.length ? <span>{currentAllocations.slice(0, 2).map((allocation) => { const work = works.find((record) => record.id === allocation.workId); return <button type="button" key={allocation.id} onClick={() => openRelatedWork(allocation.workId)}>{allocation.workId}<em>{work?.title}</em></button>; })}{currentAllocations.length > 2 && <b>+{currentAllocations.length - 2}</b>}</span> : <strong>Sem alocação atual</strong>}</div><div className="team-person-activities"><span><small>Em andamento</small><strong>{person.activeActivities}</strong></span><span className={person.lateActivities ? "late" : ""}><small>Atrasadas</small><strong>{person.lateActivities}</strong></span></div><div className="team-person-cost"><small>Custo de referência</small><strong>{person.costRate ? `${brl.format(person.costRate)} / ${person.costMode === "Hora" ? "h" : "dia"}` : "Não informado"}</strong></div><WorkPersonStatusBadge status={person.status} /><button type="button" className="team-person-open" onClick={() => setSelectedPersonId(person.id)}>Ver detalhes<ArrowRight aria-hidden="true" /></button></article>; })}</div> : <div className="team-empty"><CompactEmptyState mark="00" title="Nenhuma pessoa encontrada" description="Ajuste os filtros para consultar outras pessoas da equipe." /><button type="button" className="secondary-button button-with-icon" onClick={clearFilters}><RotateCcw aria-hidden="true" />Limpar filtros</button></div>}</section>
+    </div>
+    {selectedPerson && <WorkPersonDrawer person={selectedPerson} works={works} onClose={() => setSelectedPersonId(null)} onEdit={() => setAction({ type: "edit", person: selectedPerson })} onAllocate={() => setAction({ type: "allocate", person: selectedPerson })} onToggleStatus={() => togglePersonStatus(selectedPerson)} onOpenWork={openRelatedWork} />}
+    {action?.type === "new" && <WorkPersonFormDrawer onClose={() => setAction(null)} onSave={(data) => savePerson(data)} />}
+    {action?.type === "edit" && <WorkPersonFormDrawer person={action.person} onClose={() => setAction(null)} onSave={(data) => savePerson(data, action.person)} />}
+    {action?.type === "allocate" && <WorkPersonAllocationModal person={action.person} works={works} onClose={() => setAction(null)} onSave={(data) => allocatePerson(action.person, data)} />}
+  </>;
+}
+
+function WorkPersonDrawer({ person, works, onClose, onEdit, onAllocate, onToggleStatus, onOpenWork }: { person: WorkPerson; works: WorkRecord[]; onClose: () => void; onEdit: () => void; onAllocate: () => void; onToggleStatus: () => void; onOpenWork: (workId: string) => void }) {
+  const currentAllocations = person.allocations.filter((allocation) => allocation.status === "Atual");
+  const history = person.allocations.filter((allocation) => allocation.status === "Encerrada");
+  return <div className="drawer-layer" role="dialog" aria-modal="true" aria-label={`Detalhes de ${person.name}`}><button type="button" className="drawer-backdrop" onClick={onClose} aria-label="Fechar detalhes" /><aside className="drawer wide-drawer work-person-drawer"><header className="work-person-drawer-header"><span>{person.name.split(" ").slice(0, 2).map((name) => name[0]).join("")}</span><div><p>{person.id} · {person.type}</p><h2>{person.name}</h2><small>{person.role}</small></div><WorkPersonStatusBadge status={person.status} /><button type="button" className="close-button" onClick={onClose} aria-label="Fechar"><X aria-hidden="true" /></button></header><div className="drawer-body work-person-drawer-body"><section className="work-person-stats"><article><small>Obras atuais</small><strong>{currentAllocations.length}</strong></article><article><small>Atividades</small><strong>{person.activeActivities}</strong></article><article className={person.lateActivities ? "danger" : ""}><small>Atrasadas</small><strong>{person.lateActivities}</strong></article></section><dl className="work-person-details"><div><dt>Contato</dt><dd>{person.contact}</dd></div><div><dt>Custo de referência</dt><dd>{person.costRate ? `${brl.format(person.costRate)} por ${person.costMode?.toLocaleLowerCase("pt-BR")}` : "Não informado"}</dd></div>{person.notes && <div className="full"><dt>Observações</dt><dd>{person.notes}</dd></div>}</dl><section className="work-person-allocations"><header><div><h3>Alocações atuais</h3><span>{currentAllocations.length} {currentAllocations.length === 1 ? "obra" : "obras"}</span></div><button type="button" onClick={onAllocate} disabled={person.status === "Inativa"}><Plus aria-hidden="true" />Alocar em obra</button></header>{currentAllocations.length ? <div>{currentAllocations.map((allocation) => { const work = works.find((record) => record.id === allocation.workId); return <article key={allocation.id}><span><Building2 aria-hidden="true" /></span><div><small>{allocation.workId}</small><strong>{work?.title ?? "Obra não localizada"}</strong><em>{allocation.role}</em><p>{formatExpenseDate(allocation.startDateIso)} — {formatExpenseDate(allocation.endDateIso)}</p></div><button type="button" onClick={() => onOpenWork(allocation.workId)}>Abrir<ArrowRight aria-hidden="true" /></button></article>; })}</div> : <CompactEmptyState mark="00" title="Sem alocação atual" description="Use o botão acima para relacionar esta pessoa a uma obra." />}</section>{history.length > 0 && <section className="work-person-history"><header><h3>Histórico de participação</h3><span>{history.length} encerrada(s)</span></header><div>{history.map((allocation) => { const work = works.find((record) => record.id === allocation.workId); return <article key={allocation.id}><i /><span><strong>{work?.title ?? allocation.workId}</strong><small>{allocation.role} · {formatExpenseDate(allocation.startDateIso)} — {formatExpenseDate(allocation.endDateIso)}</small></span></article>; })}</div></section>}</div><footer className="drawer-footer work-person-drawer-footer"><button type="button" className={person.status === "Ativa" ? "secondary-button work-person-inactivate" : "secondary-button"} onClick={onToggleStatus}>{person.status === "Ativa" ? "Inativar pessoa" : "Reativar pessoa"}</button><button type="button" className="secondary-button button-with-icon" onClick={onEdit}><PencilLine aria-hidden="true" />Editar</button><button type="button" className="primary-button button-with-icon" onClick={onAllocate} disabled={person.status === "Inativa"}><Plus aria-hidden="true" />Nova alocação</button></footer></aside></div>;
+}
+
+function WorkPersonFormDrawer({ person, onClose, onSave }: { person?: WorkPerson; onClose: () => void; onSave: (data: FormData) => void }) {
+  const [costMode, setCostMode] = useState(person?.costMode ?? "");
+  return <div className="drawer-layer" role="dialog" aria-modal="true" aria-label={person ? `Editar ${person.name}` : "Adicionar pessoa"}><button type="button" className="drawer-backdrop" onClick={onClose} aria-label="Fechar formulário" /><form className="drawer work-person-form-drawer" onSubmit={(event) => { event.preventDefault(); onSave(new FormData(event.currentTarget)); }}><header className="drawer-header"><div><p className="eyebrow">{person ? person.id : "Equipe das obras"}</p><h2>{person ? "Editar pessoa" : "Adicionar pessoa"}</h2></div><button type="button" className="close-button" onClick={onClose} aria-label="Fechar"><X aria-hidden="true" /></button></header><div className="drawer-body"><p className="work-person-form-intro">Cadastre somente informações operacionais necessárias para as obras.</p><div className="form-grid work-person-form-grid"><label className="full-field">Nome<input name="name" defaultValue={person?.name} placeholder="Nome da pessoa" autoFocus required /></label><label>Tipo<select name="type" defaultValue={person?.type ?? "Funcionário"}><option>Funcionário</option><option>Prestador</option></select></label><label>Situação<select name="status" defaultValue={person?.status ?? "Ativa"}><option>Ativa</option><option>Inativa</option></select></label><label className="full-field">Função ou especialidade<input name="role" defaultValue={person?.role} placeholder="Ex.: Supervisor de campo" required /></label><label className="full-field">Telefone ou e-mail<input name="contact" defaultValue={person?.contact} placeholder="Contato operacional" required /></label><label>Custo por<select name="costMode" value={costMode} onChange={(event) => setCostMode(event.target.value as WorkCostMode | "")}><option value="">Não informar</option><option>Hora</option><option>Diária</option></select></label><label>Valor de referência<input name="costRate" type="number" min="0" step="0.01" defaultValue={person?.costRate} disabled={!costMode} placeholder="0,00" /></label><label className="full-field">Observações<textarea name="notes" rows={4} maxLength={400} defaultValue={person?.notes} placeholder="Informações úteis para a operação, sem dados sensíveis." /></label></div></div><footer className="drawer-footer"><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button type="submit" className="primary-button button-with-icon"><Check aria-hidden="true" />{person ? "Salvar alterações" : "Adicionar pessoa"}</button></footer></form></div>;
+}
+
+function WorkPersonAllocationModal({ person, works, onClose, onSave }: { person: WorkPerson; works: WorkRecord[]; onClose: () => void; onSave: (data: FormData) => void }) {
+  const [workId, setWorkId] = useState(works.find((work) => !person.allocations.some((allocation) => allocation.workId === work.id && allocation.status === "Atual"))?.id ?? works[0]?.id ?? "");
+  const [endDateIso, setEndDateIso] = useState(works.find((work) => work.id === workId)?.endDateIso ?? "");
+  const [error, setError] = useState("");
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const start = String(data.get("startDateIso") ?? "");
+    const end = String(data.get("endDateIso") ?? "");
+    if (end < start) { setError("O fim da alocação não pode ser anterior ao início."); return; }
+    if (person.allocations.some((allocation) => allocation.workId === workId && allocation.status === "Atual")) { setError("Esta pessoa já possui uma alocação atual nessa obra."); return; }
+    setError("");
+    onSave(data);
+  };
+  return <div className="modal-layer" role="dialog" aria-modal="true" aria-label={`Alocar ${person.name}`}><button type="button" className="drawer-backdrop" onClick={onClose} aria-label="Fechar alocação" /><form className="receipt-modal work-detail-modal work-allocation-modal" onSubmit={handleSubmit}><ModalHeader eyebrow={person.id} title="Alocar em uma obra" onClose={onClose} /><div className="work-detail-modal-body">{error && <InlineFieldError message={error} />}<div className="form-grid"><p className="work-detail-modal-context full-field"><strong>{person.name}</strong>{person.role}</p><label className="full-field">Obra<select name="workId" value={workId} onChange={(event) => { const nextWorkId = event.target.value; setWorkId(nextWorkId); setEndDateIso(works.find((work) => work.id === nextWorkId)?.endDateIso ?? ""); setError(""); }} required>{works.map((work) => <option key={work.id} value={work.id}>{work.id} · {work.title}</option>)}</select></label><label className="full-field">Função nesta obra<input name="role" defaultValue={person.role} required /></label><label>Início<input name="startDateIso" type="date" defaultValue={WORKS_DEMO_DATE_ISO} onChange={() => setError("")} required /></label><label>Fim<input name="endDateIso" type="date" value={endDateIso} onChange={(event) => { setEndDateIso(event.target.value); setError(""); }} required /></label></div></div><footer><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button type="submit" className="primary-button button-with-icon"><Check aria-hidden="true" />Salvar alocação</button></footer></form></div>;
+}
+
+function WorkModuleFinanceStatus({ status }: { status: WorkBudgetStatus | WorkExpenseStatus | WorkCashMovementStatus }) {
+  const slug = status.toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, "-");
+  return <span className={`module-finance-status module-finance-status-${slug}`}><i />{status}</span>;
+}
+
+function WorksFinancialPage({ works, initialWorkId, onOpenWork, onNotify }: { works: WorkRecord[]; initialWorkId: string | null; onOpenWork: (work: WorkRecord) => void; onNotify: (message: string, reference: string) => void }) {
+  const [data, setData] = useState(() => createWorkFinancialMock(works));
+  const [tab, setTab] = useState<WorkFinanceTab>("Orçamentos");
+  const [action, setAction] = useState<WorkFinanceAction>(null);
+  const [comparisonKey, setComparisonKey] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [workFilter, setWorkFilter] = useState(initialWorkId ?? "Todas as obras");
+  const [propertyFilter, setPropertyFilter] = useState("Todos os imóveis");
+  const [periodFilter, setPeriodFilter] = useState("Todo o período");
+  const [budgetStatus, setBudgetStatus] = useState("Todas as situações");
+  const [providerFilter, setProviderFilter] = useState("Todos os fornecedores");
+  const [expenseStatus, setExpenseStatus] = useState("Todas as situações");
+  const [expenseCategory, setExpenseCategory] = useState("Todas as categorias");
+  const [cashType, setCashType] = useState("Todos os tipos");
+  const [cashStatus, setCashStatus] = useState("Todas as situações");
+
+  const properties = Array.from(new Set(works.map((work) => work.property))).sort((left, right) => left.localeCompare(right, "pt-BR"));
+  const providers = Array.from(new Set(data.budgets.map((budget) => budget.provider))).sort((left, right) => left.localeCompare(right, "pt-BR"));
+  const categories = Array.from(new Set(data.expenses.map((expense) => expense.category))).sort((left, right) => left.localeCompare(right, "pt-BR"));
+  const scopedWorkIds = new Set(works.filter((work) => (workFilter === "Todas as obras" || work.id === workFilter) && (propertyFilter === "Todos os imóveis" || work.property === propertyFilter)).map((work) => work.id));
+  const periodStart = periodFilter === "Agosto de 2026" ? "2026-08-01" : periodFilter === "Setembro de 2026" ? "2026-09-01" : null;
+  const periodMatches = (dateIso: string) => periodFilter === "Todo o período" || (periodFilter === "Agosto de 2026" ? dateIso >= "2026-08-01" && dateIso <= "2026-08-31" : dateIso >= "2026-09-01" && dateIso <= "2026-09-30");
+  const inScope = (workId: string, dateIso: string) => scopedWorkIds.has(workId) && periodMatches(dateIso);
+  const normalizedQuery = query.trim().toLocaleLowerCase("pt-BR");
+  const matchesQuery = (...values: string[]) => !normalizedQuery || values.join(" ").toLocaleLowerCase("pt-BR").includes(normalizedQuery);
+
+  const scopedBudgets = data.budgets.filter((budget) => inScope(budget.workId, budget.receivedDateIso));
+  const scopedExpenses = data.expenses.filter((expense) => inScope(expense.workId, expense.dateIso));
+  const scopedCash = data.cashMovements.filter((movement) => inScope(movement.workId, movement.dateIso));
+  const filteredBudgets = scopedBudgets.filter((budget) => (budgetStatus === "Todas as situações" || budget.status === budgetStatus) && (providerFilter === "Todos os fornecedores" || budget.provider === providerFilter) && matchesQuery(budget.id, budget.service, budget.provider, budget.workId));
+  const budgetGroups = Object.values(scopedBudgets.reduce<Record<string, WorkBudgetQuote[]>>((groups, budget) => {
+    const key = `${budget.workId}::${budget.service}`;
+    groups[key] = [...(groups[key] ?? []), budget];
+    return groups;
+  }, {}));
+  const budgetDecisionGroups = budgetGroups.filter((group) => !group.some((budget) => budget.status === "Selecionado") && group.filter((budget) => budget.status === "Recebido").length >= 2);
+  const budgetsAwaitingReturn = scopedBudgets.filter((budget) => budget.status === "Solicitado").length;
+  const budgetsNearExpiry = scopedBudgets.filter((budget) => budget.status !== "Expirado" && budget.status !== "Rejeitado" && budget.validityDateIso >= WORKS_DEMO_DATE_ISO && budget.validityDateIso <= "2026-08-31").length;
+  const filteredExpenses = scopedExpenses.filter((expense) => (expenseStatus === "Todas as situações" || expense.status === expenseStatus) && (expenseCategory === "Todas as categorias" || expense.category === expenseCategory) && matchesQuery(expense.id, expense.description, expense.supplier, expense.category, expense.workId));
+  const filteredCash = scopedCash.filter((movement) => (cashType === "Todos os tipos" || movement.type === cashType) && (cashStatus === "Todas as situações" || movement.status === cashStatus) && matchesQuery(movement.id, movement.description, movement.type, movement.workId));
+  const selectedBudgetTotal = scopedBudgets.filter((budget) => budget.status === "Selecionado").reduce((sum, budget) => sum + budget.amount, 0);
+  const expectedExpenseTotal = scopedExpenses.reduce((sum, expense) => sum + expense.expectedAmount, 0);
+  const expenseTotal = scopedExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+  const paidExpenseTotal = scopedExpenses.filter((expense) => expense.status === "Pago").reduce((sum, expense) => sum + expense.amount, 0);
+  const expenseBalance = selectedBudgetTotal - expenseTotal;
+  const expensesOverExpected = scopedExpenses.filter((expense) => expense.amount > expense.expectedAmount).sort((left, right) => (right.amount - right.expectedAmount) - (left.amount - left.expectedAmount));
+  const expenseOverrunTotal = expensesOverExpected.reduce((sum, expense) => sum + expense.amount - expense.expectedAmount, 0);
+  const paymentsDueSoon = scopedExpenses.filter((expense) => expense.status === "Pendente" && expense.dateIso >= WORKS_DEMO_DATE_ISO && expense.dateIso <= "2026-08-31").sort((left, right) => left.dateIso.localeCompare(right.dateIso));
+  const workScopedCash = data.cashMovements.filter((movement) => scopedWorkIds.has(movement.workId));
+  const initialBalance = periodStart
+    ? workScopedCash.filter((movement) => movement.status === "Realizado" && movement.dateIso < periodStart).reduce((sum, movement) => sum + (movement.direction === "Entrada" ? movement.amount : -movement.amount), 0)
+    : scopedCash.filter((movement) => movement.type === "Aporte" && movement.description.startsWith("Saldo inicial") && movement.status === "Realizado").reduce((sum, movement) => sum + movement.amount, 0);
+  const realizedEntries = scopedCash.filter((movement) => movement.direction === "Entrada" && movement.status === "Realizado" && (periodStart || !movement.description.startsWith("Saldo inicial"))).reduce((sum, movement) => sum + movement.amount, 0);
+  const realizedOutputs = scopedCash.filter((movement) => movement.direction === "Saída" && movement.status === "Realizado").reduce((sum, movement) => sum + movement.amount, 0);
+  const currentCash = initialBalance + realizedEntries - realizedOutputs;
+  const projectedCash = (periodStart ? initialBalance : 0) + scopedCash.reduce((sum, movement) => sum + (movement.direction === "Entrada" ? movement.amount : -movement.amount), 0);
+  const cashPositions = works.filter((work) => scopedWorkIds.has(work.id)).map((work) => {
+    const allMovements = data.cashMovements.filter((movement) => movement.workId === work.id);
+    const periodMovements = allMovements.filter((movement) => periodMatches(movement.dateIso));
+    const opening = periodStart ? allMovements.filter((movement) => movement.status === "Realizado" && movement.dateIso < periodStart).reduce((sum, movement) => sum + (movement.direction === "Entrada" ? movement.amount : -movement.amount), 0) : 0;
+    const current = opening + periodMovements.filter((movement) => movement.status === "Realizado").reduce((sum, movement) => sum + (movement.direction === "Entrada" ? movement.amount : -movement.amount), 0);
+    const projected = opening + periodMovements.reduce((sum, movement) => sum + (movement.direction === "Entrada" ? movement.amount : -movement.amount), 0);
+    const plannedCount = periodMovements.filter((movement) => movement.status === "Previsto").length;
+    return { work, current, projected, plannedCount };
+  }).filter((position) => position.current !== 0 || position.projected !== 0 || position.plannedCount > 0).sort((left, right) => Number(left.projected >= 0) - Number(right.projected >= 0) || left.projected - right.projected);
+  const negativeCashPositions = cashPositions.filter((position) => position.projected < 0).length;
+  const plannedCashMovements = scopedCash.filter((movement) => movement.status === "Previsto");
+  const activeFilterCount = [workFilter !== "Todas as obras", propertyFilter !== "Todos os imóveis", periodFilter !== "Todo o período", Boolean(query)].filter(Boolean).length;
+  const comparisonQuotes = comparisonKey ? data.budgets.filter((budget) => `${budget.workId}::${budget.service}` === comparisonKey).sort((left, right) => left.amount - right.amount) : [];
+
+  const workName = (workId: string) => works.find((work) => work.id === workId)?.title ?? workId;
+  const openWork = (workId: string) => { const work = works.find((record) => record.id === workId); if (work) onOpenWork(work); };
+  const clearSharedFilters = () => { setQuery(""); setWorkFilter("Todas as obras"); setPropertyFilter("Todos os imóveis"); setPeriodFilter("Todo o período"); };
+  const saveBudget = (formData: FormData) => {
+    const file = formData.get("attachment");
+    const budget: WorkBudgetQuote = {
+      id: nextRecordId("ORC", data.budgets), workId: String(formData.get("workId")), stage: String(formData.get("stage") ?? "") || undefined,
+      service: String(formData.get("service")), provider: String(formData.get("provider")), amount: Number(formData.get("amount")),
+      receivedDateIso: String(formData.get("receivedDateIso")), validityDateIso: String(formData.get("validityDateIso")), status: String(formData.get("status")) as WorkBudgetStatus,
+      attachmentName: file instanceof File && file.size ? file.name : undefined,
+    };
+    setData((current) => ({ ...current, budgets: [budget, ...current.budgets] }));
+    setAction(null);
+    onNotify("Orçamento adicionado à demonstração.", budget.id);
+  };
+  const saveExpense = (formData: FormData) => {
+    const file = formData.get("attachment");
+    const expense: WorkModuleExpense = {
+      id: nextRecordId("GAS", data.expenses), workId: String(formData.get("workId")), description: String(formData.get("description")), category: String(formData.get("category")), supplier: String(formData.get("supplier")),
+      amount: Number(formData.get("amount")), expectedAmount: Number(formData.get("expectedAmount")), dateIso: String(formData.get("dateIso")), status: String(formData.get("status")) as WorkExpenseStatus,
+      attachmentName: file instanceof File && file.size ? file.name : undefined,
+    };
+    setData((current) => ({ ...current, expenses: [expense, ...current.expenses], cashMovements: [{ id: nextRecordId("CXA", current.cashMovements), workId: expense.workId, type: "Saída de gasto", direction: "Saída", description: expense.description, amount: expense.amount, dateIso: expense.dateIso, status: expense.status === "Pago" ? "Realizado" : "Previsto", linkedExpenseId: expense.id }, ...current.cashMovements] }));
+    setAction(null);
+    onNotify("Gasto registrado manualmente.", expense.id);
+  };
+  const saveCashMovement = (formData: FormData) => {
+    const linkedExpenseId = String(formData.get("linkedExpenseId") ?? "") || undefined;
+    const existingMovement = linkedExpenseId ? data.cashMovements.find((movement) => movement.linkedExpenseId === linkedExpenseId) : undefined;
+    if (linkedExpenseId && existingMovement) {
+      const status = String(formData.get("status")) as WorkCashMovementStatus;
+      const amount = Number(formData.get("amount"));
+      setData((current) => ({
+        ...current,
+        expenses: status === "Realizado" ? current.expenses.map((expense) => expense.id === linkedExpenseId ? { ...expense, status: "Pago" as const } : expense) : current.expenses,
+        cashMovements: current.cashMovements.map((movement) => movement.id === existingMovement.id ? { ...movement, description: String(formData.get("description")), amount, dateIso: String(formData.get("dateIso")), status } : movement),
+      }));
+      setAction(null);
+      onNotify(status === "Realizado" ? "Saída prevista confirmada sem duplicidade." : "Movimento previsto atualizado.", existingMovement.id);
+      return;
+    }
+    const movement: WorkCashMovement = {
+      id: nextRecordId("CXA", data.cashMovements), workId: String(formData.get("workId")), type: String(formData.get("type")) as WorkCashMovementType,
+      direction: String(formData.get("direction")) as "Entrada" | "Saída", description: String(formData.get("description")), amount: Number(formData.get("amount")),
+      dateIso: String(formData.get("dateIso")), status: String(formData.get("status")) as WorkCashMovementStatus, linkedExpenseId,
+    };
+    setData((current) => ({
+      ...current,
+      expenses: linkedExpenseId && movement.status === "Realizado" ? current.expenses.map((expense) => expense.id === linkedExpenseId ? { ...expense, status: "Pago" } : expense) : current.expenses,
+      cashMovements: [movement, ...current.cashMovements],
+    }));
+    setAction(null);
+    onNotify("Movimento de caixa registrado manualmente.", movement.id);
+  };
+  const selectBudget = (budget: WorkBudgetQuote, formData: FormData) => {
+    const createExpense = formData.get("createExpense") === "on";
+    const reason = String(formData.get("reason"));
+    setData((current) => {
+      const alreadyHasExpense = current.expenses.some((expense) => expense.sourceBudgetId === budget.id);
+      const expense: WorkModuleExpense | null = createExpense && !alreadyHasExpense ? { id: nextRecordId("GAS", current.expenses), workId: budget.workId, description: budget.service, category: "Serviços", supplier: budget.provider, amount: budget.amount, expectedAmount: budget.amount, dateIso: WORKS_DEMO_DATE_ISO, status: "Previsto", sourceBudgetId: budget.id } : null;
+      return {
+        ...current,
+        budgets: current.budgets.map((item) => item.workId === budget.workId && item.service === budget.service ? { ...item, status: item.id === budget.id ? "Selecionado" : item.status === "Selecionado" ? "Recebido" : item.status, selectionReason: item.id === budget.id ? reason : item.selectionReason } : item),
+        expenses: expense ? [expense, ...current.expenses] : current.expenses,
+        cashMovements: expense ? [{ id: nextRecordId("CXA", current.cashMovements), workId: expense.workId, type: "Saída de gasto", direction: "Saída", description: expense.description, amount: expense.amount, dateIso: expense.dateIso, status: "Previsto", linkedExpenseId: expense.id }, ...current.cashMovements] : current.cashMovements,
+      };
+    });
+    setAction(null);
+    onNotify(createExpense ? "Proposta selecionada e gasto previsto criado." : "Proposta selecionada para o serviço.", budget.id);
+  };
+  const markExpensePaid = (expense: WorkModuleExpense) => {
+    setData((current) => {
+      const existingMovement = current.cashMovements.find((movement) => movement.linkedExpenseId === expense.id);
+      const cashMovements = existingMovement
+        ? current.cashMovements.map((movement) => movement.linkedExpenseId === expense.id ? { ...movement, status: "Realizado" as const, dateIso: WORKS_DEMO_DATE_ISO, amount: expense.amount } : movement)
+        : [{ id: nextRecordId("CXA", current.cashMovements), workId: expense.workId, type: "Saída de gasto" as const, direction: "Saída" as const, description: expense.description, amount: expense.amount, dateIso: WORKS_DEMO_DATE_ISO, status: "Realizado" as const, linkedExpenseId: expense.id }, ...current.cashMovements];
+      return { ...current, expenses: current.expenses.map((item) => item.id === expense.id ? { ...item, status: "Pago" as const } : item), cashMovements };
+    });
+    setAction(null);
+    onNotify("Pagamento confirmado e saída registrada uma única vez.", expense.id);
+  };
+
+  const tabs: Array<{ name: WorkFinanceTab; icon: LucideIcon; count: number }> = [
+    { name: "Orçamentos", icon: ClipboardList, count: scopedBudgets.length },
+    { name: "Gastos", icon: HandCoins, count: scopedExpenses.length },
+    { name: "Caixa", icon: WalletCards, count: scopedCash.length },
+  ];
+  const monthComparison = [
+    { key: "2026-08", label: "Agosto", planned: scopedCash.filter((movement) => movement.direction === "Saída" && movement.dateIso.startsWith("2026-08")).reduce((sum, movement) => sum + movement.amount, 0), realized: scopedCash.filter((movement) => movement.direction === "Saída" && movement.status === "Realizado" && movement.dateIso.startsWith("2026-08")).reduce((sum, movement) => sum + movement.amount, 0) },
+    { key: "2026-09", label: "Setembro", planned: scopedCash.filter((movement) => movement.direction === "Saída" && movement.dateIso.startsWith("2026-09")).reduce((sum, movement) => sum + movement.amount, 0), realized: scopedCash.filter((movement) => movement.direction === "Saída" && movement.status === "Realizado" && movement.dateIso.startsWith("2026-09")).reduce((sum, movement) => sum + movement.amount, 0) },
+  ];
+
+  return <>
+    <div className="works-financial-page">
+      <section className="works-dashboard-heading finance-page-heading" aria-labelledby="finance-page-title">
+        <div><p className="eyebrow">Módulo 2 · Gestão de Obras</p><h1 id="finance-page-title">Financeiro</h1><p>Compare propostas, registre gastos e acompanhe o caixa de forma manual e simples.</p></div>
+        <button type="button" className="primary-button button-with-icon" onClick={() => setAction({ type: tab === "Orçamentos" ? "budget" : tab === "Gastos" ? "expense" : "cash" })}><Plus aria-hidden="true" />{tab === "Orçamentos" ? "Novo orçamento" : tab === "Gastos" ? "Registrar gasto" : "Novo movimento"}</button>
+      </section>
+
+      <aside className="finance-manual-banner"><WifiOff aria-hidden="true" /><span><strong>Controle manual, sem integração bancária</strong>Os valores são demonstrativos, ficam somente nesta sessão e não representam movimentações reais.</span></aside>
+
+      <section className="finance-command-panel" aria-label="Filtros financeiros">
+        <div className="finance-shared-filters">
+          <div className="finance-search"><Search aria-hidden="true" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar descrição, fornecedor ou código" aria-label="Buscar no financeiro" /></div>
+          <label><span>Obra</span><select value={workFilter} onChange={(event) => setWorkFilter(event.target.value)}><option>Todas as obras</option>{works.map((work) => <option key={work.id} value={work.id}>{work.id} · {work.title}</option>)}</select></label>
+          <label><span>Imóvel</span><select value={propertyFilter} onChange={(event) => setPropertyFilter(event.target.value)}><option>Todos os imóveis</option>{properties.map((property) => <option key={property}>{property}</option>)}</select></label>
+          <label><span>Período</span><select value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value)}><option>Todo o período</option><option>Agosto de 2026</option><option>Setembro de 2026</option></select></label>
+          <button type="button" className="secondary-button button-with-icon" onClick={clearSharedFilters} disabled={!activeFilterCount}><RotateCcw aria-hidden="true" />Limpar</button>
+        </div>
+        <footer><span><SlidersHorizontal aria-hidden="true" />Os filtros permanecem ativos ao trocar de aba.</span><strong>{activeFilterCount ? `${activeFilterCount} filtro(s) ativo(s)` : "Visão de todas as obras"}</strong></footer>
+      </section>
+
+      <nav className="finance-tabs" aria-label="Áreas financeiras">{tabs.map(({ name, icon: Icon, count }) => <button type="button" key={name} className={tab === name ? "active" : ""} onClick={() => setTab(name)}><Icon aria-hidden="true" /><span>{name}</span><b>{count}</b></button>)}</nav>
+
+      {tab === "Orçamentos" && <section className="finance-tab-panel" aria-labelledby="finance-budgets-title">
+        <header className="finance-panel-heading"><div><p className="eyebrow">Cotações e escolhas</p><h2 id="finance-budgets-title">Orçamentos</h2><span>Orçamento selecionado: <strong>{brl.format(selectedBudgetTotal)}</strong></span></div><div className="finance-inline-filters"><select value={budgetStatus} onChange={(event) => setBudgetStatus(event.target.value)} aria-label="Filtrar situação do orçamento"><option>Todas as situações</option><option>Solicitado</option><option>Recebido</option><option>Selecionado</option><option>Rejeitado</option><option>Expirado</option></select><select value={providerFilter} onChange={(event) => setProviderFilter(event.target.value)} aria-label="Filtrar fornecedor"><option>Todos os fornecedores</option>{providers.map((provider) => <option key={provider}>{provider}</option>)}</select></div></header>
+        <div className="finance-budget-overview">
+          <div className="finance-budget-metrics"><article><span><ClipboardList aria-hidden="true" /></span><div><small>Serviços cotados</small><strong>{budgetGroups.length}</strong><p>{scopedBudgets.length} propostas registradas</p></div></article><article className={budgetDecisionGroups.length ? "attention" : ""}><span><ArrowUpDown aria-hidden="true" /></span><div><small>Prontos para escolha</small><strong>{budgetDecisionGroups.length}</strong><p>Com duas ou mais propostas</p></div></article><article className={budgetsAwaitingReturn ? "warning" : ""}><span><CalendarClock aria-hidden="true" /></span><div><small>Aguardando retorno</small><strong>{budgetsAwaitingReturn}</strong><p>Propostas ainda solicitadas</p></div></article><article className={budgetsNearExpiry ? "warning" : ""}><span><TriangleAlert aria-hidden="true" /></span><div><small>Validade próxima</small><strong>{budgetsNearExpiry}</strong><p>Vencem até 31 de agosto</p></div></article></div>
+          {budgetDecisionGroups.length > 0 && <section className="finance-budget-decisions" aria-labelledby="budget-decisions-title"><header><div><p className="eyebrow">Decisões rápidas</p><h3 id="budget-decisions-title">Serviços prontos para comparação</h3></div><b>{budgetDecisionGroups.length}</b></header><div>{budgetDecisionGroups.map((group) => { const received = group.filter((budget) => budget.status === "Recebido"); const lowest = Math.min(...received.map((budget) => budget.amount)); const highest = Math.max(...received.map((budget) => budget.amount)); const work = works.find((record) => record.id === group[0].workId); return <article key={`${group[0].workId}-${group[0].service}`}><span><ArrowUpDown aria-hidden="true" /></span><div><small>{group[0].workId} · {work?.property}</small><strong>{group[0].service}</strong><em>{received.length} propostas · diferença de {brl.format(highest - lowest)}</em></div><div><small>A partir de</small><strong>{brl.format(lowest)}</strong></div><button type="button" onClick={() => setComparisonKey(`${group[0].workId}::${group[0].service}`)}>Comparar agora<ArrowRight aria-hidden="true" /></button></article>; })}</div></section>}
+        </div>
+        <div className="finance-records-caption"><span><strong>{filteredBudgets.length}</strong> {filteredBudgets.length === 1 ? "proposta encontrada" : "propostas encontradas"}</span><small>Selecionar uma proposta não registra pagamento.</small></div>
+        {filteredBudgets.length ? <div className="finance-record-list finance-budget-list">{filteredBudgets.map((budget) => { const work = works.find((record) => record.id === budget.workId); const quoteCount = data.budgets.filter((item) => item.workId === budget.workId && item.service === budget.service).length; const isLowest = budget.amount === Math.min(...data.budgets.filter((item) => item.workId === budget.workId && item.service === budget.service).map((item) => item.amount)); return <article key={budget.id} className={budget.status === "Selecionado" ? "selected" : ""}><span className="finance-record-icon"><ClipboardList aria-hidden="true" /></span><div className="finance-record-main"><small>{budget.id} · {budget.workId}{budget.stage ? ` · ${budget.stage}` : ""}</small><strong>{budget.service}</strong><em>{budget.provider}</em>{budget.selectionReason && <p className="finance-selection-reason"><Check aria-hidden="true" />Escolhida por: {budget.selectionReason}</p>}<button type="button" onClick={() => openWork(budget.workId)}>{work?.property}<ArrowRight aria-hidden="true" /></button></div><div className="finance-record-value"><small>Proposta</small><strong>{brl.format(budget.amount)}</strong>{isLowest && quoteCount > 1 && <em>Menor valor</em>}</div><div className="finance-record-date"><small>Validade</small><strong>{formatExpenseDate(budget.validityDateIso)}</strong><span>Recebida em {formatExpenseDate(budget.receivedDateIso)}</span>{budget.attachmentName && <em><Paperclip aria-hidden="true" />{budget.attachmentName}</em>}</div><WorkModuleFinanceStatus status={budget.status} /><div className="finance-record-actions">{quoteCount > 1 && <button type="button" onClick={() => setComparisonKey(`${budget.workId}::${budget.service}`)}>Comparar {quoteCount}</button>}{budget.status !== "Selecionado" && budget.status !== "Expirado" && budget.status !== "Rejeitado" && <button type="button" className="primary" onClick={() => setAction({ type: "select", budget })}>Selecionar</button>}</div></article>; })}</div> : <FinanceEmptyState onClear={() => { clearSharedFilters(); setBudgetStatus("Todas as situações"); setProviderFilter("Todos os fornecedores"); }} />}
+      </section>}
+
+      {tab === "Gastos" && <section className="finance-tab-panel" aria-labelledby="finance-expenses-title">
+        <header className="finance-panel-heading"><div><p className="eyebrow">Compromissos da execução</p><h2 id="finance-expenses-title">Gastos</h2><span>Previsto é planejamento; somente Pago afeta o caixa realizado.</span></div><div className="finance-inline-filters"><select value={expenseStatus} onChange={(event) => setExpenseStatus(event.target.value)} aria-label="Filtrar situação do gasto"><option>Todas as situações</option><option>Previsto</option><option>Pendente</option><option>Pago</option></select><select value={expenseCategory} onChange={(event) => setExpenseCategory(event.target.value)} aria-label="Filtrar categoria"><option>Todas as categorias</option>{categories.map((category) => <option key={category}>{category}</option>)}</select></div></header>
+        <div className="finance-summary-grid finance-expense-summary"><article><span><ClipboardList aria-hidden="true" /></span><div><small>Valor de referência</small><strong>{brl.format(selectedBudgetTotal)}</strong><p>Propostas selecionadas</p></div></article><article><span><HandCoins aria-hidden="true" /></span><div><small>Gastos lançados</small><strong>{brl.format(expenseTotal)}</strong><p>{brl.format(expectedExpenseTotal)} planejado nos itens</p></div></article><article><span><CircleCheck aria-hidden="true" /></span><div><small>Já pago</small><strong>{brl.format(paidExpenseTotal)}</strong><p>Com saída realizada no caixa</p></div></article><article className={expenseBalance < 0 ? "danger" : ""}><span><WalletCards aria-hidden="true" /></span><div><small>Saldo previsto</small><strong>{brl.format(expenseBalance)}</strong><p>Referência menos gastos lançados</p></div></article></div>
+        {(expensesOverExpected.length > 0 || paymentsDueSoon.length > 0) && <div className="finance-expense-priorities">
+          <section className="expense-overrun-panel" aria-labelledby="expense-overrun-title"><header><div><p className="eyebrow">Atenção ao previsto</p><h3 id="expense-overrun-title">Gastos acima do esperado</h3></div><span><strong>{expensesOverExpected.length}</strong><small>{brl.format(expenseOverrunTotal)} acima</small></span></header>{expensesOverExpected.length ? <div>{expensesOverExpected.slice(0, 3).map((expense) => { const work = works.find((record) => record.id === expense.workId); return <article key={expense.id}><span><TriangleAlert aria-hidden="true" /></span><div><small>{expense.id} · {expense.workId}</small><strong>{expense.description}</strong><em>{work?.property}</em></div><div><small>Diferença</small><strong>+ {brl.format(expense.amount - expense.expectedAmount)}</strong></div><button type="button" onClick={() => openWork(expense.workId)}>Abrir obra<ArrowRight aria-hidden="true" /></button></article>; })}</div> : <CompactEmptyState mark="✓" tone="success" title="Dentro do previsto" description="Nenhum gasto está acima do valor planejado." />}</section>
+          <section className="expense-payments-panel" aria-labelledby="expense-payments-title"><header><div><p className="eyebrow">Próximos pagamentos</p><h3 id="expense-payments-title">Pendentes até 31 de agosto</h3></div><b>{paymentsDueSoon.length}</b></header>{paymentsDueSoon.length ? <div>{paymentsDueSoon.slice(0, 3).map((expense) => <article key={expense.id}><time dateTime={expense.dateIso}><strong>{expense.dateIso.slice(8, 10)}</strong><small>AGO</small></time><div><small>{expense.id} · {expense.supplier}</small><strong>{expense.description}</strong><em>{brl.format(expense.amount)}</em></div><button type="button" onClick={() => setAction({ type: "pay", expense })}>Confirmar<Check aria-hidden="true" /></button></article>)}</div> : <CompactEmptyState mark="✓" tone="success" title="Nenhum pagamento próximo" description="Não há gastos pendentes nesta janela." />}</section>
+        </div>}
+        <div className="finance-records-caption finance-expense-caption"><span><strong>{filteredExpenses.length}</strong> {filteredExpenses.length === 1 ? "gasto encontrado" : "gastos encontrados"}</span><small>Pago gera uma única saída realizada; Previsto e Pendente ficam somente na projeção.</small></div>
+        {filteredExpenses.length ? <div className="finance-record-list finance-expense-list">{filteredExpenses.map((expense) => { const work = works.find((record) => record.id === expense.workId); const difference = expense.amount - expense.expectedAmount; const overExpected = difference > 0; return <article key={expense.id} className={overExpected ? "over-budget" : ""}><span className="finance-record-icon"><HandCoins aria-hidden="true" /></span><div className="finance-record-main"><small>{expense.id} · {expense.category}{expense.sourceBudgetId ? ` · origem ${expense.sourceBudgetId}` : ""}</small><strong>{expense.description}</strong><em>{expense.supplier}</em><button type="button" onClick={() => openWork(expense.workId)}>{expense.workId} · {work?.title}<ArrowRight aria-hidden="true" /></button></div><div className="finance-record-value"><small>Valor lançado</small><strong>{brl.format(expense.amount)}</strong><span className="expense-expected-value">Previsto: {brl.format(expense.expectedAmount)}</span><em className={overExpected ? "danger" : "within-budget"}>{overExpected ? <TriangleAlert aria-hidden="true" /> : <Check aria-hidden="true" />}{difference > 0 ? `+ ${brl.format(difference)}` : difference < 0 ? `${brl.format(Math.abs(difference))} abaixo` : "Conforme previsto"}</em></div><div className="finance-record-date"><small>{expense.status === "Pago" ? "Pagamento" : "Data prevista"}</small><strong>{formatExpenseDate(expense.dateIso)}</strong>{expense.attachmentName ? <em><Paperclip aria-hidden="true" />{expense.attachmentName}</em> : <span>Sem comprovante anexado</span>}</div><WorkModuleFinanceStatus status={expense.status} /><div className="finance-record-actions">{expense.status !== "Pago" ? <button type="button" className="primary" onClick={() => setAction({ type: "pay", expense })}>Marcar pago</button> : <span><Check aria-hidden="true" />Saída registrada</span>}</div></article>; })}</div> : <FinanceEmptyState onClear={() => { clearSharedFilters(); setExpenseStatus("Todas as situações"); setExpenseCategory("Todas as categorias"); }} />}
+      </section>}
+
+      {tab === "Caixa" && <section className="finance-tab-panel" aria-labelledby="finance-cash-title">
+        <header className="finance-panel-heading"><div><p className="eyebrow">Fluxo manual</p><h2 id="finance-cash-title">Caixa</h2><span>Realizado altera o saldo atual; Previsto aparece apenas na projeção.</span></div><div className="finance-inline-filters"><select value={cashType} onChange={(event) => setCashType(event.target.value)} aria-label="Filtrar tipo de movimento"><option>Todos os tipos</option><option>Aporte</option><option>Reembolso</option><option>Ajuste</option><option>Saída de gasto</option></select><select value={cashStatus} onChange={(event) => setCashStatus(event.target.value)} aria-label="Filtrar situação do movimento"><option>Todas as situações</option><option>Previsto</option><option>Realizado</option></select></div></header>
+        <div className="finance-cash-metrics"><article><small>Saldo inicial</small><strong>{brl.format(initialBalance)}</strong><p>Aportes ou saldo anterior</p></article><article><small>Entradas</small><strong className="positive">+ {brl.format(realizedEntries)}</strong><p>Movimentos realizados</p></article><article><small>Saídas</small><strong className="negative">− {brl.format(realizedOutputs)}</strong><p>Pagamentos realizados</p></article><article><small>Saldo atual</small><strong className={currentCash < 0 ? "negative" : ""}>{brl.format(currentCash)}</strong><p>Somente movimentos realizados</p></article><article><small>Saldo projetado</small><strong className={projectedCash < 0 ? "negative" : ""}>{brl.format(projectedCash)}</strong><p>{plannedCashMovements.length} movimento(s) ainda previsto(s)</p></article></div>
+        <aside className="finance-cash-equation"><span><strong>Saldo atual</strong>somente movimentos realizados</span><i aria-hidden="true">+</i><span><strong>Movimentos previstos</strong>entradas e saídas planejadas</span><i aria-hidden="true">=</i><span className={projectedCash < 0 ? "danger" : ""}><strong>Saldo projetado</strong>{brl.format(projectedCash)}</span></aside>
+        <section className="finance-month-comparison" aria-label="Comparação mensal de saídas"><header><div><strong>Saídas previstas x realizadas</strong><span>Comparação simples por mês</span></div></header><div>{monthComparison.map((month) => { const percent = month.planned ? Math.min(100, Math.round((month.realized / month.planned) * 100)) : 0; return <article key={month.key}><div><strong>{month.label}</strong><span>{percent}% realizado</span></div><dl><div><dt>Previsto</dt><dd>{brl.format(month.planned)}</dd></div><div><dt>Realizado</dt><dd>{brl.format(month.realized)}</dd></div></dl><i><b style={{ width: `${percent}%` }} /></i></article>; })}</div></section>
+        <section className={`finance-cash-positions ${negativeCashPositions ? "has-danger" : ""}`} aria-labelledby="cash-positions-title"><header><div><p className="eyebrow">Visão por obra</p><h3 id="cash-positions-title">Posição do caixa</h3><span>Veja onde os movimentos previstos podem exigir ajuste.</span></div><span><strong>{cashPositions.length}</strong><small>{negativeCashPositions ? `${negativeCashPositions} com projeção negativa` : "Nenhuma projeção negativa"}</small></span></header><div>{cashPositions.map(({ work, current, projected, plannedCount }) => <article key={work.id} className={projected < 0 ? "danger" : plannedCount ? "attention" : ""}><span><Building2 aria-hidden="true" /></span><div className="cash-position-work"><small>{work.id} · {work.property}</small><strong>{work.title}</strong></div><div><small>Saldo atual</small><strong className={current < 0 ? "negative" : ""}>{brl.format(current)}</strong></div><div><small>Projetado</small><strong className={projected < 0 ? "negative" : ""}>{brl.format(projected)}</strong></div><div><small>Previstos</small><strong>{plannedCount}</strong></div><span className="cash-position-status"><i />{projected < 0 ? "Projeção negativa" : plannedCount ? "Com movimentos previstos" : "Somente realizado"}</span><button type="button" onClick={() => openWork(work.id)}>Abrir<ArrowRight aria-hidden="true" /></button></article>)}</div></section>
+        <div className="finance-records-caption finance-cash-caption"><span><strong>{filteredCash.length}</strong> {filteredCash.length === 1 ? "movimento encontrado" : "movimentos encontrados"}</span><small>Nenhum valor desta demonstração foi consultado ou enviado a um banco.</small></div>
+        {filteredCash.length ? <div className="finance-record-list finance-cash-list">{filteredCash.slice().sort((left, right) => right.dateIso.localeCompare(left.dateIso)).map((movement) => { const work = works.find((record) => record.id === movement.workId); return <article key={movement.id}><span className={`finance-record-icon ${movement.direction === "Entrada" ? "entry" : "output"}`}>{movement.direction === "Entrada" ? <ArrowDownToLine aria-hidden="true" /> : <ArrowUpDown aria-hidden="true" />}</span><div className="finance-record-main"><small>{movement.id} · {movement.type}</small><strong>{movement.description}</strong><button type="button" onClick={() => openWork(movement.workId)}>{movement.workId} · {work?.title}<ArrowRight aria-hidden="true" /></button></div><div className={`finance-record-value ${movement.direction === "Entrada" ? "entry" : "output"}`}><small>{movement.direction}</small><strong>{movement.direction === "Entrada" ? "+" : "−"} {brl.format(movement.amount)}</strong>{movement.linkedExpenseId && <em>Gasto {movement.linkedExpenseId}</em>}</div><div className="finance-record-date"><small>{movement.status === "Realizado" ? "Realizado em" : "Previsto para"}</small><strong>{formatExpenseDate(movement.dateIso)}</strong></div><WorkModuleFinanceStatus status={movement.status} /><div className="finance-record-actions"><span>{movement.status === "Realizado" ? <Check aria-hidden="true" /> : <CalendarClock aria-hidden="true" />}{movement.status}</span></div></article>; })}</div> : <FinanceEmptyState onClear={() => { clearSharedFilters(); setCashType("Todos os tipos"); setCashStatus("Todas as situações"); }} />}
+      </section>}
+    </div>
+
+    {action?.type === "budget" && <WorkBudgetFormModal works={works} initialWorkId={workFilter} onClose={() => setAction(null)} onSave={saveBudget} />}
+    {action?.type === "expense" && <WorkExpenseFormModal works={works} initialWorkId={workFilter} onClose={() => setAction(null)} onSave={saveExpense} />}
+    {action?.type === "cash" && <WorkCashFormModal works={works} expenses={data.expenses} initialWorkId={workFilter} onClose={() => setAction(null)} onSave={saveCashMovement} />}
+    {action?.type === "select" && <WorkBudgetSelectionModal budget={action.budget} currentSelection={data.budgets.find((budget) => budget.workId === action.budget.workId && budget.service === action.budget.service && budget.status === "Selecionado")} onClose={() => setAction(null)} onSave={(formData) => selectBudget(action.budget, formData)} />}
+    {action?.type === "pay" && <WorkExpensePaymentModal expense={action.expense} hasCashMovement={data.cashMovements.some((movement) => movement.linkedExpenseId === action.expense.id)} onClose={() => setAction(null)} onConfirm={() => markExpensePaid(action.expense)} />}
+    {comparisonQuotes.length > 0 && <WorkBudgetComparisonDrawer quotes={comparisonQuotes} workTitle={workName(comparisonQuotes[0].workId)} onClose={() => setComparisonKey(null)} onSelect={(budget) => { setComparisonKey(null); setAction({ type: "select", budget }); }} />}
+  </>;
+}
+
+function FinanceEmptyState({ onClear }: { onClear: () => void }) {
+  return <div className="finance-empty"><CompactEmptyState mark="00" title="Nenhum registro encontrado" description="Ajuste os filtros para consultar outros lançamentos financeiros." /><button type="button" className="secondary-button button-with-icon" onClick={onClear}><RotateCcw aria-hidden="true" />Limpar filtros</button></div>;
+}
+
+function WorkBudgetFormModal({ works, initialWorkId, onClose, onSave }: { works: WorkRecord[]; initialWorkId: string; onClose: () => void; onSave: (data: FormData) => void }) {
+  return <div className="modal-layer" role="dialog" aria-modal="true" aria-label="Adicionar orçamento"><button type="button" className="drawer-backdrop" onClick={onClose} aria-label="Fechar orçamento" /><form className="receipt-modal work-detail-modal work-finance-form-modal" onSubmit={(event) => { event.preventDefault(); onSave(new FormData(event.currentTarget)); }}><ModalHeader eyebrow="Financeiro das obras" title="Adicionar orçamento" onClose={onClose} /><div className="work-detail-modal-body"><p className="finance-form-help">A proposta será apenas registrada para comparação. Isso não cria pagamento.</p><div className="form-grid"><label className="full-field">Obra<select name="workId" defaultValue={initialWorkId !== "Todas as obras" ? initialWorkId : works[0]?.id} required>{works.map((work) => <option key={work.id} value={work.id}>{work.id} · {work.title}</option>)}</select></label><label>Etapa opcional<input name="stage" placeholder="Ex.: Execução" /></label><label>Situação<select name="status" defaultValue="Recebido"><option>Solicitado</option><option>Recebido</option></select></label><label className="full-field">Serviço ou escopo<input name="service" placeholder="O que está sendo cotado" required /></label><label className="full-field">Fornecedor ou prestador<input name="provider" placeholder="Nome do fornecedor" required /></label><label>Valor<input name="amount" type="number" min="0.01" step="0.01" required /></label><label>Recebido em<input name="receivedDateIso" type="date" defaultValue={WORKS_DEMO_DATE_ISO} required /></label><label>Validade<input name="validityDateIso" type="date" defaultValue="2026-09-24" required /></label><label className="file-field"><span>Arquivo demonstrativo</span><input name="attachment" type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" /></label></div></div><footer><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button type="submit" className="primary-button button-with-icon"><Check aria-hidden="true" />Adicionar orçamento</button></footer></form></div>;
+}
+
+function WorkExpenseFormModal({ works, initialWorkId, onClose, onSave }: { works: WorkRecord[]; initialWorkId: string; onClose: () => void; onSave: (data: FormData) => void }) {
+  return <div className="modal-layer" role="dialog" aria-modal="true" aria-label="Registrar gasto"><button type="button" className="drawer-backdrop" onClick={onClose} aria-label="Fechar gasto" /><form className="receipt-modal work-detail-modal work-finance-form-modal" onSubmit={(event) => { event.preventDefault(); onSave(new FormData(event.currentTarget)); }}><ModalHeader eyebrow="Financeiro das obras" title="Registrar gasto" onClose={onClose} /><div className="work-detail-modal-body"><p className="finance-form-help">Use Previsto para planejamento, Pendente para cobrança aberta e Pago somente quando confirmado.</p><div className="form-grid"><label className="full-field">Obra<select name="workId" defaultValue={initialWorkId !== "Todas as obras" ? initialWorkId : works[0]?.id} required>{works.map((work) => <option key={work.id} value={work.id}>{work.id} · {work.title}</option>)}</select></label><label className="full-field">Descrição<input name="description" placeholder="Descrição curta do gasto" required /></label><label>Categoria<select name="category"><option>Materiais</option><option>Mão de obra</option><option>Equipamentos</option><option>Serviços técnicos</option><option>Taxas</option><option>Outros</option></select></label><label>Fornecedor<input name="supplier" required /></label><label>Valor lançado<input name="amount" type="number" min="0.01" step="0.01" required /></label><label>Valor previsto<input name="expectedAmount" type="number" min="0.01" step="0.01" required /></label><label>Data<input name="dateIso" type="date" defaultValue={WORKS_DEMO_DATE_ISO} required /></label><label>Situação<select name="status" defaultValue="Previsto"><option>Previsto</option><option>Pendente</option><option>Pago</option></select></label><label className="file-field full-field"><span>Comprovante demonstrativo</span><input name="attachment" type="file" accept=".pdf,.jpg,.jpeg,.png" /></label></div></div><footer><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button type="submit" className="primary-button button-with-icon"><Check aria-hidden="true" />Registrar gasto</button></footer></form></div>;
+}
+
+function WorkCashFormModal({ works, expenses, initialWorkId, onClose, onSave }: { works: WorkRecord[]; expenses: WorkModuleExpense[]; initialWorkId: string; onClose: () => void; onSave: (data: FormData) => void }) {
+  const [type, setType] = useState<WorkCashMovementType>("Aporte");
+  const [direction, setDirection] = useState<"Entrada" | "Saída">("Entrada");
+  const [workId, setWorkId] = useState(initialWorkId !== "Todas as obras" ? initialWorkId : works[0]?.id ?? "");
+  const [linkedExpenseId, setLinkedExpenseId] = useState("");
+  const [description, setDescription] = useState("");
+  const [amount, setAmount] = useState("");
+  const availableExpenses = expenses.filter((expense) => expense.workId === workId && expense.status !== "Pago");
+  const selectedExpense = availableExpenses.find((expense) => expense.id === linkedExpenseId);
+  const resetLinkedExpense = () => { setLinkedExpenseId(""); setDescription(""); setAmount(""); };
+  return <div className="modal-layer" role="dialog" aria-modal="true" aria-label="Registrar movimento de caixa"><button type="button" className="drawer-backdrop" onClick={onClose} aria-label="Fechar movimento" /><form className="receipt-modal work-detail-modal work-finance-form-modal" onSubmit={(event) => { event.preventDefault(); onSave(new FormData(event.currentTarget)); }}><ModalHeader eyebrow="Caixa manual" title="Registrar movimento" onClose={onClose} /><div className="work-detail-modal-body"><p className="finance-form-help">Somente movimentos realizados alteram o saldo atual. Movimentos previstos afetam apenas a projeção.</p><div className="form-grid"><label className="full-field">Obra<select name="workId" value={workId} onChange={(event) => { setWorkId(event.target.value); resetLinkedExpense(); }} required>{works.map((work) => <option key={work.id} value={work.id}>{work.id} · {work.title}</option>)}</select></label><label>Tipo<select name="type" value={type} onChange={(event) => { const next = event.target.value as WorkCashMovementType; setType(next); setDirection(next === "Saída de gasto" ? "Saída" : "Entrada"); resetLinkedExpense(); }}><option>Aporte</option><option>Reembolso</option><option>Ajuste</option><option>Saída de gasto</option></select></label><label>Direção<select name="direction" value={direction} onChange={(event) => setDirection(event.target.value as "Entrada" | "Saída")} disabled={type === "Saída de gasto"}><option>Entrada</option><option>Saída</option></select>{type === "Saída de gasto" && <input type="hidden" name="direction" value="Saída" />}</label>{type === "Saída de gasto" && <><label className="full-field">Gasto relacionado<select name="linkedExpenseId" value={linkedExpenseId} onChange={(event) => { const nextId = event.target.value; const expense = availableExpenses.find((item) => item.id === nextId); setLinkedExpenseId(nextId); setDescription(expense?.description ?? ""); setAmount(expense ? String(expense.amount) : ""); }} required><option value="">Selecione um gasto pendente ou previsto</option>{availableExpenses.map((expense) => <option key={expense.id} value={expense.id}>{expense.id} · {expense.description}</option>)}</select></label>{selectedExpense && <aside className="finance-linked-expense-preview full-field"><HandCoins aria-hidden="true" /><span><small>{selectedExpense.status} · {selectedExpense.supplier}</small><strong>{brl.format(selectedExpense.amount)}</strong><em>A movimentação existente será atualizada, sem criar uma saída duplicada.</em></span></aside>}</>}<label className="full-field">Descrição<input name="description" value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Motivo do movimento" required /></label><label>Valor<input name="amount" type="number" min="0.01" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} required /></label><label>Data<input name="dateIso" type="date" defaultValue={WORKS_DEMO_DATE_ISO} required /></label><label>Situação<select name="status" defaultValue="Realizado"><option>Previsto</option><option>Realizado</option></select></label></div></div><footer><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button type="submit" className="primary-button button-with-icon"><Check aria-hidden="true" />Registrar movimento</button></footer></form></div>;
+}
+
+function WorkBudgetSelectionModal({ budget, currentSelection, onClose, onSave }: { budget: WorkBudgetQuote; currentSelection?: WorkBudgetQuote; onClose: () => void; onSave: (data: FormData) => void }) {
+  return <div className="modal-layer" role="dialog" aria-modal="true" aria-label="Selecionar orçamento"><button type="button" className="drawer-backdrop" onClick={onClose} aria-label="Fechar seleção" /><form className="receipt-modal work-detail-modal work-finance-selection-modal" onSubmit={(event) => { event.preventDefault(); onSave(new FormData(event.currentTarget)); }}><ModalHeader eyebrow={budget.id} title="Selecionar proposta" onClose={onClose} /><div className="work-detail-modal-body"><div className="finance-selection-summary"><span><small>Fornecedor</small><strong>{budget.provider}</strong></span><span><small>Valor</small><strong>{brl.format(budget.amount)}</strong></span></div>{currentSelection && currentSelection.id !== budget.id && <div className="finance-replacement-warning"><TriangleAlert aria-hidden="true" /><span><strong>Esta escolha substituirá a proposta atual.</strong>{currentSelection.provider} · {brl.format(currentSelection.amount)}</span></div>}<div className="form-grid"><label className="full-field">Motivo da escolha<textarea name="reason" rows={4} placeholder="Explique brevemente prazo, valor ou condição escolhida" required /></label><label className="full-field finance-create-expense"><input name="createExpense" type="checkbox" /><span><strong>Criar também um gasto previsto</strong><small>Isso cria apenas um planejamento, não um pagamento.</small></span></label></div></div><footer><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button type="submit" className="primary-button button-with-icon"><Check aria-hidden="true" />{currentSelection && currentSelection.id !== budget.id ? "Substituir e selecionar" : "Selecionar proposta"}</button></footer></form></div>;
+}
+
+function WorkExpensePaymentModal({ expense, hasCashMovement, onClose, onConfirm }: { expense: WorkModuleExpense; hasCashMovement: boolean; onClose: () => void; onConfirm: () => void }) {
+  return <div className="modal-layer" role="dialog" aria-modal="true" aria-label="Confirmar pagamento"><button type="button" className="drawer-backdrop" onClick={onClose} aria-label="Fechar confirmação" /><div className="receipt-modal work-detail-modal finance-payment-modal"><ModalHeader eyebrow={expense.id} title="Confirmar pagamento" onClose={onClose} /><div className="work-detail-modal-body"><div className="finance-payment-icon"><HandCoins aria-hidden="true" /></div><h3>{expense.description}</h3><strong>{brl.format(expense.amount)}</strong><p>O gasto será marcado como Pago e sua saída de caixa ficará como Realizada.</p>{hasCashMovement && <span><Check aria-hidden="true" />A movimentação prevista existente será atualizada, sem duplicar a saída.</span>}</div><footer><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button type="button" className="primary-button button-with-icon" onClick={onConfirm}><Check aria-hidden="true" />Confirmar pagamento</button></footer></div></div>;
+}
+
+function WorkBudgetComparisonDrawer({ quotes, workTitle, onClose, onSelect }: { quotes: WorkBudgetQuote[]; workTitle: string; onClose: () => void; onSelect: (budget: WorkBudgetQuote) => void }) {
+  const lowest = Math.min(...quotes.map((quote) => quote.amount));
+  return <div className="drawer-layer" role="dialog" aria-modal="true" aria-label="Comparar propostas"><button type="button" className="drawer-backdrop" onClick={onClose} aria-label="Fechar comparação" /><aside className="drawer wide-drawer finance-comparison-drawer"><header className="drawer-header"><div><p className="eyebrow">{quotes[0].workId} · {workTitle}</p><h2>Comparar propostas</h2><span>{quotes[0].service}</span></div><button type="button" className="close-button" onClick={onClose} aria-label="Fechar"><X aria-hidden="true" /></button></header><div className="drawer-body"><p className="finance-form-help">Compare valor e validade. A escolha final deve considerar também prazo, escopo e garantia.</p><div className="finance-comparison-list">{quotes.map((quote, index) => { const difference = quote.amount - lowest; return <article key={quote.id} className={quote.status === "Selecionado" ? "selected" : ""}><b>0{index + 1}</b><div><small>{quote.id}</small><strong>{quote.provider}</strong><span>Recebida em {formatExpenseDate(quote.receivedDateIso)} · válida até {formatExpenseDate(quote.validityDateIso)}</span>{quote.attachmentName && <em><Paperclip aria-hidden="true" />{quote.attachmentName}</em>}{quote.selectionReason && <p><Check aria-hidden="true" />{quote.selectionReason}</p>}</div><div><small>Valor</small><strong>{brl.format(quote.amount)}</strong>{difference === 0 ? <em>Menor proposta</em> : <span className="comparison-difference">+ {brl.format(difference)}</span>}</div><WorkModuleFinanceStatus status={quote.status} />{quote.status !== "Selecionado" && quote.status !== "Expirado" && quote.status !== "Rejeitado" ? <button type="button" onClick={() => onSelect(quote)}>Selecionar</button> : <span className="comparison-no-action">{quote.status === "Selecionado" ? "Escolha atual" : "Indisponível"}</span>}</article>; })}</div></div></aside></div>;
+}
+
+function shiftWorkDate(value: string, days: number) {
+  const date = new Date(`${value}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function createWorkScheduleActivities(works: WorkRecord[]): WorkScheduleActivity[] {
+  return works.flatMap((work, workIndex) => {
+    const seed = createWorkDetailMock(work).activities;
+    return [seed[0], seed[2], seed[3], seed[4]].filter((activity): activity is WorkActivity => Boolean(activity)).map((activity, activityIndex) => {
+      const offset = activityIndex === 1 ? workIndex - 3 : activityIndex === 2 ? workIndex - 1 : 0;
+      return {
+        ...activity,
+        id: `${work.id}-${activity.id}`,
+        workId: work.id,
+        workTitle: work.title,
+        property: work.property,
+        startDateIso: offset ? shiftWorkDate(activity.startDateIso, offset) : activity.startDateIso,
+        endDateIso: offset ? shiftWorkDate(activity.endDateIso, offset) : activity.endDateIso,
+      };
+    });
+  });
+}
+
+function WorksSchedulePage({ works, onOpenWork, onUpdateWork, onNotify }: { works: WorkRecord[]; onOpenWork: (work: WorkRecord) => void; onUpdateWork: (work: WorkRecord, message: string) => void; onNotify: (message: string, reference: string) => void }) {
+  const [view, setView] = useState<"Agenda" | "Calendário">("Agenda");
+  const [workFilter, setWorkFilter] = useState("Todas as obras");
+  const [managerFilter, setManagerFilter] = useState("Todos os responsáveis");
+  const [statusFilter, setStatusFilter] = useState("Todas as situações");
+  const [month, setMonth] = useState("2026-08");
+  const [action, setAction] = useState<WorkScheduleAction>(null);
+  const [activities, setActivities] = useState<WorkScheduleActivity[]>(() => createWorkScheduleActivities(works));
+  const managers = Array.from(new Set(activities.map((activity) => activity.manager))).sort((left, right) => left.localeCompare(right, "pt-BR"));
+  const filteredActivities = activities.filter((activity) => (workFilter === "Todas as obras" || activity.workId === workFilter) && (managerFilter === "Todos os responsáveis" || activity.manager === managerFilter) && (statusFilter === "Todas as situações" || activity.status === statusFilter));
+  const filtersActive = workFilter !== "Todas as obras" || managerFilter !== "Todos os responsáveis" || statusFilter !== "Todas as situações";
+  const overdue = filteredActivities.filter((activity) => activity.status !== "Concluída" && activity.status !== "Bloqueada" && activity.endDateIso < WORKS_DEMO_DATE_ISO);
+  const blocked = filteredActivities.filter((activity) => activity.status === "Bloqueada");
+  const today = filteredActivities.filter((activity) => activity.status !== "Concluída" && activity.status !== "Bloqueada" && activity.endDateIso >= WORKS_DEMO_DATE_ISO && activity.startDateIso <= WORKS_DEMO_DATE_ISO);
+  const upcoming = filteredActivities.filter((activity) => activity.status !== "Concluída" && activity.status !== "Bloqueada" && activity.startDateIso > WORKS_DEMO_DATE_ISO);
+  const completed = filteredActivities.filter((activity) => activity.status === "Concluída");
+  const nextSevenDays = filteredActivities.filter((activity) => activity.status !== "Concluída" && activity.status !== "Bloqueada" && activity.endDateIso > WORKS_DEMO_DATE_ISO && activity.endDateIso <= shiftWorkDate(WORKS_DEMO_DATE_ISO, 7)).length;
+  const agendaGroups = [
+    { id: "delayed", title: "Atrasadas", description: "Prazo já ultrapassado", tone: "danger", rows: overdue },
+    { id: "blocked", title: "Bloqueadas", description: "Dependem de uma decisão", tone: "warning", rows: blocked },
+    { id: "today", title: "Em execução hoje", description: "Atividades que atravessam a data atual", tone: "today", rows: today },
+    { id: "upcoming", title: "Próximas", description: "Ainda não iniciadas", tone: "next", rows: upcoming },
+    { id: "completed", title: "Concluídas", description: "Finalizadas neste planejamento", tone: "completed", rows: completed },
+  ];
+  const [calendarYear, calendarMonth] = month.split("-").map(Number);
+  const calendarCells = useMemo(() => {
+    const firstDay = new Date(Date.UTC(calendarYear, calendarMonth - 1, 1)).getUTCDay();
+    const gridStart = new Date(Date.UTC(calendarYear, calendarMonth - 1, 1 - firstDay));
+    return Array.from({ length: 42 }, (_, index) => {
+      const date = new Date(gridStart);
+      date.setUTCDate(gridStart.getUTCDate() + index);
+      return { dateIso: date.toISOString().slice(0, 10), day: date.getUTCDate(), currentMonth: date.getUTCMonth() === calendarMonth - 1 };
+    });
+  }, [calendarMonth, calendarYear]);
+  const monthLabel = new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(Date.UTC(calendarYear, calendarMonth - 1, 1)));
+  const changeMonth = (direction: number) => {
+    const date = new Date(Date.UTC(calendarYear, calendarMonth - 1 + direction, 1));
+    setMonth(`${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`);
+  };
+  const clearFilters = () => {
+    setWorkFilter("Todas as obras");
+    setManagerFilter("Todos os responsáveis");
+    setStatusFilter("Todas as situações");
+  };
+  const openActivityWork = (activity: WorkScheduleActivity) => {
+    const work = works.find((record) => record.id === activity.workId);
+    if (work) onOpenWork(work);
+  };
+  const completeActivity = (activity: WorkScheduleActivity) => {
+    const nextActivities = activities.map((item) => item.id === activity.id ? { ...item, status: "Concluída" as const, blockedReason: undefined } : item);
+    setActivities(nextActivities);
+    const work = works.find((record) => record.id === activity.workId);
+    if (work) {
+      const related = nextActivities.filter((item) => item.workId === work.id);
+      const progress = Math.round((related.filter((item) => item.status === "Concluída").length / Math.max(related.length, 1)) * 100);
+      onUpdateWork({ ...work, progress, nextActivity: related.find((item) => item.status !== "Concluída")?.title ?? "Entrega concluída", lastUpdateLabel: "Atualizada agora nesta sessão" }, "Atividade concluída pelo cronograma.");
+    }
+  };
+  const handleScheduleSubmit = (submittedAction: NonNullable<WorkScheduleAction>, formData: FormData) => {
+    const value = (name: string) => String(formData.get(name) ?? "").trim();
+    if (submittedAction.type === "new") {
+      const work = works.find((record) => record.id === value("workId"));
+      if (!work) return;
+      const activity: WorkScheduleActivity = {
+        id: nextRecordId("ATV", activities),
+        workId: work.id,
+        workTitle: work.title,
+        property: work.property,
+        stage: value("stage") as WorkActivity["stage"],
+        title: value("title"),
+        manager: value("manager"),
+        startDateIso: value("startDateIso"),
+        endDateIso: value("endDateIso"),
+        status: "Não iniciada",
+      };
+      setActivities((current) => [...current, activity]);
+      onNotify("Atividade adicionada ao cronograma.", activity.id);
+    } else {
+      const endDateIso = value("endDateIso");
+      const reason = value("reason");
+      setActivities((current) => current.map((activity) => activity.id === submittedAction.activity.id ? { ...activity, endDateIso, reprogramReason: reason } : activity));
+      onNotify("Atividade reprogramada com justificativa.", submittedAction.activity.id);
+    }
+    setAction(null);
+  };
+
+  return <>
+    <div className="works-schedule-page">
+      <section className="works-dashboard-heading schedule-page-heading" aria-labelledby="schedule-page-title"><div><p className="eyebrow">Módulo 2 · Gestão de Obras</p><h1 id="schedule-page-title">Cronograma</h1><p>Acompanhe atrasos, atividades do dia e próximas entregas em uma única agenda.</p></div><button type="button" className="primary-button button-with-icon works-new-button" onClick={() => setAction({ type: "new" })}><Plus aria-hidden="true" />Nova atividade</button></section>
+
+      <section className="schedule-command-bar" aria-label="Visualização e filtros do cronograma"><div className="schedule-view-toggle" role="group" aria-label="Forma de visualizar"><button type="button" className={view === "Agenda" ? "active" : ""} aria-pressed={view === "Agenda"} onClick={() => setView("Agenda")}><ClipboardList aria-hidden="true" />Agenda</button><button type="button" className={view === "Calendário" ? "active" : ""} aria-pressed={view === "Calendário"} onClick={() => setView("Calendário")}><CalendarClock aria-hidden="true" />Calendário</button></div><div className="schedule-filters"><label><span>Obra</span><select value={workFilter} onChange={(event) => setWorkFilter(event.target.value)}><option>Todas as obras</option>{works.map((work) => <option key={work.id} value={work.id}>{work.id} · {work.title}</option>)}</select></label><label><span>Responsável</span><select value={managerFilter} onChange={(event) => setManagerFilter(event.target.value)}><option>Todos os responsáveis</option>{managers.map((manager) => <option key={manager}>{manager}</option>)}</select></label><label><span>Situação</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option>Todas as situações</option><option>Não iniciada</option><option>Em andamento</option><option>Bloqueada</option><option>Concluída</option></select></label><button type="button" className="secondary-button button-with-icon" disabled={!filtersActive} onClick={clearFilters}><RotateCcw aria-hidden="true" />Limpar</button></div><footer><span><strong>{filteredActivities.length}</strong> de {activities.length} atividades exibidas</span><div className="schedule-legend" aria-label="Legenda"><span className="legend-delayed"><i />Atrasada</span><span className="legend-today"><i />Hoje</span><span className="legend-next"><i />Próxima</span><span className="legend-blocked"><i />Bloqueada</span><span className="legend-completed"><i />Concluída</span></div></footer></section>
+
+      <section className="schedule-metrics" aria-label="Indicadores do cronograma"><article className="schedule-metric-danger"><span><TriangleAlert aria-hidden="true" /></span><div><small>Atrasadas</small><strong>{overdue.length}</strong><p>Precisam de reprogramação</p></div></article><article className="schedule-metric-today"><span><CalendarClock aria-hidden="true" /></span><div><small>Em execução hoje</small><strong>{today.length}</strong><p>Data de referência: 24 ago</p></div></article><article className="schedule-metric-next"><span><ArrowRight aria-hidden="true" /></span><div><small>Próximos 7 dias</small><strong>{nextSevenDays}</strong><p>Entregas até 31 de agosto</p></div></article><article className="schedule-metric-blocked"><span><Pause aria-hidden="true" /></span><div><small>Bloqueadas</small><strong>{blocked.length}</strong><p>Aguardando decisão</p></div></article></section>
+
+      {view === "Agenda" && <section className="schedule-agenda" aria-labelledby="schedule-agenda-title"><header><div><p className="eyebrow">Agenda operacional</p><h2 id="schedule-agenda-title">Atividades por prioridade</h2><span>Itens críticos aparecem primeiro; concluídos ficam ao final.</span></div><time dateTime={WORKS_DEMO_DATE_ISO}><CalendarClock aria-hidden="true" />24 de agosto de 2026</time></header><div className="schedule-agenda-groups">{filteredActivities.length > 0 ? agendaGroups.map((group) => group.rows.length > 0 && <section key={group.id} className={`schedule-agenda-group schedule-group-${group.tone}`}><header><span><i />{group.title}</span><small>{group.description}</small><b>{group.rows.length}</b></header><div>{group.rows.sort((left, right) => left.endDateIso.localeCompare(right.endDateIso)).map((activity) => <article key={activity.id}><time dateTime={activity.endDateIso}><strong>{activity.endDateIso.slice(8, 10)}</strong><small>{new Intl.DateTimeFormat("pt-BR", { month: "short", timeZone: "UTC" }).format(new Date(`${activity.endDateIso}T12:00:00Z`)).replace(".", "").toUpperCase()}</small></time><div className="schedule-activity-identity"><small>{activity.workId} · {activity.stage}</small><strong>{activity.title}</strong><em>{activity.workTitle}</em>{activity.blockedReason && <p><TriangleAlert aria-hidden="true" />{activity.blockedReason}</p>}{activity.reprogramReason && <p><CalendarClock aria-hidden="true" />Reprogramada: {activity.reprogramReason}</p>}</div><div className="schedule-activity-context"><span><UsersRound aria-hidden="true" />{activity.manager}</span><span><Building2 aria-hidden="true" />{activity.property}</span></div><div className="schedule-activity-period"><small>Período</small><strong>{formatExpenseDate(activity.startDateIso)} — {formatExpenseDate(activity.endDateIso)}</strong></div><WorkDetailStatusBadge status={activity.status} /><div className="schedule-activity-actions">{activity.status !== "Concluída" && <button type="button" onClick={() => completeActivity(activity)}><Check aria-hidden="true" />Concluir</button>}<button type="button" onClick={() => setAction({ type: "reprogram", activity })}><CalendarClock aria-hidden="true" />Reprogramar</button><button type="button" className="schedule-open-work" onClick={() => openActivityWork(activity)} aria-label={`Abrir ${activity.workTitle}`}>Abrir obra<ArrowRight aria-hidden="true" /></button></div></article>)}</div></section>) : <div className="schedule-empty"><CompactEmptyState mark="00" title="Nenhuma atividade encontrada" description="Limpe ou ajuste os filtros para consultar outras atividades." /><button type="button" className="secondary-button button-with-icon" onClick={clearFilters}><RotateCcw aria-hidden="true" />Limpar filtros</button></div>}</div></section>}
+
+      {view === "Calendário" && <section className="schedule-calendar" aria-labelledby="schedule-calendar-title"><header><div><p className="eyebrow">Visão mensal</p><h2 id="schedule-calendar-title">Calendário de entregas</h2><span>As atividades são posicionadas pela data de conclusão.</span></div><div className="schedule-month-control"><button type="button" onClick={() => changeMonth(-1)} aria-label="Mês anterior"><ArrowRight aria-hidden="true" /></button><strong>{monthLabel}</strong><button type="button" onClick={() => changeMonth(1)} aria-label="Próximo mês"><ArrowRight aria-hidden="true" /></button></div></header><div className="schedule-calendar-weekdays"><span>Dom</span><span>Seg</span><span>Ter</span><span>Qua</span><span>Qui</span><span>Sex</span><span>Sáb</span></div><div className="schedule-calendar-grid">{calendarCells.map((cell) => { const dayActivities = filteredActivities.filter((activity) => activity.endDateIso === cell.dateIso); return <article key={cell.dateIso} className={`${cell.currentMonth ? "" : "outside"} ${cell.dateIso === WORKS_DEMO_DATE_ISO ? "today" : ""}`}><header><time dateTime={cell.dateIso}>{cell.day}</time>{dayActivities.length > 0 && <b>{dayActivities.length}</b>}</header><div>{dayActivities.slice(0, 3).map((activity) => { const tone = activity.status === "Concluída" ? "completed" : activity.status === "Bloqueada" ? "blocked" : activity.endDateIso < WORKS_DEMO_DATE_ISO ? "delayed" : activity.startDateIso <= WORKS_DEMO_DATE_ISO ? "today" : "next"; return <button type="button" key={activity.id} className={`calendar-activity-${tone}`} onClick={() => openActivityWork(activity)} title={`${activity.workId} · ${activity.title}`}><i /><span><strong>{activity.workId}</strong>{activity.title}</span></button>; })}{dayActivities.length > 3 && <button type="button" className="calendar-more" onClick={() => setView("Agenda")}>+{dayActivities.length - 3} atividades</button>}</div></article>; })}</div></section>}
+    </div>
+    {action && <WorksScheduleModal action={action} works={works} onClose={() => setAction(null)} onSubmit={handleScheduleSubmit} />}
+  </>;
+}
+
+function WorksScheduleModal({ action, works, onClose, onSubmit }: { action: NonNullable<WorkScheduleAction>; works: WorkRecord[]; onClose: () => void; onSubmit: (action: NonNullable<WorkScheduleAction>, data: FormData) => void }) {
+  const [selectedWorkId, setSelectedWorkId] = useState(works[0]?.id ?? "");
+  const [error, setError] = useState("");
+  const selectedWork = works.find((work) => work.id === selectedWorkId) ?? works[0];
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const startDate = String(data.get("startDateIso") ?? "");
+    const endDate = String(data.get("endDateIso") ?? "");
+    if (action.type === "new" && startDate && endDate && endDate < startDate) {
+      setError("A conclusão não pode ser anterior ao início da atividade.");
+      return;
+    }
+    setError("");
+    onSubmit(action, data);
+  };
+  return <div className="modal-layer" role="dialog" aria-modal="true" aria-label={action.type === "new" ? "Nova atividade" : "Reprogramar atividade"}><button type="button" className="drawer-backdrop" onClick={onClose} aria-label="Fechar formulário" /><form className="receipt-modal work-detail-modal schedule-activity-modal" onSubmit={handleSubmit}><ModalHeader eyebrow={action.type === "new" ? "Cronograma das obras" : action.activity.id} title={action.type === "new" ? "Nova atividade" : "Reprogramar atividade"} onClose={onClose} /><div className="work-detail-modal-body">{error && <InlineFieldError message={error} />}{action.type === "new" ? <div className="form-grid"><label className="full-field">Obra<select name="workId" value={selectedWorkId} onChange={(event) => setSelectedWorkId(event.target.value)} required>{works.map((work) => <option key={work.id} value={work.id}>{work.id} · {work.title}</option>)}</select></label><label>Etapa<select name="stage"><option>Preparação</option><option>Execução</option><option>Entrega</option></select></label><label>Responsável<select name="manager" defaultValue={selectedWork?.manager}>{WORK_TEAM_OPTIONS.map((member) => <option key={member.name}>{member.name}</option>)}</select></label><label className="full-field">Atividade<input name="title" placeholder="Ex.: Conferir acabamento do setor A" required /></label><label>Início<input name="startDateIso" type="date" defaultValue={WORKS_DEMO_DATE_ISO} onChange={() => setError("")} required /></label><label>Conclusão<input name="endDateIso" type="date" defaultValue={selectedWork?.endDateIso} onChange={() => setError("")} required /></label></div> : <div className="form-grid"><p className="work-detail-modal-context full-field"><strong>{action.activity.title}</strong>{action.activity.workId} · prazo atual em {formatExpenseDate(action.activity.endDateIso)}</p><label>Nova conclusão<input name="endDateIso" type="date" defaultValue={action.activity.endDateIso} min={action.activity.startDateIso} onChange={() => setError("")} required /></label><label className="full-field">Justificativa<textarea name="reason" rows={4} placeholder="Explique por que a data precisa ser alterada." required /></label></div>}</div><footer><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button type="submit" className="primary-button button-with-icon"><Check aria-hidden="true" />{action.type === "new" ? "Adicionar atividade" : "Salvar nova data"}</button></footer></form></div>;
+}
+
+function WorkDetailStatusBadge({ status }: { status: WorkActivityStatus }) {
+  const slug = status.toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, "-");
+  return <span className={`work-activity-status work-activity-${slug}`}><i />{status}</span>;
+}
+
+function WorkFinancialStatusBadge({ status }: { status: WorkFinancialEntry["status"] }) {
+  const slug = status.toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, "-");
+  return <span className={`work-financial-status work-financial-${slug}`}>{status}</span>;
+}
+
+function formatWorkDetailDateTime(value: string) {
+  const date = new Date(value);
+  return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(date).replace(".", "");
+}
+
+function WorkDetailPage({ work, onBack, onEdit, onOpenFinance, onUpdateWork, onNotify }: { work: WorkRecord; onBack: () => void; onEdit: () => void; onOpenFinance: () => void; onUpdateWork: (work: WorkRecord, message: string) => void; onNotify: (message: string, reference: string) => void }) {
+  const [tab, setTab] = useState<WorkDetailTab>("Resumo");
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [action, setAction] = useState<WorkDetailAction>(null);
+  const [activities, setActivities] = useState<WorkActivity[]>(() => createWorkDetailMock(work).activities);
+  const [team, setTeam] = useState<WorkTeamAllocation[]>(() => createWorkDetailMock(work).team);
+  const [financialEntries, setFinancialEntries] = useState<WorkFinancialEntry[]>(() => createWorkDetailMock(work).financialEntries);
+  const [journal, setJournal] = useState<WorkJournalEntry[]>(() => createWorkDetailMock(work).journal);
+  const [pendingItems, setPendingItems] = useState<WorkPendingItem[]>(() => createWorkDetailMock(work).pendingItems);
+  const tabs: Array<{ name: WorkDetailTab; icon: LucideIcon }> = [
+    { name: "Resumo", icon: LayoutDashboard },
+    { name: "Planejamento", icon: ClipboardList },
+    { name: "Equipe", icon: UsersRound },
+    { name: "Financeiro", icon: WalletCards },
+    { name: "Diário e arquivos", icon: FileSignature },
+  ];
+  const completedActivities = activities.filter((activity) => activity.status === "Concluída").length;
+  const activityProgress = activities.length ? Math.round((completedActivities / activities.length) * 100) : work.progress;
+  const blockedActivities = activities.filter((activity) => activity.status === "Bloqueada");
+  const selectedBudget = financialEntries.find((entry) => entry.kind === "Orçamento" && entry.status === "Selecionado")?.amount ?? work.budget;
+  const totalExpenses = financialEntries.filter((entry) => entry.kind === "Gasto").reduce((sum, entry) => sum + entry.amount, 0);
+  const paidExpenses = financialEntries.filter((entry) => entry.kind === "Gasto" && entry.status === "Pago").reduce((sum, entry) => sum + entry.amount, 0);
+  const cashAdjustments = financialEntries.filter((entry) => entry.kind === "Aporte" || entry.kind === "Ajuste").reduce((sum, entry) => sum + entry.amount, 0);
+  const availableCash = cashAdjustments - paidExpenses;
+  const teamCost = team.reduce((sum, allocation) => sum + allocation.quantity * allocation.unitRate, 0);
+  const nextActivity = activities.find((activity) => activity.status === "Em andamento") ?? activities.find((activity) => activity.status === "Não iniciada" || activity.status === "Bloqueada");
+  const displayPendingItems = [
+    ...pendingItems,
+    ...blockedActivities.filter((activity) => !pendingItems.some((item) => item.id === `BLOCK-${activity.id}`)).map((activity) => ({ id: `BLOCK-${activity.id}`, title: "Atividade bloqueada", description: `${activity.title}${activity.blockedReason ? ` · ${activity.blockedReason}` : ""}`, tone: "danger" as const })),
+  ];
+
+  const appendJournal = (entry: Omit<WorkJournalEntry, "id" | "dateIso">) => {
+    setJournal((current) => [{ ...entry, id: nextRecordId("DIA", current), dateIso: `${WORKS_DEMO_DATE_ISO}T12:00:00` }, ...current]);
+  };
+  const updateWorkStatus = (status: WorkStatus) => {
+    if ((status === "Concluída" || status === "Cancelada") && !window.confirm(`${status === "Concluída" ? "Concluir" : "Cancelar"} esta obra?`)) return;
+    const progress = status === "Concluída" ? 100 : work.progress;
+    const risk = status === "Concluída" ? "Concluída" : work.risk === "Concluída" ? "Dentro do prazo" : work.risk;
+    onUpdateWork({ ...work, status, progress, risk, updatedAtIso: `${WORKS_DEMO_DATE_ISO}T12:00:00`, lastUpdateLabel: "Atualizada agora nesta sessão" }, `Situação alterada para ${status}.`);
+    appendJournal({ kind: "Atualização", title: `Situação alterada para ${status}`, description: "Alteração manual registrada no detalhe da obra.", author: "Administrativo", progress, files: [] });
+    setActionsOpen(false);
+  };
+  const completeActivity = (activity: WorkActivity) => {
+    const nextActivities = activities.map((item) => item.id === activity.id ? { ...item, status: "Concluída" as const, blockedReason: undefined } : item);
+    setActivities(nextActivities);
+    const nextProgress = Math.round((nextActivities.filter((item) => item.status === "Concluída").length / Math.max(nextActivities.length, 1)) * 100);
+    onUpdateWork({ ...work, progress: nextProgress, nextActivity: nextActivities.find((item) => item.status !== "Concluída")?.title ?? "Entrega concluída", lastUpdateLabel: "Atualizada agora nesta sessão" }, "Atividade concluída e progresso recalculado.");
+    appendJournal({ kind: "Atualização", title: "Atividade concluída", description: activity.title, author: "Administrativo", progress: nextProgress, files: [] });
+  };
+  const removeTeamMember = (allocation: WorkTeamAllocation) => {
+    if (!window.confirm(`Remover ${allocation.name} da equipe desta obra?`)) return;
+    setTeam((current) => current.filter((item) => item.id !== allocation.id));
+    onNotify("Pessoa removida da equipe nesta sessão.", allocation.id);
+  };
+  const markExpensePaid = (entry: WorkFinancialEntry) => {
+    setFinancialEntries((current) => current.map((item) => item.id === entry.id ? { ...item, status: "Pago" } : item));
+    onUpdateWork({ ...work, spent: work.spent + entry.amount, projectedCashBalance: work.projectedCashBalance - entry.amount, lastUpdateLabel: "Atualizada agora nesta sessão" }, "Pagamento manual registrado.");
+    appendJournal({ kind: "Atualização", title: "Pagamento registrado", description: `${entry.description} · ${brl.format(entry.amount)}`, author: "Administrativo", files: [] });
+  };
+  const selectBudget = (entry: WorkFinancialEntry) => {
+    setFinancialEntries((current) => current.map((item) => item.kind === "Orçamento" ? { ...item, status: item.id === entry.id ? "Selecionado" : "Em análise" } : item));
+    onUpdateWork({ ...work, budget: entry.amount, projectedCashBalance: entry.amount + (work.reserve ?? 0) - work.spent, lastUpdateLabel: "Atualizada agora nesta sessão" }, "Orçamento selecionado para a obra.");
+  };
+  const handleActionSubmit = (submittedAction: NonNullable<WorkDetailAction>, formData: FormData) => {
+    const value = (name: string) => String(formData.get(name) ?? "").trim();
+    const amount = (name: string) => Number(formData.get(name) ?? 0);
+    if (submittedAction.type === "update") {
+      const progress = Math.min(100, Math.max(0, amount("progress")));
+      const kind = value("kind") as WorkJournalEntry["kind"];
+      const files = formData.getAll("files").filter((file): file is File => file instanceof File && file.size > 0).map((file) => file.name);
+      const entry = { kind, title: value("title"), description: value("description"), author: "Administrativo", progress, files };
+      appendJournal(entry);
+      if (kind === "Pendência") setPendingItems((current) => [{ id: nextRecordId("PEN", current), title: entry.title, description: entry.description, tone: "warning" }, ...current]);
+      onUpdateWork({ ...work, progress, nextActivity: value("nextActivity") || work.nextActivity, updatedAtIso: `${WORKS_DEMO_DATE_ISO}T12:00:00`, lastUpdateLabel: "Atualizada agora nesta sessão" }, "Atualização registrada no diário.");
+    }
+    if (submittedAction.type === "activity") {
+      const newActivity: WorkActivity = { id: nextRecordId("ATV", activities), stage: value("stage") as WorkActivity["stage"], title: value("title"), manager: value("manager"), startDateIso: value("startDateIso"), endDateIso: value("endDateIso"), status: "Não iniciada" };
+      setActivities((current) => [...current, newActivity]);
+      onNotify("Atividade adicionada ao planejamento.", newActivity.id);
+    }
+    if (submittedAction.type === "expense" || submittedAction.type === "budget") {
+      const newEntry: WorkFinancialEntry = { id: nextRecordId("FIN", financialEntries), kind: submittedAction.type === "expense" ? "Gasto" : "Orçamento", description: value("description"), party: value("party"), amount: amount("amount"), dateIso: value("dateIso"), status: submittedAction.type === "expense" ? "Previsto" : "Em análise" };
+      setFinancialEntries((current) => [newEntry, ...current]);
+      onNotify(submittedAction.type === "expense" ? "Gasto previsto adicionado." : "Orçamento adicionado para análise.", newEntry.id);
+    }
+    if (submittedAction.type === "team") {
+      const allocation: WorkTeamAllocation = { id: nextRecordId("EQP", team), name: value("name"), role: value("role"), startDateIso: value("startDateIso"), endDateIso: value("endDateIso"), workMode: value("workMode") as WorkTeamAllocation["workMode"], quantity: amount("quantity"), unitRate: amount("unitRate"), activityIds: [] };
+      setTeam((current) => [...current, allocation]);
+      onNotify("Pessoa adicionada à equipe da obra.", allocation.id);
+    }
+    if (submittedAction.type === "cash") {
+      const entry: WorkFinancialEntry = { id: nextRecordId("FIN", financialEntries), kind: value("kind") as "Aporte" | "Ajuste", description: value("description"), party: "Caixa administrativo", amount: amount("amount"), dateIso: value("dateIso"), status: "Registrado" };
+      setFinancialEntries((current) => [entry, ...current]);
+      onNotify("Movimento manual registrado no caixa da obra.", entry.id);
+    }
+    if (submittedAction.type === "block") {
+      setActivities((current) => current.map((item) => item.id === submittedAction.activity.id ? { ...item, status: "Bloqueada", blockedReason: value("reason") } : item));
+      appendJournal({ kind: "Pendência", title: "Atividade bloqueada", description: `${submittedAction.activity.title} · ${value("reason")}`, author: "Administrativo", files: [] });
+      onNotify("Bloqueio registrado no planejamento.", submittedAction.activity.id);
+    }
+    if (submittedAction.type === "reprogram") {
+      setActivities((current) => current.map((item) => item.id === submittedAction.activity.id ? { ...item, endDateIso: value("endDateIso") } : item));
+      appendJournal({ kind: "Atualização", title: "Atividade reprogramada", description: `${submittedAction.activity.title} · novo prazo ${formatExpenseDate(value("endDateIso"))}. Motivo: ${value("reason")}`, author: "Administrativo", files: [] });
+      onNotify("Nova data registrada no planejamento.", submittedAction.activity.id);
+    }
+    setAction(null);
+  };
+
+  return <>
+    <div className="work-detail-page">
+      <section className="work-detail-hero" aria-labelledby="work-detail-title">
+        <button type="button" className="work-detail-back" onClick={onBack}><ArrowRight aria-hidden="true" />Todas as obras</button>
+        <div className="work-detail-title"><p className="eyebrow">{work.id} · {work.interventionType ?? "Obra"}</p><div><h1 id="work-detail-title">{work.title}</h1><WorkStatusBadge status={work.status} /></div><p>{work.property}{work.unit ? ` · ${work.unit}` : " · Toda a área do imóvel"}</p></div>
+        <div className="work-detail-actions"><button type="button" className="primary-button button-with-icon" onClick={() => setAction({ type: "update" })}><Plus aria-hidden="true" />Registrar atualização</button><div className="work-detail-actions-menu"><button type="button" className="secondary-button" aria-label="Mais ações da obra" aria-expanded={actionsOpen} onClick={() => setActionsOpen((current) => !current)}><MoreHorizontal aria-hidden="true" /></button>{actionsOpen && <div role="menu"><button type="button" role="menuitem" onClick={() => { setActionsOpen(false); onEdit(); }}><PencilLine aria-hidden="true" />Editar cadastro</button>{work.status === "Pausada" ? <button type="button" role="menuitem" onClick={() => updateWorkStatus("Em andamento")}><Play aria-hidden="true" />Retomar obra</button> : work.status !== "Concluída" && work.status !== "Cancelada" ? <button type="button" role="menuitem" onClick={() => updateWorkStatus("Pausada")}><Pause aria-hidden="true" />Pausar obra</button> : null}{work.status !== "Concluída" && work.status !== "Cancelada" && <button type="button" role="menuitem" onClick={() => updateWorkStatus("Concluída")}><CircleCheck aria-hidden="true" />Concluir obra</button>}{work.status !== "Cancelada" && work.status !== "Concluída" && <button type="button" role="menuitem" className="danger" onClick={() => updateWorkStatus("Cancelada")}><Ban aria-hidden="true" />Cancelar obra</button>}</div>}</div></div>
+        <dl className="work-detail-hero-metrics">
+          <div><dt>Progresso</dt><dd>{work.progress}%</dd><i><b style={{ width: `${work.progress}%` }} /></i></div>
+          <div><dt>Prazo final</dt><dd>{work.endLabel}</dd><small className={`work-risk work-risk-${work.risk === "Em atraso" ? "danger" : work.risk === "Atenção" ? "warning" : "ok"}`}>{work.risk}</small></div>
+          <div><dt>Responsável</dt><dd>{work.manager}</dd><small>{team.length} pessoas alocadas</small></div>
+          <div><dt>Previsto</dt><dd>{brl.format(work.budget)}</dd><small>{brl.format(work.spent)} gasto</small></div>
+        </dl>
+      </section>
+
+      <nav className="work-detail-tabs" aria-label="Áreas da obra"><div>{tabs.map(({ name, icon: Icon }) => <button type="button" key={name} className={tab === name ? "active" : ""} aria-current={tab === name ? "page" : undefined} onClick={() => setTab(name)}><Icon aria-hidden="true" /><span>{name}</span>{name === "Planejamento" && blockedActivities.length > 0 ? <b>{blockedActivities.length}</b> : name === "Resumo" && displayPendingItems.length > 0 ? <b>{displayPendingItems.length}</b> : null}</button>)}</div></nav>
+
+      {tab === "Resumo" && <div className="work-detail-summary">
+        <section className="work-detail-decision-card" aria-labelledby="work-next-decision-title"><header><div><p className="eyebrow">Próxima decisão</p><h2 id="work-next-decision-title">{nextActivity?.title ?? "Planejamento concluído"}</h2></div><CalendarClock aria-hidden="true" /></header><div className="work-detail-decision-progress"><span className="work-detail-progress-ring" style={{ "--work-progress": `${work.progress * 3.6}deg` } as CSSProperties}><strong>{work.progress}%</strong><small>concluído</small></span><div><span>Prazo da atividade</span><strong>{nextActivity ? `${formatExpenseDate(nextActivity.startDateIso)} — ${formatExpenseDate(nextActivity.endDateIso)}` : "Sem próxima atividade"}</strong><small>{nextActivity?.manager ?? work.manager}</small>{nextActivity && <WorkDetailStatusBadge status={nextActivity.status} />}</div></div><footer><button type="button" onClick={() => { setTab("Planejamento"); setAction({ type: "activity" }); }}><Plus aria-hidden="true" />Adicionar atividade</button><button type="button" onClick={() => setAction({ type: "expense" })}><HandCoins aria-hidden="true" />Registrar gasto</button><button type="button" onClick={() => setAction({ type: "budget" })}><ClipboardList aria-hidden="true" />Adicionar orçamento</button></footer></section>
+        <section className="work-detail-finance-card" aria-labelledby="work-summary-finance-title"><header><div><p className="eyebrow">Financeiro</p><h2 id="work-summary-finance-title">Posição da obra</h2></div><WalletCards aria-hidden="true" /></header><dl><div><dt>Valor previsto</dt><dd>{brl.format(work.budget)}</dd></div><div><dt>Total gasto</dt><dd>{brl.format(work.spent)}</dd></div><div><dt>Saldo projetado</dt><dd className={work.projectedCashBalance < 0 ? "negative" : ""}>{brl.format(work.projectedCashBalance)}</dd></div><div><dt>Caixa disponível</dt><dd className={availableCash < 0 ? "negative" : ""}>{brl.format(availableCash)}</dd></div></dl><button type="button" onClick={() => setTab("Financeiro")}>Ver financeiro completo<ArrowRight aria-hidden="true" /></button></section>
+        <section className="work-detail-pending-card" aria-labelledby="work-pending-title"><header><div><p className="eyebrow">Atenção</p><h2 id="work-pending-title">Pendências e decisões</h2></div><b>{displayPendingItems.length}</b></header>{displayPendingItems.length ? <div>{displayPendingItems.slice(0, 4).map((item) => <article key={item.id} className={`work-detail-pending-${item.tone}`}><TriangleAlert aria-hidden="true" /><span><strong>{item.title}</strong><small>{item.description}</small></span>{pendingItems.some((pending) => pending.id === item.id) && <button type="button" onClick={() => setPendingItems((current) => current.filter((pending) => pending.id !== item.id))} aria-label={`Resolver ${item.title}`}><Check aria-hidden="true" /></button>}</article>)}</div> : <CompactEmptyState mark="✓" tone="success" title="Nenhuma pendência aberta" description="A obra não possui bloqueios ou decisões aguardando ação." />}</section>
+        <section className="work-detail-team-card" aria-labelledby="work-summary-team-title"><header><div><p className="eyebrow">Responsáveis</p><h2 id="work-summary-team-title">Equipe principal</h2></div><button type="button" onClick={() => setTab("Equipe")}>Ver equipe</button></header><div>{team.slice(0, 4).map((member) => <article key={member.id}><span>{member.name.split(" ").slice(0, 2).map((name) => name[0]).join("")}</span><div><strong>{member.name}</strong><small>{member.role}</small></div><em>{member.activityIds.length} atividades</em></article>)}</div><footer><span>Custo estimado da mão de obra</span><strong>{brl.format(teamCost)}</strong></footer></section>
+        <section className="work-detail-timeline-card" aria-labelledby="work-summary-history-title"><header><div><p className="eyebrow">Últimos registros</p><h2 id="work-summary-history-title">Atualizações recentes</h2></div><button type="button" onClick={() => setTab("Diário e arquivos")}>Ver diário</button></header><div>{journal.slice(0, 4).map((entry) => <article key={entry.id}><i className={`journal-${entry.kind.toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[\u0300-\u036f]/g, "")}`} /><div><strong>{entry.title}</strong><p>{entry.description}</p><small>{formatWorkDetailDateTime(entry.dateIso)} · {entry.author}{entry.files.length ? ` · ${entry.files.length} arquivo(s)` : ""}</small></div>{entry.progress !== undefined && <b>{entry.progress}%</b>}</article>)}</div></section>
+      </div>}
+
+      {tab === "Planejamento" && <section className="work-detail-tab-panel work-planning-panel" aria-labelledby="work-planning-title"><header><div><p className="eyebrow">Cronograma desta obra</p><h2 id="work-planning-title">Planejamento</h2><span>O progresso calculado pelas atividades está em <strong>{activityProgress}%</strong>.</span></div><button type="button" className="primary-button button-with-icon" onClick={() => setAction({ type: "activity" })}><Plus aria-hidden="true" />Nova atividade</button></header><div className="work-planning-stages">{(["Preparação", "Execução", "Entrega"] as WorkActivity["stage"][]).map((stage, stageIndex) => { const stageActivities = activities.filter((activity) => activity.stage === stage); return <section key={stage}><header><span>0{stageIndex + 1}</span><div><strong>{stage}</strong><small>{stageActivities.filter((activity) => activity.status === "Concluída").length} de {stageActivities.length} concluídas</small></div></header><div>{stageActivities.map((activity) => <article key={activity.id} className={activity.status === "Bloqueada" ? "blocked" : ""}><span className="work-planning-check">{activity.status === "Concluída" ? <Check aria-hidden="true" /> : stageIndex + 1}</span><div className="work-planning-identity"><small>{activity.id} · {activity.manager}</small><strong>{activity.title}</strong>{activity.blockedReason && <em><TriangleAlert aria-hidden="true" />{activity.blockedReason}</em>}</div><div className="work-planning-dates"><small>Período</small><strong>{formatExpenseDate(activity.startDateIso)} — {formatExpenseDate(activity.endDateIso)}</strong></div><WorkDetailStatusBadge status={activity.status} /><div className="work-planning-actions">{activity.status !== "Concluída" && <button type="button" onClick={() => completeActivity(activity)} title="Concluir atividade"><Check aria-hidden="true" /><span>Concluir</span></button>}{activity.status !== "Concluída" && activity.status !== "Bloqueada" && <button type="button" onClick={() => setAction({ type: "block", activity })} title="Bloquear atividade"><TriangleAlert aria-hidden="true" /><span>Bloquear</span></button>}<button type="button" onClick={() => setAction({ type: "reprogram", activity })} title="Reprogramar atividade"><CalendarClock aria-hidden="true" /><span>Reprogramar</span></button></div></article>)}</div></section>; })}</div></section>}
+
+      {tab === "Equipe" && <section className="work-detail-tab-panel work-team-panel" aria-labelledby="work-team-title"><header><div><p className="eyebrow">Alocação nesta obra</p><h2 id="work-team-title">Equipe</h2><span>{team.length} pessoas · custo estimado de <strong>{brl.format(teamCost)}</strong></span></div><button type="button" className="primary-button button-with-icon" onClick={() => setAction({ type: "team" })}><Plus aria-hidden="true" />Adicionar pessoa</button></header><div className="work-team-list">{team.map((member) => <article key={member.id}><span className="work-team-avatar">{member.name.split(" ").slice(0, 2).map((name) => name[0]).join("")}</span><div className="work-team-identity"><small>{member.id}</small><strong>{member.name}</strong><em>{member.role}</em></div><div><small>Participação</small><strong>{formatExpenseDate(member.startDateIso)} — {formatExpenseDate(member.endDateIso)}</strong></div><div><small>Apontamento</small><strong>{member.quantity} {member.workMode.toLocaleLowerCase("pt-BR")}</strong><em>{brl.format(member.unitRate)} por unidade</em></div><div><small>Custo estimado</small><strong>{brl.format(member.quantity * member.unitRate)}</strong><em>{member.activityIds.length} atividades relacionadas</em></div><button type="button" className="work-team-remove" onClick={() => removeTeamMember(member)} aria-label={`Remover ${member.name}`}><Trash2 aria-hidden="true" /></button></article>)}</div></section>}
+
+      {tab === "Financeiro" && <section className="work-detail-tab-panel work-finance-panel" aria-labelledby="work-finance-title"><header><div><p className="eyebrow">Controle manual</p><h2 id="work-finance-title">Financeiro da obra</h2><span>Orçamentos, gastos e caixa reunidos sem integração bancária.</span></div><div><button type="button" className="secondary-button" onClick={() => setAction({ type: "budget" })}>Novo orçamento</button><button type="button" className="primary-button button-with-icon" onClick={() => setAction({ type: "expense" })}><Plus aria-hidden="true" />Registrar gasto</button></div></header><div className="work-finance-metrics"><article><span>Orçamento selecionado</span><strong>{brl.format(selectedBudget)}</strong><small>{financialEntries.filter((entry) => entry.kind === "Orçamento").length} propostas cadastradas</small></article><article><span>Gastos lançados</span><strong>{brl.format(totalExpenses)}</strong><small>{brl.format(paidExpenses)} já pagos</small></article><article><span>Caixa disponível</span><strong className={availableCash < 0 ? "negative" : ""}>{brl.format(availableCash)}</strong><small>Aportes e pagamentos manuais</small></article><article><span>Saldo projetado</span><strong className={work.projectedCashBalance < 0 ? "negative" : ""}>{brl.format(work.projectedCashBalance)}</strong><small>Previsão do cadastro</small></article></div><div className="work-finance-toolbar"><button type="button" onClick={() => setAction({ type: "cash" })}><Plus aria-hidden="true" />Aporte ou ajuste de caixa</button><button type="button" onClick={onOpenFinance}>Abrir página Financeiro<ArrowRight aria-hidden="true" /></button></div><div className="work-finance-list">{financialEntries.map((entry) => <article key={entry.id}><span className={`work-finance-kind work-finance-kind-${entry.kind.toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[\u0300-\u036f]/g, "")}`}>{entry.kind === "Gasto" ? <HandCoins aria-hidden="true" /> : entry.kind === "Orçamento" ? <ClipboardList aria-hidden="true" /> : <WalletCards aria-hidden="true" />}</span><div><small>{entry.id} · {formatExpenseDate(entry.dateIso)}</small><strong>{entry.description}</strong><em>{entry.party}</em></div><b>{brl.format(entry.amount)}</b><WorkFinancialStatusBadge status={entry.status} /><span className="work-finance-row-action">{entry.kind === "Gasto" && entry.status !== "Pago" ? <button type="button" onClick={() => markExpensePaid(entry)}>Marcar pago</button> : entry.kind === "Orçamento" && entry.status !== "Selecionado" ? <button type="button" onClick={() => selectBudget(entry)}>Selecionar</button> : null}</span></article>)}</div><aside className="work-finance-manual-note"><WifiOff aria-hidden="true" /><span><strong>Sem integração bancária</strong>Todos os pagamentos, aportes e ajustes desta demonstração são registrados manualmente e permanecem somente na sessão.</span></aside></section>}
+
+      {tab === "Diário e arquivos" && <section className="work-detail-tab-panel work-journal-panel" aria-labelledby="work-journal-title"><header><div><p className="eyebrow">Histórico da execução</p><h2 id="work-journal-title">Diário e arquivos</h2><span>Registros anteriores são preservados e exibidos em ordem cronológica.</span></div><button type="button" className="primary-button button-with-icon" onClick={() => setAction({ type: "update" })}><Plus aria-hidden="true" />Nova atualização</button></header><div className="work-journal-layout"><div className="work-journal-timeline">{journal.map((entry) => <article key={entry.id}><time dateTime={entry.dateIso}><strong>{formatWorkDetailDateTime(entry.dateIso).split(" ").slice(0, 2).join(" ")}</strong><small>{formatWorkDetailDateTime(entry.dateIso).split(" ").slice(-1)}</small></time><i className={`journal-${entry.kind.toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[\u0300-\u036f]/g, "")}`} /><div><header><span>{entry.kind}</span>{entry.progress !== undefined && <b>{entry.progress}%</b>}</header><h3>{entry.title}</h3><p>{entry.description}</p><small>{entry.author}</small>{entry.files.length > 0 && <ul>{entry.files.map((file) => <li key={file}><Paperclip aria-hidden="true" />{file}</li>)}</ul>}</div></article>)}</div><aside className="work-journal-files"><header><Paperclip aria-hidden="true" /><div><strong>Arquivos da obra</strong><small>{journal.reduce((total, entry) => total + entry.files.length, 0)} referências no diário</small></div></header>{journal.flatMap((entry) => entry.files.map((file) => ({ file, entry }))).map(({ file, entry }) => <article key={`${entry.id}-${file}`}><FileSignature aria-hidden="true" /><span><strong>{file}</strong><small>{entry.title}</small></span></article>)}</aside></div></section>}
+    </div>
+    {action && <WorkDetailActionModal action={action} work={work} onClose={() => setAction(null)} onSubmit={handleActionSubmit} />}
+  </>;
+}
+
+function WorkDetailActionModal({ action, work, onClose, onSubmit }: { action: NonNullable<WorkDetailAction>; work: WorkRecord; onClose: () => void; onSubmit: (action: NonNullable<WorkDetailAction>, data: FormData) => void }) {
+  const targetActivity = "activity" in action ? action.activity : null;
+  const presentation: Record<NonNullable<WorkDetailAction>["type"], { eyebrow: string; title: string; submit: string }> = {
+    update: { eyebrow: "Diário da obra", title: "Registrar atualização", submit: "Salvar atualização" },
+    activity: { eyebrow: "Planejamento", title: "Adicionar atividade", submit: "Adicionar atividade" },
+    expense: { eyebrow: "Financeiro", title: "Registrar gasto", submit: "Adicionar gasto" },
+    budget: { eyebrow: "Financeiro", title: "Adicionar orçamento", submit: "Adicionar orçamento" },
+    team: { eyebrow: "Equipe", title: "Adicionar pessoa", submit: "Adicionar à equipe" },
+    cash: { eyebrow: "Caixa da obra", title: "Registrar aporte ou ajuste", submit: "Registrar movimento" },
+    block: { eyebrow: targetActivity?.id ?? work.id, title: "Bloquear atividade", submit: "Registrar bloqueio" },
+    reprogram: { eyebrow: targetActivity?.id ?? work.id, title: "Reprogramar atividade", submit: "Salvar nova data" },
+  };
+  const copy = presentation[action.type];
+  return <div className="modal-layer" role="dialog" aria-modal="true" aria-label={copy.title}><button type="button" className="drawer-backdrop" onClick={onClose} aria-label="Fechar formulário" /><form className="receipt-modal work-detail-modal" onSubmit={(event) => { event.preventDefault(); onSubmit(action, new FormData(event.currentTarget)); }}><ModalHeader eyebrow={copy.eyebrow} title={copy.title} onClose={onClose} /><div className="work-detail-modal-body">
+    {action.type === "update" && <div className="form-grid"><label>Tipo de registro<select name="kind" defaultValue="Atualização"><option>Atualização</option><option>Ocorrência</option><option>Pendência</option><option>Arquivo</option></select></label><label>Progresso atual (%)<input name="progress" type="number" min="0" max="100" defaultValue={work.progress} required /></label><label className="full-field">Título<input name="title" placeholder="Ex.: Setor B concluído" required /></label><label className="full-field">Descrição<textarea name="description" rows={4} placeholder="O que aconteceu e qual é o próximo passo?" required /></label><label className="full-field">Próxima atividade<input name="nextActivity" defaultValue={work.nextActivity} required /></label><label className="full-field">Fotos ou arquivos<input name="files" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" /><small>Somente os nomes dos arquivos serão mantidos nesta demonstração.</small></label></div>}
+    {action.type === "activity" && <div className="form-grid"><label>Etapa<select name="stage" defaultValue="Execução"><option>Preparação</option><option>Execução</option><option>Entrega</option></select></label><label>Responsável<select name="manager" defaultValue={work.manager}>{WORK_TEAM_OPTIONS.map((member) => <option key={member.name}>{member.name}</option>)}</select></label><label className="full-field">Atividade<input name="title" placeholder="Ex.: Teste e conferência final" required /></label><label>Início<input name="startDateIso" type="date" defaultValue={WORKS_DEMO_DATE_ISO} required /></label><label>Conclusão<input name="endDateIso" type="date" defaultValue={work.endDateIso} required /></label></div>}
+    {(action.type === "expense" || action.type === "budget") && <div className="form-grid"><label className="full-field">Descrição<input name="description" placeholder={action.type === "expense" ? "Ex.: Segunda medição da execução" : "Ex.: Proposta para execução completa"} required /></label><label>{action.type === "expense" ? "Fornecedor" : "Empresa proponente"}<input name="party" required /></label><label>Valor<input name="amount" type="number" min="0.01" step="0.01" required /></label><label>Data<input name="dateIso" type="date" defaultValue={WORKS_DEMO_DATE_ISO} required /></label></div>}
+    {action.type === "team" && <div className="form-grid"><label>Pessoa<select name="name" defaultValue="Lucas Rocha">{WORK_TEAM_OPTIONS.map((member) => <option key={member.name}>{member.name}</option>)}</select></label><label>Função<input name="role" placeholder="Ex.: Técnico de manutenção" required /></label><label>Início<input name="startDateIso" type="date" defaultValue={WORKS_DEMO_DATE_ISO} required /></label><label>Fim<input name="endDateIso" type="date" defaultValue={work.endDateIso} required /></label><label>Forma de apontamento<select name="workMode"><option>Horas</option><option>Diárias</option></select></label><label>Quantidade<input name="quantity" type="number" min="0" step="0.5" required /></label><label>Valor por unidade<input name="unitRate" type="number" min="0" step="0.01" required /></label></div>}
+    {action.type === "cash" && <div className="form-grid"><label>Tipo<select name="kind"><option>Aporte</option><option>Ajuste</option></select></label><label>Data<input name="dateIso" type="date" defaultValue={WORKS_DEMO_DATE_ISO} required /></label><label className="full-field">Descrição<input name="description" placeholder="Ex.: Complemento autorizado para materiais" required /></label><label>Valor<input name="amount" type="number" step="0.01" required /></label></div>}
+    {action.type === "block" && <div className="form-grid"><p className="work-detail-modal-context full-field"><strong>{action.activity.title}</strong>O motivo ficará visível no planejamento e no diário.</p><label className="full-field">Motivo do bloqueio<textarea name="reason" rows={4} placeholder="Explique o que impede a continuidade." required /></label></div>}
+    {action.type === "reprogram" && <div className="form-grid"><p className="work-detail-modal-context full-field"><strong>{action.activity.title}</strong>Prazo atual: {formatExpenseDate(action.activity.endDateIso)}</p><label>Nova conclusão<input name="endDateIso" type="date" defaultValue={action.activity.endDateIso} required /></label><label className="full-field">Justificativa<textarea name="reason" rows={3} placeholder="Por que a data está sendo alterada?" required /></label></div>}
+  </div><footer><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button type="submit" className="primary-button button-with-icon"><Check aria-hidden="true" />{copy.submit}</button></footer></form></div>;
+}
+
+function WorkFormPage({ work, works, properties, units, onCancel, onSave }: { work: WorkRecord | null; works: WorkRecord[]; properties: Property[]; units: Unit[]; onCancel: () => void; onSave: (work: WorkRecord) => void }) {
+  const [step, setStep] = useState(1);
+  const [dirty, setDirty] = useState(false);
+  const [errors, setErrors] = useState<WorkFormErrors>({});
+  const [draft, setDraft] = useState<WorkFormDraft>(() => ({
+    interventionType: work?.interventionType ?? "Obra",
+    title: work?.title ?? "",
+    property: work?.property ?? "",
+    unit: work?.unit ?? "",
+    description: work?.description ?? "",
+    priority: work?.priority ?? "Média",
+    manager: work?.manager ?? "",
+    team: work?.team ?? [],
+    startDateIso: work?.startDateIso ?? WORKS_DEMO_DATE_ISO,
+    endDateIso: work?.endDateIso ?? "",
+    status: work?.status ?? "Planejada",
+    budget: work ? String(work.budget) : "",
+    reserve: work?.reserve ? String(work.reserve) : "",
+    notes: work?.notes ?? "",
+    attachments: work?.attachments ?? [],
+  }));
+  const availableUnits = units.filter((unit) => unit.property === draft.property);
+  const selectedProperty = properties.find((property) => property.name === draft.property);
+  const isEditing = Boolean(work);
+  const steps = [
+    { number: 1, title: "Dados da obra", description: "O que será feito" },
+    { number: 2, title: "Responsáveis e prazos", description: "Quem e quando" },
+    { number: 3, title: "Valores e revisão", description: "Quanto e confirmação" },
+  ];
+
+  const clearErrors = (...keys: WorkFormErrorKey[]) => {
+    setErrors((current) => {
+      const next = { ...current };
+      keys.forEach((key) => delete next[key]);
+      return next;
+    });
+  };
+  const updateDraft = <K extends keyof WorkFormDraft>(key: K, value: WorkFormDraft[K]) => {
+    setDraft((current) => ({ ...current, [key]: value }));
+    setDirty(true);
+    clearErrors(key, ...(key === "startDateIso" || key === "endDateIso" ? ["dateRange" as const] : []));
+  };
+  const updateProperty = (property: string) => {
+    setDraft((current) => ({ ...current, property, unit: units.some((unit) => unit.property === property && unit.name === current.unit) ? current.unit : "" }));
+    setDirty(true);
+    clearErrors("property", "unit");
+  };
+  const updateManager = (manager: string) => {
+    setDraft((current) => ({ ...current, manager, team: current.team.filter((member) => member !== manager) }));
+    setDirty(true);
+    clearErrors("manager", "team");
+  };
+  const toggleTeamMember = (member: string) => {
+    updateDraft("team", draft.team.includes(member) ? draft.team.filter((name) => name !== member) : [...draft.team, member]);
+  };
+  const validateStep = (targetStep: number) => {
+    const nextErrors: WorkFormErrors = {};
+    if (targetStep === 1) {
+      if (!draft.title.trim()) nextErrors.title = "Informe um nome curto para identificar a obra.";
+      if (!draft.property) nextErrors.property = "Selecione o imóvel onde o serviço será realizado.";
+      if (draft.unit && !units.some((unit) => unit.property === draft.property && unit.name === draft.unit)) nextErrors.unit = "Selecione uma unidade pertencente ao imóvel escolhido.";
+    }
+    if (targetStep === 2) {
+      if (!draft.manager) nextErrors.manager = "Selecione a pessoa responsável pela obra.";
+      if (!draft.startDateIso) nextErrors.startDateIso = "Informe a data prevista para o início.";
+      if (!draft.endDateIso) nextErrors.endDateIso = "Informe a data prevista para a conclusão.";
+      if (draft.startDateIso && draft.endDateIso && draft.endDateIso < draft.startDateIso) nextErrors.dateRange = "A conclusão não pode ser anterior ao início.";
+    }
+    if (targetStep === 3) {
+      const budget = Number(draft.budget);
+      const reserve = draft.reserve ? Number(draft.reserve) : 0;
+      if (!draft.budget || !Number.isFinite(budget) || budget <= 0) nextErrors.budget = "Informe um valor previsto maior que zero.";
+      if (!Number.isFinite(reserve) || reserve < 0) nextErrors.reserve = "A reserva não pode ter valor negativo.";
+    }
+    setErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
+  };
+  const handleCancel = () => {
+    if (dirty && !window.confirm("Descartar as alterações desta obra?")) return;
+    onCancel();
+  };
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!validateStep(step)) return;
+    if (step < 3) {
+      setStep((current) => current + 1);
+      return;
+    }
+    const budget = Number(draft.budget);
+    const reserve = draft.reserve ? Number(draft.reserve) : 0;
+    const spent = work?.spent ?? 0;
+    const financesChanged = !work || budget !== work.budget || reserve !== (work.reserve ?? 0);
+    const progress = draft.status === "Concluída" ? 100 : work?.progress ?? (draft.status === "Em andamento" ? 5 : 0);
+    const risk = draft.status === "Concluída" ? "Concluída" : draft.endDateIso < WORKS_DEMO_DATE_ISO && draft.status !== "Cancelada" ? "Em atraso" : "Dentro do prazo";
+    onSave({
+      id: work?.id ?? nextRecordId("OBR", works),
+      title: draft.title.trim(),
+      property: draft.property,
+      unit: draft.unit || undefined,
+      manager: draft.manager,
+      status: draft.status,
+      priority: draft.priority,
+      risk,
+      progress,
+      startDateIso: draft.startDateIso,
+      endDateIso: draft.endDateIso,
+      endLabel: formatExpenseDate(draft.endDateIso),
+      updatedAtIso: `${WORKS_DEMO_DATE_ISO}T12:00:00`,
+      budget,
+      spent,
+      projectedCashBalance: financesChanged ? budget + reserve - spent : work?.projectedCashBalance ?? budget + reserve - spent,
+      nextActivity: work?.nextActivity ?? (draft.status === "Em andamento" ? "Registrar primeira atividade" : "Definir planejamento inicial"),
+      lastUpdateLabel: isEditing ? "Atualizada agora nesta sessão" : "Cadastrada agora nesta sessão",
+      interventionType: draft.interventionType,
+      description: draft.description.trim() || undefined,
+      reserve,
+      team: draft.team,
+      notes: draft.notes.trim() || undefined,
+      attachments: draft.attachments,
+    });
+  };
+
+  const firstError = Object.values(errors)[0];
+  return <div className="work-form-page">
+    <section className="work-form-heading" aria-labelledby="work-form-title">
+      <button type="button" className="work-form-back" onClick={handleCancel}><ArrowRight aria-hidden="true" />Voltar para obras</button>
+      <div><p className="eyebrow">Módulo 2 · Gestão de Obras</p><span className="work-form-mode">{isEditing ? work?.id : "Novo cadastro"}</span><h1 id="work-form-title">{isEditing ? "Editar obra" : "Nova obra"}</h1><p>{isEditing ? "Atualize somente o que mudou. Os dados ficam disponíveis durante esta sessão." : "Cadastre o essencial agora. O restante poderá ser detalhado dentro da obra."}</p></div>
+      <button type="button" className="secondary-button work-form-cancel" onClick={handleCancel}>Cancelar</button>
+    </section>
+
+    <nav className="work-form-stepper" aria-label="Etapas do cadastro">
+      <ol>{steps.map((item) => <li key={item.number} className={`${item.number === step ? "active" : ""} ${item.number < step ? "completed" : ""}`}><button type="button" disabled={item.number > step} aria-current={item.number === step ? "step" : undefined} onClick={() => { if (item.number < step) { setStep(item.number); setErrors({}); } }}><span>{item.number < step ? <Check aria-hidden="true" /> : item.number}</span><strong>{item.title}</strong><small>{item.description}</small></button></li>)}</ol>
+    </nav>
+
+    <form className="work-form-shell" onSubmit={handleSubmit} noValidate>
+      <section className="work-form-card" aria-labelledby={`work-form-step-${step}`}>
+        <header><span>0{step}</span><div><h2 id={`work-form-step-${step}`}>{steps[step - 1].title}</h2><p>{step === 1 ? "Comece pelas informações que ajudam a localizar e entender a obra." : step === 2 ? "Defina uma referência principal e o prazo planejado." : "Informe a previsão inicial e confira o resumo antes de salvar."}</p></div></header>
+        {firstError && <p className="work-form-alert" role="alert"><TriangleAlert aria-hidden="true" />Revise os campos indicados antes de continuar.</p>}
+
+        {step === 1 && <div className="work-form-grid">
+          <label><span>Tipo de intervenção <b>*</b></span><select value={draft.interventionType} onChange={(event) => updateDraft("interventionType", event.target.value as WorkInterventionType)}>{WORK_INTERVENTION_OPTIONS.map((type) => <option key={type}>{type}</option>)}</select></label>
+          <label className="work-form-field-wide"><span>Nome da obra <b>*</b></span><input className={errors.title ? "invalid" : ""} value={draft.title} maxLength={100} onChange={(event) => updateDraft("title", event.target.value)} placeholder="Ex.: Reforma da cobertura" autoFocus aria-invalid={Boolean(errors.title)} />{errors.title && <small className="work-form-error">{errors.title}</small>}</label>
+          <label><span>Imóvel <b>*</b></span><select className={errors.property ? "invalid" : ""} value={draft.property} onChange={(event) => updateProperty(event.target.value)} aria-invalid={Boolean(errors.property)}><option value="">Selecione um imóvel</option>{properties.map((property) => <option key={property.id} value={property.name}>{property.name}</option>)}</select>{errors.property && <small className="work-form-error">{errors.property}</small>}{selectedProperty && <small>{selectedProperty.address}</small>}</label>
+          <label><span>Unidade <em>opcional</em></span><select className={errors.unit ? "invalid" : ""} value={draft.unit} disabled={!draft.property || availableUnits.length === 0} onChange={(event) => updateDraft("unit", event.target.value)} aria-invalid={Boolean(errors.unit)}><option value="">{availableUnits.length ? "Toda a área do imóvel" : "Nenhuma unidade cadastrada"}</option>{availableUnits.map((unit) => <option key={unit.id}>{unit.name}</option>)}</select>{errors.unit && <small className="work-form-error">{errors.unit}</small>}</label>
+          <label className="work-form-field-wide"><span>Descrição curta <em>opcional</em></span><textarea value={draft.description} maxLength={240} rows={3} onChange={(event) => updateDraft("description", event.target.value)} placeholder="Resuma o objetivo e o escopo principal." /><small>{draft.description.length}/240 caracteres</small></label>
+          <label><span>Prioridade <b>*</b></span><select value={draft.priority} onChange={(event) => updateDraft("priority", event.target.value as WorkPriority)}>{WORK_PRIORITY_OPTIONS.map((priority) => <option key={priority}>{priority}</option>)}</select></label>
+        </div>}
+
+        {step === 2 && <div className="work-form-grid">
+          <label><span>Responsável principal <b>*</b></span><select className={errors.manager ? "invalid" : ""} value={draft.manager} onChange={(event) => updateManager(event.target.value)} aria-invalid={Boolean(errors.manager)}><option value="">Selecione uma pessoa</option>{WORK_TEAM_OPTIONS.map((member) => <option key={member.name}>{member.name}</option>)}</select>{errors.manager && <small className="work-form-error">{errors.manager}</small>}</label>
+          <label><span>Situação inicial <b>*</b></span><select value={draft.status} onChange={(event) => updateDraft("status", event.target.value as WorkStatus)}>{(isEditing ? ["Planejada", "Em andamento", "Pausada", "Concluída", "Cancelada"] : ["Planejada", "Em andamento"]).map((status) => <option key={status}>{status}</option>)}</select></label>
+          <label><span>Início previsto <b>*</b></span><input type="date" className={errors.startDateIso || errors.dateRange ? "invalid" : ""} value={draft.startDateIso} onChange={(event) => updateDraft("startDateIso", event.target.value)} aria-invalid={Boolean(errors.startDateIso || errors.dateRange)} />{errors.startDateIso && <small className="work-form-error">{errors.startDateIso}</small>}</label>
+          <label><span>Conclusão prevista <b>*</b></span><input type="date" className={errors.endDateIso || errors.dateRange ? "invalid" : ""} value={draft.endDateIso} min={draft.startDateIso || undefined} onChange={(event) => updateDraft("endDateIso", event.target.value)} aria-invalid={Boolean(errors.endDateIso || errors.dateRange)} />{errors.endDateIso && <small className="work-form-error">{errors.endDateIso}</small>}{errors.dateRange && <small className="work-form-error">{errors.dateRange}</small>}</label>
+          <fieldset className="work-form-team work-form-field-full"><legend>Equipe adicional <em>opcional</em></legend><p>Selecione apenas quem precisa acompanhar a execução.</p><div>{WORK_TEAM_OPTIONS.filter((member) => member.name !== draft.manager).map((member) => <label key={member.name} className={draft.team.includes(member.name) ? "selected" : ""}><input type="checkbox" checked={draft.team.includes(member.name)} onChange={() => toggleTeamMember(member.name)} /><span><strong>{member.name}</strong><small>{member.role}</small></span><Check aria-hidden="true" /></label>)}</div></fieldset>
+        </div>}
+
+        {step === 3 && <>
+          <div className="work-form-grid">
+            <label><span>Valor previsto <b>*</b></span><div className="work-form-money"><b>R$</b><input type="number" min="0" step="0.01" className={errors.budget ? "invalid" : ""} value={draft.budget} onChange={(event) => updateDraft("budget", event.target.value)} placeholder="0,00" aria-invalid={Boolean(errors.budget)} /></div>{errors.budget && <small className="work-form-error">{errors.budget}</small>}</label>
+            <label><span>Reserva de contingência <em>opcional</em></span><div className="work-form-money"><b>R$</b><input type="number" min="0" step="0.01" className={errors.reserve ? "invalid" : ""} value={draft.reserve} onChange={(event) => updateDraft("reserve", event.target.value)} placeholder="0,00" aria-invalid={Boolean(errors.reserve)} /></div>{errors.reserve && <small className="work-form-error">{errors.reserve}</small>}</label>
+            <label className="work-form-field-wide"><span>Observações <em>opcional</em></span><textarea value={draft.notes} maxLength={500} rows={4} onChange={(event) => updateDraft("notes", event.target.value)} placeholder="Registre restrições, acordos ou orientações importantes." /><small>{draft.notes.length}/500 caracteres</small></label>
+            <div className="work-form-upload work-form-field-wide"><p className="work-form-upload-label">Anexos de referência <em>opcional</em></p><label className="work-form-upload-drop"><input type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" onChange={(event) => updateDraft("attachments", Array.from(event.target.files ?? []).map((file) => file.name))} /><span><ArrowDownToLine aria-hidden="true" /><strong>Escolher arquivos</strong><small>PDF, imagens ou documentos. Nesta demonstração, somente os nomes são mantidos.</small></span></label>{draft.attachments.length > 0 && <ul>{draft.attachments.map((attachment) => <li key={attachment}><FileSignature aria-hidden="true" /><span>{attachment}</span><button type="button" onClick={() => updateDraft("attachments", draft.attachments.filter((name) => name !== attachment))} aria-label={`Remover ${attachment}`}><X aria-hidden="true" /></button></li>)}</ul>}</div>
+          </div>
+          <section className="work-form-review" aria-labelledby="work-form-review-title"><header><div><p className="eyebrow">Conferência rápida</p><h3 id="work-form-review-title">Resumo da obra</h3></div><CircleCheck aria-hidden="true" /></header><dl><div><dt>Intervenção</dt><dd>{draft.interventionType} · {draft.priority}</dd><small>{draft.title}</small></div><div><dt>Local</dt><dd>{draft.property}</dd><small>{draft.unit || "Toda a área do imóvel"}</small></div><div><dt>Responsável</dt><dd>{draft.manager}</dd><small>{draft.team.length ? `+ ${draft.team.length} na equipe` : "Sem equipe adicional"}</small></div><div><dt>Prazo</dt><dd>{draft.startDateIso ? formatExpenseDate(draft.startDateIso) : "Não informado"}</dd><small>até {draft.endDateIso ? formatExpenseDate(draft.endDateIso) : "não informado"}</small></div><div><dt>Previsão total</dt><dd>{draft.budget ? brl.format(Number(draft.budget) + Number(draft.reserve || 0)) : "Não informada"}</dd><small>Valor previsto + reserva</small></div><div><dt>Situação</dt><dd><WorkStatusBadge status={draft.status} /></dd><small>{draft.attachments.length ? `${draft.attachments.length} anexo(s)` : "Sem anexos"}</small></div></dl><p><WifiOff aria-hidden="true" /><span><strong>Cadastro demonstrativo</strong>As informações ficam somente na memória desta sessão e não são enviadas a bancos ou integrações externas.</span></p></section>
+        </>}
+      </section>
+
+      <footer className="work-form-footer"><div><strong>Etapa {step} de 3</strong><span>{step === 3 ? "Revise e confirme o cadastro." : "Você poderá voltar sem perder o preenchimento."}</span></div><div><button type="button" className="secondary-button" disabled={step === 1} onClick={() => { setStep((current) => Math.max(1, current - 1)); setErrors({}); }}>Voltar</button><button type="submit" className="primary-button button-with-icon">{step === 3 ? <><Check aria-hidden="true" />{isEditing ? "Salvar alterações" : "Cadastrar obra"}</> : <>Avançar<ArrowRight aria-hidden="true" /></>}</button></div></footer>
+    </form>
+  </div>;
 }
 
 function DashboardPage({ charges, negotiations, expenses, properties, units, contracts, onNavigate }: { charges: Charge[]; negotiations: Record<string, ChargeNegotiation>; expenses: Expense[]; properties: Property[]; units: Unit[]; contracts: Contract[]; onNavigate: (page: Page, status?: string) => void }) {
