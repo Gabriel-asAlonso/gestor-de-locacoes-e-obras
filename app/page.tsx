@@ -2471,6 +2471,11 @@ function WorkFormPage({ work, works, properties, units, onCancel, onSave }: { wo
     { number: 3, title: "Valores e revisão", description: "Quanto e confirmação" },
   ];
 
+  useEffect(() => {
+    if (Object.keys(errors).length === 0) return;
+    window.requestAnimationFrame(() => document.querySelector<HTMLElement>(".work-form-card .invalid")?.focus());
+  }, [errors]);
+
   const clearErrors = (...keys: WorkFormErrorKey[]) => {
     setErrors((current) => {
       const next = { ...current };
@@ -2570,7 +2575,6 @@ function WorkFormPage({ work, works, properties, units, onCancel, onSave }: { wo
     <section className="work-form-heading" aria-labelledby="work-form-title">
       <button type="button" className="work-form-back" onClick={handleCancel}><ArrowRight aria-hidden="true" />Voltar para obras</button>
       <div><p className="eyebrow">Módulo 2 · Gestão de Obras</p><span className="work-form-mode">{isEditing ? work?.id : "Novo cadastro"}</span><h1 id="work-form-title">{isEditing ? "Editar obra" : "Nova obra"}</h1><p>{isEditing ? "Atualize somente o que mudou. Os dados ficam disponíveis durante esta sessão." : "Cadastre o essencial agora. O restante poderá ser detalhado dentro da obra."}</p></div>
-      <button type="button" className="secondary-button work-form-cancel" onClick={handleCancel}>Cancelar</button>
     </section>
 
     <nav className="work-form-stepper" aria-label="Etapas do cadastro">
@@ -2580,22 +2584,22 @@ function WorkFormPage({ work, works, properties, units, onCancel, onSave }: { wo
     <form className="work-form-shell" onSubmit={handleSubmit} noValidate>
       <div className="work-form-workspace">
         <section className="work-form-card" aria-labelledby={`work-form-step-${step}`}>
-        <header><span>0{step}</span><div><h2 id={`work-form-step-${step}`}>{steps[step - 1].title}</h2><p>{step === 1 ? "Comece pelas informações que ajudam a localizar e entender a obra." : step === 2 ? "Defina uma referência principal e o prazo planejado." : "Informe a previsão inicial e confira o resumo antes de salvar."}</p></div></header>
-        {firstError && <p className="work-form-alert" role="alert"><TriangleAlert aria-hidden="true" />Revise os campos indicados antes de continuar.</p>}
+        <header><span>0{step}</span><div><h2 id={`work-form-step-${step}`}>{steps[step - 1].title}</h2><p>{step === 1 ? "Comece pelas informações que ajudam a localizar e entender a obra." : step === 2 ? "Defina uma referência principal e o prazo planejado." : "Informe a previsão inicial e confira o resumo antes de salvar."}</p></div><small className="work-form-required-note"><b>*</b> campos obrigatórios</small></header>
+        {firstError && <p className="work-form-alert" role="alert"><TriangleAlert aria-hidden="true" /><span><strong>Não foi possível continuar.</strong>{firstError}</span></p>}
 
         {step === 1 && <div className="work-form-grid">
           <label><span>Tipo de intervenção <b>*</b></span><select value={draft.interventionType} onChange={(event) => updateDraft("interventionType", event.target.value as WorkInterventionType)}>{WORK_INTERVENTION_OPTIONS.map((type) => <option key={type}>{type}</option>)}</select></label>
+          <label><span>Prioridade <b>*</b></span><select value={draft.priority} onChange={(event) => updateDraft("priority", event.target.value as WorkPriority)}>{WORK_PRIORITY_OPTIONS.map((priority) => <option key={priority}>{priority}</option>)}</select><small>Use “Urgente” somente quando houver risco imediato ou interrupção da operação.</small></label>
           <label className="work-form-field-wide"><span>Nome da obra <b>*</b></span><input className={errors.title ? "invalid" : ""} value={draft.title} maxLength={100} onChange={(event) => updateDraft("title", event.target.value)} placeholder="Ex.: Reforma da cobertura" autoFocus aria-invalid={Boolean(errors.title)} />{errors.title && <small className="work-form-error">{errors.title}</small>}</label>
           <label><span>Imóvel <b>*</b></span><select className={errors.property ? "invalid" : ""} value={draft.property} onChange={(event) => updateProperty(event.target.value)} aria-invalid={Boolean(errors.property)}><option value="">Selecione um imóvel</option>{properties.map((property) => <option key={property.id} value={property.name}>{property.name}</option>)}</select>{errors.property && <small className="work-form-error">{errors.property}</small>}{selectedProperty && <small>{selectedProperty.address}</small>}</label>
-          <label><span>Unidade <em>opcional</em></span><select className={errors.unit ? "invalid" : ""} value={draft.unit} disabled={!draft.property || availableUnits.length === 0} onChange={(event) => updateDraft("unit", event.target.value)} aria-invalid={Boolean(errors.unit)}><option value="">{availableUnits.length ? "Toda a área do imóvel" : "Nenhuma unidade cadastrada"}</option>{availableUnits.map((unit) => <option key={unit.id}>{unit.name}</option>)}</select>{errors.unit && <small className="work-form-error">{errors.unit}</small>}</label>
+          <label><span>Unidade <em>opcional</em></span><select className={errors.unit ? "invalid" : ""} value={draft.unit} disabled={!draft.property || availableUnits.length === 0} onChange={(event) => updateDraft("unit", event.target.value)} aria-invalid={Boolean(errors.unit)}><option value="">{!draft.property ? "Selecione primeiro o imóvel" : availableUnits.length ? "Toda a área do imóvel" : "Este imóvel não possui unidades"}</option>{availableUnits.map((unit) => <option key={unit.id}>{unit.name}</option>)}</select>{errors.unit && <small className="work-form-error">{errors.unit}</small>}{draft.property && availableUnits.length > 0 && <small>Deixe em branco quando a obra abranger todo o imóvel.</small>}</label>
           <label className="work-form-field-wide"><span>Descrição curta <em>opcional</em></span><textarea value={draft.description} maxLength={240} rows={3} onChange={(event) => updateDraft("description", event.target.value)} placeholder="Resuma o objetivo e o escopo principal." /><small>{draft.description.length}/240 caracteres</small></label>
-          <label><span>Prioridade <b>*</b></span><select value={draft.priority} onChange={(event) => updateDraft("priority", event.target.value as WorkPriority)}>{WORK_PRIORITY_OPTIONS.map((priority) => <option key={priority}>{priority}</option>)}</select></label>
         </div>}
 
         {step === 2 && <div className="work-form-grid">
           <label><span>Responsável principal <b>*</b></span><select className={errors.manager ? "invalid" : ""} value={draft.manager} onChange={(event) => updateManager(event.target.value)} aria-invalid={Boolean(errors.manager)}><option value="">Selecione uma pessoa</option>{WORK_TEAM_OPTIONS.map((member) => <option key={member.name}>{member.name}</option>)}</select>{errors.manager && <small className="work-form-error">{errors.manager}</small>}</label>
-          <label><span>Situação inicial <b>*</b></span><select value={draft.status} onChange={(event) => updateDraft("status", event.target.value as WorkStatus)}>{(isEditing ? ["Planejada", "Em andamento", "Pausada", "Concluída", "Cancelada"] : ["Planejada", "Em andamento"]).map((status) => <option key={status}>{status}</option>)}</select></label>
-          <label><span>Início previsto <b>*</b></span><input type="date" className={errors.startDateIso || errors.dateRange ? "invalid" : ""} value={draft.startDateIso} onChange={(event) => updateDraft("startDateIso", event.target.value)} aria-invalid={Boolean(errors.startDateIso || errors.dateRange)} />{errors.startDateIso && <small className="work-form-error">{errors.startDateIso}</small>}</label>
+          {isEditing ? <label><span>Situação <b>*</b></span><select value={draft.status} onChange={(event) => updateDraft("status", event.target.value as WorkStatus)}>{["Planejada", "Em andamento", "Pausada", "Concluída", "Cancelada"].map((status) => <option key={status}>{status}</option>)}</select></label> : <label className="work-form-status-toggle"><span>Situação inicial</span><span><input type="checkbox" checked={draft.status === "Em andamento"} onChange={(event) => updateDraft("status", event.target.checked ? "Em andamento" : "Planejada")} /><span><strong>A obra já começou</strong><small>{draft.status === "Em andamento" ? "Será cadastrada como Em andamento." : "Será cadastrada como Planejada."}</small></span></span></label>}
+          <label><span>Início previsto <b>*</b></span><input type="date" className={errors.startDateIso ? "invalid" : ""} value={draft.startDateIso} onChange={(event) => updateDraft("startDateIso", event.target.value)} aria-invalid={Boolean(errors.startDateIso)} />{errors.startDateIso && <small className="work-form-error">{errors.startDateIso}</small>}</label>
           <label><span>Conclusão prevista <b>*</b></span><input type="date" className={errors.endDateIso || errors.dateRange ? "invalid" : ""} value={draft.endDateIso} min={draft.startDateIso || undefined} onChange={(event) => updateDraft("endDateIso", event.target.value)} aria-invalid={Boolean(errors.endDateIso || errors.dateRange)} />{errors.endDateIso && <small className="work-form-error">{errors.endDateIso}</small>}{errors.dateRange && <small className="work-form-error">{errors.dateRange}</small>}</label>
           <fieldset className="work-form-team work-form-field-full"><legend>Equipe adicional <em>opcional</em></legend><p>Selecione apenas quem precisa acompanhar a execução.</p><div>{WORK_TEAM_OPTIONS.filter((member) => member.name !== draft.manager).map((member) => <label key={member.name} className={draft.team.includes(member.name) ? "selected" : ""}><input type="checkbox" checked={draft.team.includes(member.name)} onChange={() => toggleTeamMember(member.name)} /><span><strong>{member.name}</strong><small>{member.role}</small></span><Check aria-hidden="true" /></label>)}</div></fieldset>
         </div>}
@@ -2618,8 +2622,8 @@ function WorkFormPage({ work, works, properties, units, onCancel, onSave }: { wo
             <span className="work-form-context-copy"><small>Contexto da intervenção</small><strong>{selectedProperty?.name ?? "Escolha o imóvel da obra"}</strong><em>{selectedProperty?.address ?? "A imagem e os dados do local aparecerão aqui."}</em></span>
           </div>
           <div className="work-form-context-body">
-            <header><div><p className="eyebrow">Visão do cadastro</p><h2>{draft.title.trim() || (isEditing ? "Atualização da obra" : "Nova intervenção")}</h2></div><b>{formProgress}%</b></header>
-            <span className="work-form-context-progress" role="progressbar" aria-valuenow={formProgress} aria-valuemin={0} aria-valuemax={100} aria-label={`${formProgress}% do fluxo de cadastro percorrido`}><i style={{ width: `${formProgress}%` }} /></span>
+            <header><div><p className="eyebrow">Visão do cadastro</p><h2>{draft.title.trim() || (isEditing ? "Atualização da obra" : "Nova intervenção")}</h2></div><b>Etapa {step}/3</b></header>
+            <span className="work-form-context-progress" role="progressbar" aria-valuenow={step} aria-valuemin={1} aria-valuemax={3} aria-label={`Etapa ${step} de 3 do cadastro`}><i style={{ width: `${formProgress}%` }} /></span>
             <dl>
               <div><dt><Building2 aria-hidden="true" />Local</dt><dd><strong>{draft.property || "Ainda não selecionado"}</strong><span>{draft.unit || (selectedProperty ? `${selectedProperty.units} ${selectedProperty.units === 1 ? "unidade cadastrada" : "unidades cadastradas"}` : "Defina na primeira etapa")}</span></dd></div>
               <div><dt><CalendarClock aria-hidden="true" />Prazo</dt><dd><strong>{draft.endDateIso ? formatExpenseDate(draft.endDateIso) : "A definir"}</strong><span>{draft.startDateIso ? `Início em ${formatExpenseDate(draft.startDateIso)}` : "Datas ainda não informadas"}</span></dd></div>
@@ -2631,7 +2635,7 @@ function WorkFormPage({ work, works, properties, units, onCancel, onSave }: { wo
         </aside>
       </div>
 
-      <footer className="work-form-footer"><div><strong>Etapa {step} de 3</strong><span>{step === 3 ? "Revise e confirme o cadastro." : "Você poderá voltar sem perder o preenchimento."}</span></div><div><button type="button" className="secondary-button" disabled={step === 1} onClick={() => { setStep((current) => Math.max(1, current - 1)); setErrors({}); }}>Voltar</button><button type="submit" className="primary-button button-with-icon">{step === 3 ? <><Check aria-hidden="true" />{isEditing ? "Salvar alterações" : "Cadastrar obra"}</> : <>Avançar<ArrowRight aria-hidden="true" /></>}</button></div></footer>
+      <footer className="work-form-footer"><div><strong>Etapa {step} de 3</strong><span>{step === 3 ? "Revise e confirme o cadastro." : "Você poderá voltar sem perder o preenchimento."}</span></div><div className={step === 1 ? "single-action" : ""}>{step > 1 && <button type="button" className="secondary-button" onClick={() => { setStep((current) => Math.max(1, current - 1)); setErrors({}); }}>Voltar</button>}<button type="submit" className="primary-button button-with-icon">{step === 3 ? <><Check aria-hidden="true" />{isEditing ? "Salvar alterações" : "Cadastrar obra"}</> : <>{step === 1 ? "Continuar: responsáveis" : "Continuar: valores"}<ArrowRight aria-hidden="true" /></>}</button></div></footer>
     </form>
   </div>;
 }
