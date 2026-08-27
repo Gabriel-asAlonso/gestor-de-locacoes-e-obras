@@ -1569,17 +1569,17 @@ function WorksListPage({ works, onNewWork, onEditWork, onOpenWork }: { works: Wo
     if (sortBy === "budget") return right.budget - left.budget;
     return priorityRank[left.priority] - priorityRank[right.priority] || left.endDateIso.localeCompare(right.endDateIso);
   });
-  const filteredExecution = filteredWorks.filter((work) => work.status === "Em andamento" || work.status === "Pausada").length;
+  const executionWorks = filteredWorks.filter((work) => work.status === "Em andamento");
+  const filteredInProgress = executionWorks.length;
+  const filteredPaused = filteredWorks.filter((work) => work.status === "Pausada").length;
   const filteredCompleted = filteredWorks.filter((work) => work.status === "Concluída").length;
-  const filteredAttention = filteredWorks.filter((work) => work.risk === "Em atraso" || work.risk === "Atenção").length;
-  const filteredAverageProgress = filteredWorks.length > 0 ? Math.round(filteredWorks.reduce((sum, work) => sum + work.progress, 0) / filteredWorks.length) : 0;
+  const filteredAttention = filteredWorks.filter((work) => work.status !== "Concluída" && work.status !== "Cancelada" && (work.risk === "Em atraso" || work.risk === "Atenção")).length;
+  const filteredAverageProgress = executionWorks.length > 0 ? Math.round(executionWorks.reduce((sum, work) => sum + work.progress, 0) / executionWorks.length) : 0;
   const filteredBudget = filteredWorks.filter((work) => work.status !== "Cancelada").reduce((sum, work) => sum + work.budget, 0);
   const filteredSpent = filteredWorks.filter((work) => work.status !== "Cancelada").reduce((sum, work) => sum + work.spent, 0);
   const filteredBudgetUse = filteredBudget > 0 ? Math.round((filteredSpent / filteredBudget) * 100) : 0;
   const filteredBudgetBalance = filteredBudget - filteredSpent;
-  const executionRatio = filteredWorks.length > 0 ? Math.round((filteredExecution / filteredWorks.length) * 100) : 0;
-  const completedRatio = filteredWorks.length > 0 ? Math.round((filteredCompleted / filteredWorks.length) * 100) : 0;
-  const otherRatio = Math.max(0, 100 - executionRatio - completedRatio);
+  const advancedFilterCount = [managerFilter !== "Todos os responsáveis", priorityFilter !== "Todas as prioridades", periodFilter !== "Todo o período", onlyDelayed].filter(Boolean).length;
   const filtersActive = Boolean(query || statusFilter !== "Todas as situações" || propertyFilter !== "Todos os imóveis" || managerFilter !== "Todos os responsáveis" || priorityFilter !== "Todas as prioridades" || periodFilter !== "Todo o período" || onlyDelayed);
   const clearFilters = () => {
     setQuery("");
@@ -1599,13 +1599,13 @@ function WorksListPage({ works, onNewWork, onEditWork, onOpenWork }: { works: Wo
 
     <section className="works-list-controls" aria-label="Busca e filtros de obras">
       <div className="works-list-primary-controls">
-        <div className="works-list-search"><Search aria-hidden="true" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por obra, código ou imóvel" aria-label="Buscar obras" /></div>
+        <div className="works-list-search"><Search aria-hidden="true" /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por obra, código, imóvel ou responsável" aria-label="Buscar obras" /></div>
         <label className={statusFilter !== "Todas as situações" ? "active" : ""}><span>Situação</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option>Todas as situações</option><option>Planejada</option><option>Em andamento</option><option>Pausada</option><option>Concluída</option><option>Cancelada</option></select></label>
         <label className={propertyFilter !== "Todos os imóveis" ? "active" : ""}><span>Imóvel</span><select value={propertyFilter} onChange={(event) => setPropertyFilter(event.target.value)}><option>Todos os imóveis</option>{properties.map((property) => <option key={property}>{property}</option>)}</select></label>
-        <label className={managerFilter !== "Todos os responsáveis" ? "active" : ""}><span>Responsável</span><select value={managerFilter} onChange={(event) => setManagerFilter(event.target.value)}><option>Todos os responsáveis</option>{managers.map((manager) => <option key={manager}>{manager}</option>)}</select></label>
-        <button type="button" className={`secondary-button button-with-icon works-more-filters ${advancedOpen ? "active" : ""}`} aria-expanded={advancedOpen} aria-controls="works-advanced-filters" onClick={() => setAdvancedOpen((current) => !current)}><SlidersHorizontal aria-hidden="true" />Mais filtros{priorityFilter !== "Todas as prioridades" || periodFilter !== "Todo o período" || onlyDelayed ? <b aria-label="Filtros adicionais ativos">!</b> : null}</button>
+        <button type="button" className={`secondary-button button-with-icon works-more-filters ${advancedOpen ? "active" : ""}`} aria-expanded={advancedOpen} aria-controls="works-advanced-filters" onClick={() => setAdvancedOpen((current) => !current)}><SlidersHorizontal aria-hidden="true" />Mais filtros{advancedFilterCount > 0 ? <b aria-label={`${advancedFilterCount} filtros adicionais ativos`}>{advancedFilterCount}</b> : null}</button>
       </div>
       {advancedOpen && <div className="works-list-advanced" id="works-advanced-filters">
+        <label className={managerFilter !== "Todos os responsáveis" ? "active" : ""}><span>Responsável</span><select value={managerFilter} onChange={(event) => setManagerFilter(event.target.value)}><option>Todos os responsáveis</option>{managers.map((manager) => <option key={manager}>{manager}</option>)}</select></label>
         <label className={priorityFilter !== "Todas as prioridades" ? "active" : ""}><span>Prioridade</span><select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)}><option>Todas as prioridades</option><option>Urgente</option><option>Alta</option><option>Média</option><option>Baixa</option></select></label>
         <label className={periodFilter !== "Todo o período" ? "active" : ""}><span>Período</span><select value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value)}><option>Todo o período</option><option>Agosto de 2026</option><option>Próximos 30 dias</option></select></label>
         <label className="works-delayed-check"><input type="checkbox" checked={onlyDelayed} onChange={(event) => setOnlyDelayed(event.target.checked)} /><span><strong>Somente obras atrasadas</strong><small>Mostra obras que já ultrapassaram o prazo.</small></span></label>
@@ -1615,15 +1615,14 @@ function WorksListPage({ works, onNewWork, onEditWork, onOpenWork }: { works: Wo
 
     <section className="works-list-insights" aria-label="Resumo das obras filtradas">
       <article className="works-list-insight works-list-insight-portfolio">
-        <header><span>Carteira filtrada</span><ClipboardList aria-hidden="true" /></header>
+        <header><span>Resultado da consulta</span><ClipboardList aria-hidden="true" /></header>
         <div><strong>{filteredWorks.length}</strong><small>{filteredWorks.length === 1 ? "obra encontrada" : "obras encontradas"}</small></div>
-        <span className="works-list-distribution" aria-label={`${filteredExecution} em execução, ${filteredCompleted} concluídas e ${filteredWorks.length - filteredExecution - filteredCompleted} nas demais situações`}><i className="execution" style={{ width: `${executionRatio}%` }} /><i className="completed" style={{ width: `${completedRatio}%` }} /><i className="other" style={{ width: `${otherRatio}%` }} /></span>
-        <footer><span><i className="execution" />{filteredExecution} em execução</span><span><i className="attention" />{filteredAttention} com atenção</span><span><i className="completed" />{filteredCompleted} concluídas</span></footer>
+        <div className="works-list-status-summary"><span><b>{filteredInProgress}</b><small>Em andamento</small></span><span className={filteredAttention > 0 ? "attention" : ""}><b>{filteredAttention}</b><small>Pedem atenção</small></span><span><b>{filteredPaused}</b><small>Pausadas</small></span><span><b>{filteredCompleted}</b><small>Concluídas</small></span></div>
       </article>
       <article className="works-list-insight works-list-insight-progress">
         <header><span>Avanço médio</span><CalendarClock aria-hidden="true" /></header>
         <div className="works-list-progress-ring" style={{ "--works-list-progress": `${filteredAverageProgress * 3.6}deg` } as CSSProperties}><span><strong>{filteredAverageProgress}%</strong><small>executado</small></span></div>
-        <p>Média de progresso das obras exibidas.</p>
+        <p>Média das obras em andamento exibidas.</p>
       </article>
       <article className="works-list-insight works-list-insight-budget">
         <header><span>Execução financeira</span><HandCoins aria-hidden="true" /></header>
@@ -1634,24 +1633,25 @@ function WorksListPage({ works, onNewWork, onEditWork, onOpenWork }: { works: Wo
     </section>
 
     <section className="works-catalog" aria-labelledby="works-catalog-title">
-      <header><div><p className="eyebrow">Consulta operacional</p><h2 id="works-catalog-title">Obras cadastradas</h2><span>Abra os detalhes ou edite os dados principais de uma obra.</span></div><label><ArrowUpDown aria-hidden="true" /><span className="sr-only">Ordenar obras</span><select value={sortBy} onChange={(event) => setSortBy(event.target.value)} aria-label="Ordenar obras"><option value="priority">Maior prioridade</option><option value="due">Prazo mais próximo</option><option value="updated">Atualização mais recente</option><option value="budget">Maior valor previsto</option></select></label></header>
+      <header><div><p className="eyebrow">Consulta operacional</p><h2 id="works-catalog-title">Obras cadastradas</h2><span>Abra os detalhes ou edite os dados principais de uma obra.</span></div><label><ArrowUpDown aria-hidden="true" /><span className="works-catalog-sort-label">Ordenar por</span><select value={sortBy} onChange={(event) => setSortBy(event.target.value)} aria-label="Ordenar obras"><option value="priority">Prioridade: maior primeiro</option><option value="due">Prazo: mais próximo</option><option value="updated">Atualização: mais recente</option><option value="budget">Orçamento: maior valor</option></select></label></header>
       {filteredWorks.length > 0 ? <div className="works-catalog-list" aria-label="Lista de obras">{filteredWorks.map((work) => {
         const budgetUse = work.budget > 0 ? Math.round((work.spent / work.budget) * 100) : 0;
         const riskClass = work.risk === "Em atraso" ? "danger" : work.risk === "Atenção" ? "warning" : "ok";
+        const deadlineNote = work.status === "Concluída" ? "Obra concluída" : work.status === "Cancelada" ? "Obra cancelada" : work.risk === "Em atraso" ? "Prazo ultrapassado" : work.risk === "Atenção" ? "Prazo exige atenção" : "Dentro do prazo";
         return <article className={`works-catalog-card works-catalog-card-${riskClass}`} key={work.id}>
           <button type="button" className="works-catalog-cover" onClick={() => onOpenWork(work)} aria-label={`Abrir ${work.title}`}>
             <img src={propertyCoverImagesByName[work.property] ?? fallbackPropertyCover} alt={`Fachada de ${work.property}`} width="560" height="420" loading="lazy" />
-            <span>{work.interventionType ?? "Obra"}</span><em>{work.id}</em>
+            <span>{work.interventionType ?? "Obra"}</span>
           </button>
           <div className="works-catalog-card-body">
             <header>
               <div className="works-catalog-identity"><span><b className={`work-priority work-priority-${work.priority.toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[\u0300-\u036f]/g, "")}`}>{work.priority}</b><small>{work.id}</small></span><h3>{work.title}</h3><em><Building2 aria-hidden="true" />{work.property}{work.unit ? ` · ${work.unit}` : ""}</em></div>
-              <div className="works-catalog-badges"><WorkStatusBadge status={work.status} /><span className={`works-catalog-risk works-catalog-risk-${riskClass}`}><i />{work.risk}</span></div>
+              <div className="works-catalog-badges"><span className="works-catalog-badge"><small>Situação</small><WorkStatusBadge status={work.status} /></span><span className="works-catalog-badge"><small>Prazo</small><span className={`works-catalog-risk works-catalog-risk-${riskClass}`}><i />{work.risk}</span></span></div>
             </header>
             <div className="works-catalog-highlights">
               <span className="works-catalog-next"><small>Próxima atividade</small><strong>{work.nextActivity}</strong><em>{work.lastUpdateLabel}</em></span>
               <span className="works-catalog-progress"><span><small>Progresso</small><strong>{work.progress}%</strong></span><i role="progressbar" aria-valuenow={work.progress} aria-valuemin={0} aria-valuemax={100} aria-label={`Progresso de ${work.title}`}><b style={{ width: `${work.progress}%` }} /></i><em>{work.progress === 100 ? "Execução concluída" : `${100 - work.progress}% restante`}</em></span>
-              <span className="works-catalog-deadline"><small>Prazo final</small><strong>{work.endLabel}</strong><em>{work.risk}</em></span>
+              <span className="works-catalog-deadline"><small>Prazo final</small><strong>{work.endLabel}</strong><em>{deadlineNote}</em></span>
               <span className="works-catalog-finance"><small>Gasto / previsto</small><strong>{brl.format(work.spent)}</strong><em>{budgetUse}% de {brl.format(work.budget)}</em></span>
             </div>
             <footer>
