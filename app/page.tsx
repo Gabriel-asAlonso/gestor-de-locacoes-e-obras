@@ -344,6 +344,7 @@ const propertyCoverImages: Record<string, string> = {
   "IMO-008": "/properties/centro-comercial-orla.jpg",
 };
 const fallbackPropertyCover = "/properties/centro-empresarial-nexo.jpg";
+const propertyCoverImagesByName = Object.fromEntries(properties.map((property) => [property.name, propertyCoverImages[property.id] ?? fallbackPropertyCover])) as Record<string, string>;
 
 const units: Unit[] = [
   { id: "UNI-001", property: "Centro Empresarial Nexo", portfolio: "Carteira Atlas", name: "Sala 101", area: 42, occupied: true },
@@ -707,6 +708,7 @@ export default function Home() {
   const [workRecordState, setWorkRecordState] = useState<WorkRecord[]>(workRecords);
   const [editingWork, setEditingWork] = useState<WorkRecord | null>(null);
   const [selectedWork, setSelectedWork] = useState<WorkRecord | null>(null);
+  const [selectedWorkTab, setSelectedWorkTab] = useState<WorkDetailTab>("Resumo");
   const [workFormOrigin, setWorkFormOrigin] = useState<"Obras" | "Detalhe da obra">("Obras");
   const [financeWorkFilter, setFinanceWorkFilter] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastMessage>(null);
@@ -819,11 +821,13 @@ export default function Home() {
       : [nextWork, ...current]);
     setEditingWork(null);
     setSelectedWork(nextWork);
+    setSelectedWorkTab("Resumo");
     notify(isEditing ? "Obra atualizada nesta sessão." : "Obra adicionada à demonstração.", nextWork.id);
     changePage("Detalhe da obra");
   };
-  const openWorkDetail = (work: WorkRecord) => {
+  const openWorkDetail = (work: WorkRecord, initialTab: WorkDetailTab = "Resumo") => {
     setSelectedWork(work);
+    setSelectedWorkTab(initialTab);
     changePage("Detalhe da obra");
   };
   const openWorkFinance = (work: WorkRecord) => {
@@ -1156,10 +1160,10 @@ export default function Home() {
         {contentState === "error" && <SystemError onRetry={retryContent} />}
         {contentState === "ready" && <FilterStateContext.Provider value={Boolean(search || portfolioFilter !== "Todas as carteiras" || statusFilter !== "Todas" || categoryFilter !== "Todas as categorias")}><div className="page-enter" key={`${activeModule}-${page}`}>
           {activeModule === "Módulo 1" && page === "Visão geral" && <DashboardPage charges={chargeRecords} negotiations={negotiationsByCharge} expenses={expenseRecords} properties={propertyRecords} units={unitRecords} contracts={contractRecords} onNavigate={(next, status) => { changePage(next); if (status) setStatusFilter(status); }} />}
-          {activeModule === "Módulo 2" && page === "Visão geral" && <WorksDashboardPage works={workRecordState} onNewWork={beginNewWork} onOpenWork={openWorkDetail} />}
+          {activeModule === "Módulo 2" && page === "Visão geral" && <WorksDashboardPage works={workRecordState} onNewWork={beginNewWork} onOpenWork={openWorkDetail} onNavigate={changePage} />}
           {activeModule === "Módulo 2" && page === "Obras" && <WorksListPage works={workRecordState} onNewWork={beginNewWork} onEditWork={beginEditWork} onOpenWork={openWorkDetail} />}
           {activeModule === "Módulo 2" && page === "Nova obra" && <WorkFormPage work={editingWork} works={workRecordState} properties={propertyRecords} units={unitRecords} onCancel={leaveWorkForm} onSave={saveWork} />}
-          {activeModule === "Módulo 2" && page === "Detalhe da obra" && selectedWork && <WorkDetailPage key={selectedWork.id} work={selectedWork} onBack={() => { setSelectedWork(null); changePage("Obras"); }} onEdit={() => beginEditWork(selectedWork)} onOpenFinance={() => openWorkFinance(selectedWork)} onUpdateWork={updateWorkFromDetail} onNotify={notify} />}
+          {activeModule === "Módulo 2" && page === "Detalhe da obra" && selectedWork && <WorkDetailPage key={selectedWork.id} work={selectedWork} initialTab={selectedWorkTab} onBack={() => { setSelectedWork(null); changePage("Obras"); }} onEdit={() => beginEditWork(selectedWork)} onOpenFinance={() => openWorkFinance(selectedWork)} onUpdateWork={updateWorkFromDetail} onNotify={notify} />}
           {activeModule === "Módulo 2" && page === "Cronograma" && <WorksSchedulePage works={workRecordState} onOpenWork={openWorkDetail} onUpdateWork={updateWorkFromSchedule} onNotify={notify} />}
           {activeModule === "Módulo 2" && page === "Equipe" && <WorksTeamPage works={workRecordState} onOpenWork={openWorkDetail} onNotify={notify} />}
           {activeModule === "Módulo 2" && page === "Financeiro" && <WorksFinancialPage works={workRecordState} initialWorkId={financeWorkFilter} onOpenWork={openWorkDetail} onNotify={notify} />}
@@ -1406,7 +1410,13 @@ function WorkAttentionIcon({ kind }: { kind: WorkAttention["kind"] }) {
   return <TriangleAlert aria-hidden="true" />;
 }
 
-function WorksDashboardPage({ works, onNewWork, onOpenWork }: { works: WorkRecord[]; onNewWork: () => void; onOpenWork: (work: WorkRecord) => void }) {
+function workAttentionDestination(kind: WorkAttention["kind"]): { tab: WorkDetailTab; label: string } {
+  if (kind === "schedule") return { tab: "Planejamento", label: "Abrir planejamento" };
+  if (kind === "update") return { tab: "Diário e arquivos", label: "Ver atualizações" };
+  return { tab: "Financeiro", label: "Abrir financeiro" };
+}
+
+function WorksDashboardPage({ works, onNewWork, onOpenWork, onNavigate }: { works: WorkRecord[]; onNewWork: () => void; onOpenWork: (work: WorkRecord, initialTab?: WorkDetailTab) => void; onNavigate: (page: Page) => void }) {
   const [propertyFilter, setPropertyFilter] = useState("Todos os imóveis");
   const [periodFilter, setPeriodFilter] = useState("Agosto de 2026");
   const properties = Array.from(new Set(works.map((work) => work.property))).sort((left, right) => left.localeCompare(right, "pt-BR"));
@@ -1428,11 +1438,20 @@ function WorksDashboardPage({ works, onNewWork, onOpenWork }: { works: WorkRecor
   const inProgress = scopedWorks.filter((work) => work.status === "Em andamento").length;
   const delayed = scopedWorks.filter((work) => work.risk === "Em atraso").length;
   const spent = scopedWorks.filter((work) => work.status !== "Cancelada").reduce((sum, work) => sum + work.spent, 0);
+  const totalBudget = scopedWorks.filter((work) => work.status !== "Cancelada").reduce((sum, work) => sum + work.budget, 0);
   const projectedBalance = scopedWorks.filter((work) => work.status !== "Cancelada").reduce((sum, work) => sum + work.projectedCashBalance, 0);
+  const featuredWork = activeWorks[0] ?? scopedWorks[0];
+  const featuredAttention = attentions[0];
+  const featuredBudgetUse = featuredWork?.budget ? Math.min(100, Math.round((featuredWork.spent / featuredWork.budget) * 100)) : 0;
+  const averageProgress = activeWorks.length > 0 ? Math.round(activeWorks.reduce((sum, work) => sum + work.progress, 0) / activeWorks.length) : 0;
+  const inProgressRatio = scopedWorks.length > 0 ? Math.round((inProgress / scopedWorks.length) * 100) : 0;
+  const delayedRatio = scopedWorks.length > 0 ? Math.round((delayed / scopedWorks.length) * 100) : 0;
+  const spentRatio = totalBudget > 0 ? Math.min(100, Math.round((spent / totalBudget) * 100)) : 0;
+  const balanceRatio = totalBudget > 0 ? Math.min(100, Math.round((Math.abs(projectedBalance) / totalBudget) * 100)) : 0;
   const filtersActive = propertyFilter !== "Todos os imóveis" || periodFilter !== "Agosto de 2026";
   const openAttention = (attention: WorkAttention) => {
     const work = works.find((record) => record.id === attention.workId);
-    if (work) onOpenWork(work);
+    if (work) onOpenWork(work, workAttentionDestination(attention.kind).tab);
   };
 
   return <div className="works-dashboard">
@@ -1450,21 +1469,51 @@ function WorksDashboardPage({ works, onNewWork, onOpenWork }: { works: WorkRecor
       </div>
     </section>
 
-    <article className="works-attention-panel" aria-labelledby="works-attention-title">
-      <header><div><p className="eyebrow">Prioridades do dia</p><h2 id="works-attention-title">O que precisa de atenção</h2><span>Os itens mais urgentes aparecem primeiro.</span></div><b>{attentions.length}</b></header>
-      {attentions.length > 0 ? <div className="works-attention-list">{attentions.slice(0, 5).map((attention) => <button type="button" key={attention.id} className={`works-attention-item works-attention-${attention.tone}`} onClick={() => openAttention(attention)}><i><WorkAttentionIcon kind={attention.kind} /></i><span><strong>{attention.title}</strong><small>{attention.description}</small><em>{attention.workId} · {attention.meta}</em></span><ArrowRight aria-hidden="true" /></button>)}</div> : <CompactEmptyState mark="✓" tone="success" title="Nada exige atenção neste filtro" description="Troque o imóvel ou o período para consultar outras obras." />}
-    </article>
+    <section className="works-dashboard-stage" aria-label="Destaques da operação">
+      {featuredWork ? <button type="button" className="works-featured-work" onClick={() => onOpenWork(featuredWork)}>
+        <img src={propertyCoverImagesByName[featuredWork.property] ?? fallbackPropertyCover} alt={`Fachada de ${featuredWork.property}`} width="960" height="620" />
+        <span className="works-featured-shade" aria-hidden="true" />
+        <span className="works-featured-topline"><b>Obra em destaque</b><em className={`works-featured-risk works-featured-risk-${featuredWork.risk === "Em atraso" ? "danger" : featuredWork.risk === "Atenção" ? "warning" : "ok"}`}>{featuredWork.risk}</em></span>
+        <span className="works-featured-content">
+          <small>{featuredWork.id} · {featuredWork.property}{featuredWork.unit ? ` · ${featuredWork.unit}` : ""}</small>
+          <strong>{featuredWork.title}</strong>
+          <span className="works-featured-next"><i><ClipboardList aria-hidden="true" /></i><span><small>Próximo marco</small><b>{featuredWork.nextActivity}</b></span></span>
+          <span className="works-featured-stats">
+            <span><small>Progresso</small><b>{featuredWork.progress}%</b></span>
+            <span><small>Prazo final</small><b>{featuredWork.endLabel}</b></span>
+            <span><small>Orçamento usado</small><b>{featuredBudgetUse}%</b></span>
+          </span>
+          <span className="works-featured-progress" role="progressbar" aria-valuenow={featuredWork.progress} aria-valuemin={0} aria-valuemax={100} aria-label={`Progresso de ${featuredWork.title}`}><i style={{ width: `${featuredWork.progress}%` }} /></span>
+          <span className="works-featured-footer"><span>Responsável · {featuredWork.manager}</span><b>Ver obra <ArrowRight aria-hidden="true" /></b></span>
+        </span>
+      </button> : <article className="works-featured-empty"><CompactEmptyState mark="OB" title="Nenhuma obra neste filtro" description="Escolha outro imóvel ou período para visualizar os destaques." /></article>}
+
+      <article className="works-priority-panel" aria-labelledby="works-attention-title">
+        <header><div><p className="eyebrow">Prioridades do dia</p><h2 id="works-attention-title">O que pede ação agora</h2><span>Uma leitura rápida para decidir por onde começar.</span></div><b>{attentions.length}</b></header>
+        {featuredAttention ? <>
+          <button type="button" className={`works-priority-main works-priority-${featuredAttention.tone}`} onClick={() => openAttention(featuredAttention)} aria-label={`${featuredAttention.title}. ${workAttentionDestination(featuredAttention.kind).label} da obra ${featuredAttention.workId}`}>
+            <span className="works-priority-icon"><WorkAttentionIcon kind={featuredAttention.kind} /></span>
+            <span className="works-priority-copy"><small>Prioridade principal</small><strong>{featuredAttention.title}</strong><span className="works-priority-description">{featuredAttention.description}</span><em>{featuredAttention.workId} · {featuredAttention.meta}</em><span className="works-priority-action">{workAttentionDestination(featuredAttention.kind).label}</span></span>
+            <ArrowRight aria-hidden="true" />
+          </button>
+          {attentions.length > 1 ? <div className="works-priority-list">{attentions.slice(1).map((attention) => {
+            const destination = workAttentionDestination(attention.kind);
+            return <button type="button" key={attention.id} className={`works-priority-item works-priority-${attention.tone}`} onClick={() => openAttention(attention)} aria-label={`${attention.title}. ${destination.label} da obra ${attention.workId}`}><i><WorkAttentionIcon kind={attention.kind} /></i><span><strong>{attention.title}</strong><small>{attention.workId} · {attention.meta}</small><em>{destination.label}</em></span><ArrowRight aria-hidden="true" /></button>;
+          })}</div> : null}
+        </> : <CompactEmptyState mark="✓" tone="success" title="Nada exige atenção neste filtro" description="Troque o imóvel ou o período para consultar outras obras." />}
+      </article>
+    </section>
 
     <section className="works-metrics" aria-label="Indicadores essenciais das obras">
-      <article className="works-metric works-metric-active"><span><ClipboardList aria-hidden="true" /></span><div><small>Obras em andamento</small><strong>{inProgress}</strong><p>{activeWorks.length} obras ativas ou pausadas</p></div></article>
-      <article className="works-metric works-metric-danger"><span><TriangleAlert aria-hidden="true" /></span><div><small>Obras em atraso</small><strong>{delayed}</strong><p>{delayed === 1 ? "1 obra requer ação hoje" : `${delayed} obras requerem ação hoje`}</p></div></article>
-      <article className="works-metric works-metric-spent"><span><HandCoins aria-hidden="true" /></span><div><small>Total gasto</small><strong>{brl.format(spent)}</strong><p>No período e imóvel selecionados</p></div></article>
-      <article className={`works-metric ${projectedBalance < 0 ? "works-metric-danger" : "works-metric-balance"}`}><span><WalletCards aria-hidden="true" /></span><div><small>Saldo projetado</small><strong>{brl.format(projectedBalance)}</strong><p>Previsão das obras do filtro</p></div></article>
+      <article className="works-metric works-metric-active"><span><ClipboardList aria-hidden="true" /></span><div><small>Obras em andamento</small><strong>{inProgress}</strong><p>{averageProgress}% de avanço médio nas obras ativas</p><i className="works-metric-track" role="progressbar" aria-valuenow={inProgressRatio} aria-valuemin={0} aria-valuemax={100} aria-label={`${inProgressRatio}% das obras estão em andamento`}><b style={{ width: `${inProgressRatio}%` }} /></i></div></article>
+      <article className="works-metric works-metric-danger"><span><TriangleAlert aria-hidden="true" /></span><div><small>Obras em atraso</small><strong>{delayed}</strong><p>{delayed === 1 ? "1 obra requer ação hoje" : `${delayed} obras requerem ação hoje`}</p><i className="works-metric-track" role="progressbar" aria-valuenow={delayedRatio} aria-valuemin={0} aria-valuemax={100} aria-label={`${delayedRatio}% das obras estão em atraso`}><b style={{ width: `${delayedRatio}%` }} /></i></div></article>
+      <article className="works-metric works-metric-spent"><span><HandCoins aria-hidden="true" /></span><div><small>Total gasto</small><strong>{brl.format(spent)}</strong><p>{spentRatio}% do orçamento previsto no filtro</p><i className="works-metric-track" role="progressbar" aria-valuenow={spentRatio} aria-valuemin={0} aria-valuemax={100} aria-label={`${spentRatio}% do orçamento foi utilizado`}><b style={{ width: `${spentRatio}%` }} /></i></div></article>
+      <article className={`works-metric ${projectedBalance < 0 ? "works-metric-danger" : "works-metric-balance"}`}><span><WalletCards aria-hidden="true" /></span><div><small>Saldo projetado</small><strong>{brl.format(projectedBalance)}</strong><p>{projectedBalance < 0 ? "Projeção exige recomposição financeira" : "Margem projetada sobre o orçamento"}</p><i className="works-metric-track" role="progressbar" aria-valuenow={balanceRatio} aria-valuemin={0} aria-valuemax={100} aria-label={`${balanceRatio}% do orçamento em saldo projetado`}><b style={{ width: `${balanceRatio}%` }} /></i></div></article>
     </section>
 
     <section className="works-dashboard-grid">
       <article className="works-active-panel" aria-labelledby="works-active-title">
-        <header><div><p className="eyebrow">Execução</p><h2 id="works-active-title">Obras em andamento</h2><span>Progresso, próxima atividade e prazo em uma única leitura.</span></div><b>{activeWorks.length}</b></header>
+        <header><div><p className="eyebrow">Execução</p><h2 id="works-active-title">Obras em andamento</h2><span>Progresso, próxima atividade e prazo em uma única leitura.</span></div><button type="button" className="works-section-link" onClick={() => onNavigate("Obras")}>Ver todas ({activeWorks.length})<ArrowRight aria-hidden="true" /></button></header>
         {activeWorks.length > 0 ? <div className="works-active-list">{activeWorks.slice(0, 5).map((work) => <button type="button" className="works-active-row" key={work.id} onClick={() => onOpenWork(work)}>
           <span className="works-active-identity"><small>{work.id} · {work.property}</small><strong>{work.title}</strong><em>{work.manager}</em></span>
           <span className="works-active-next"><small>Próxima atividade</small><strong>{work.nextActivity}</strong><em>{work.lastUpdateLabel}</em></span>
@@ -1475,10 +1524,10 @@ function WorksDashboardPage({ works, onNewWork, onOpenWork }: { works: WorkRecor
       </article>
 
       <aside className="works-commitments-panel" aria-labelledby="works-commitments-title">
-        <header><div><p className="eyebrow">Próximas datas</p><h2 id="works-commitments-title">Agenda das obras</h2></div><CalendarClock aria-hidden="true" /></header>
+        <header><div><p className="eyebrow">Próximas datas</p><h2 id="works-commitments-title">Agenda das obras</h2></div><button type="button" className="works-section-link works-section-link-inverse" onClick={() => onNavigate("Cronograma")}>Abrir cronograma<ArrowRight aria-hidden="true" /></button></header>
         {commitments.length > 0 ? <div className="works-commitments-list">{commitments.slice(0, 5).map((commitment) => {
           const work = works.find((record) => record.id === commitment.workId);
-          return <button type="button" key={commitment.id} onClick={() => work && onOpenWork(work)}><time dateTime={commitment.dateIso}><strong>{commitment.day}</strong><small>{commitment.month}</small></time><span><strong>{commitment.title}</strong><small>{commitment.description}</small><em className={`commitment-${commitment.status === "Atrasado" ? "danger" : commitment.status === "Hoje" ? "today" : "next"}`}>{commitment.status}</em></span><ArrowRight aria-hidden="true" /></button>;
+          return <button type="button" key={commitment.id} onClick={() => work && onOpenWork(work, "Planejamento")} aria-label={`${commitment.title}. Abrir planejamento da obra ${commitment.workId}`}><time dateTime={commitment.dateIso}><strong>{commitment.day}</strong><small>{commitment.month}</small></time><span><strong>{commitment.title}</strong><small>{commitment.description}</small><em className={`commitment-${commitment.status === "Atrasado" ? "danger" : commitment.status === "Hoje" ? "today" : "next"}`}>{commitment.status}</em></span><ArrowRight aria-hidden="true" /></button>;
         })}</div> : <CompactEmptyState mark="00" title="Sem compromissos neste período" description="As próximas atividades das obras aparecerão aqui." />}
       </aside>
     </section>
@@ -1520,6 +1569,17 @@ function WorksListPage({ works, onNewWork, onEditWork, onOpenWork }: { works: Wo
     if (sortBy === "budget") return right.budget - left.budget;
     return priorityRank[left.priority] - priorityRank[right.priority] || left.endDateIso.localeCompare(right.endDateIso);
   });
+  const filteredExecution = filteredWorks.filter((work) => work.status === "Em andamento" || work.status === "Pausada").length;
+  const filteredCompleted = filteredWorks.filter((work) => work.status === "Concluída").length;
+  const filteredAttention = filteredWorks.filter((work) => work.risk === "Em atraso" || work.risk === "Atenção").length;
+  const filteredAverageProgress = filteredWorks.length > 0 ? Math.round(filteredWorks.reduce((sum, work) => sum + work.progress, 0) / filteredWorks.length) : 0;
+  const filteredBudget = filteredWorks.filter((work) => work.status !== "Cancelada").reduce((sum, work) => sum + work.budget, 0);
+  const filteredSpent = filteredWorks.filter((work) => work.status !== "Cancelada").reduce((sum, work) => sum + work.spent, 0);
+  const filteredBudgetUse = filteredBudget > 0 ? Math.round((filteredSpent / filteredBudget) * 100) : 0;
+  const filteredBudgetBalance = filteredBudget - filteredSpent;
+  const executionRatio = filteredWorks.length > 0 ? Math.round((filteredExecution / filteredWorks.length) * 100) : 0;
+  const completedRatio = filteredWorks.length > 0 ? Math.round((filteredCompleted / filteredWorks.length) * 100) : 0;
+  const otherRatio = Math.max(0, 100 - executionRatio - completedRatio);
   const filtersActive = Boolean(query || statusFilter !== "Todas as situações" || propertyFilter !== "Todos os imóveis" || managerFilter !== "Todos os responsáveis" || priorityFilter !== "Todas as prioridades" || periodFilter !== "Todo o período" || onlyDelayed);
   const clearFilters = () => {
     setQuery("");
@@ -1553,17 +1613,54 @@ function WorksListPage({ works, onNewWork, onEditWork, onOpenWork }: { works: Wo
       <footer><span aria-live="polite"><strong>{filteredWorks.length}</strong> de {works.length} obras</span><button type="button" className="text-button button-with-icon" disabled={!filtersActive} onClick={clearFilters}><RotateCcw aria-hidden="true" />Limpar filtros</button></footer>
     </section>
 
+    <section className="works-list-insights" aria-label="Resumo das obras filtradas">
+      <article className="works-list-insight works-list-insight-portfolio">
+        <header><span>Carteira filtrada</span><ClipboardList aria-hidden="true" /></header>
+        <div><strong>{filteredWorks.length}</strong><small>{filteredWorks.length === 1 ? "obra encontrada" : "obras encontradas"}</small></div>
+        <span className="works-list-distribution" aria-label={`${filteredExecution} em execução, ${filteredCompleted} concluídas e ${filteredWorks.length - filteredExecution - filteredCompleted} nas demais situações`}><i className="execution" style={{ width: `${executionRatio}%` }} /><i className="completed" style={{ width: `${completedRatio}%` }} /><i className="other" style={{ width: `${otherRatio}%` }} /></span>
+        <footer><span><i className="execution" />{filteredExecution} em execução</span><span><i className="attention" />{filteredAttention} com atenção</span><span><i className="completed" />{filteredCompleted} concluídas</span></footer>
+      </article>
+      <article className="works-list-insight works-list-insight-progress">
+        <header><span>Avanço médio</span><CalendarClock aria-hidden="true" /></header>
+        <div className="works-list-progress-ring" style={{ "--works-list-progress": `${filteredAverageProgress * 3.6}deg` } as CSSProperties}><span><strong>{filteredAverageProgress}%</strong><small>executado</small></span></div>
+        <p>Média de progresso das obras exibidas.</p>
+      </article>
+      <article className="works-list-insight works-list-insight-budget">
+        <header><span>Execução financeira</span><HandCoins aria-hidden="true" /></header>
+        <div><strong>{brl.format(filteredSpent)}</strong><small>de {brl.format(filteredBudget)} previstos</small></div>
+        <span className="works-list-budget-track" role="progressbar" aria-valuenow={Math.min(100, filteredBudgetUse)} aria-valuemin={0} aria-valuemax={100} aria-label={`${filteredBudgetUse}% do orçamento filtrado foi utilizado`}><i style={{ width: `${Math.min(100, filteredBudgetUse)}%` }} /></span>
+        <footer><b>{filteredBudgetUse}% utilizado</b><span>{filteredBudgetBalance >= 0 ? `${brl.format(filteredBudgetBalance)} disponível` : `${brl.format(Math.abs(filteredBudgetBalance))} acima do previsto`}</span></footer>
+      </article>
+    </section>
+
     <section className="works-catalog" aria-labelledby="works-catalog-title">
       <header><div><p className="eyebrow">Consulta operacional</p><h2 id="works-catalog-title">Obras cadastradas</h2><span>Abra os detalhes ou edite os dados principais de uma obra.</span></div><label><ArrowUpDown aria-hidden="true" /><span className="sr-only">Ordenar obras</span><select value={sortBy} onChange={(event) => setSortBy(event.target.value)} aria-label="Ordenar obras"><option value="priority">Maior prioridade</option><option value="due">Prazo mais próximo</option><option value="updated">Atualização mais recente</option><option value="budget">Maior valor previsto</option></select></label></header>
-      {filteredWorks.length > 0 ? <div className="works-catalog-list" aria-label="Lista de obras">{filteredWorks.map((work) => <article className="works-catalog-row" key={work.id}>
-        <span className="works-catalog-identity"><small>{work.id}<b className={`work-priority work-priority-${work.priority.toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[\u0300-\u036f]/g, "")}`}>{work.priority}</b></small><strong>{work.title}</strong><em>{work.property}{work.unit ? ` · ${work.unit}` : ""}</em></span>
-        <span className="works-catalog-manager"><small>Responsável</small><strong>{work.manager}</strong><em>{work.nextActivity}</em></span>
-        <span className="works-catalog-progress"><span><small>Progresso</small><strong>{work.progress}%</strong></span><i role="progressbar" aria-valuenow={work.progress} aria-valuemin={0} aria-valuemax={100} aria-label={`Progresso de ${work.title}`}><b style={{ width: `${work.progress}%` }} /></i><em>{work.lastUpdateLabel}</em></span>
-        <span className="works-catalog-deadline"><small>Prazo final</small><strong>{work.endLabel}</strong><em className={`work-risk work-risk-${work.risk === "Em atraso" ? "danger" : work.risk === "Atenção" ? "warning" : "ok"}`}>{work.risk}</em></span>
-        <span className="works-catalog-finance"><small>Gasto / previsto</small><strong>{brl.format(work.spent)}</strong><em>de {brl.format(work.budget)}</em></span>
-        <span className="works-catalog-status"><WorkStatusBadge status={work.status} /></span>
-        <span className="works-catalog-actions"><button type="button" className="works-catalog-edit" onClick={() => onEditWork(work)} aria-label={`Editar ${work.title}`}><PencilLine aria-hidden="true" />Editar</button><button type="button" className="works-catalog-open" onClick={() => onOpenWork(work)} aria-label={`Abrir ${work.title}`}>Abrir<ArrowRight aria-hidden="true" /></button></span>
-      </article>)}</div> : <div className="works-catalog-empty"><CompactEmptyState mark="00" title="Nenhuma obra encontrada" description="Ajuste a busca ou limpe os filtros para visualizar outros registros." /><button type="button" className="secondary-button button-with-icon" onClick={clearFilters}><RotateCcw aria-hidden="true" />Limpar filtros</button></div>}
+      {filteredWorks.length > 0 ? <div className="works-catalog-list" aria-label="Lista de obras">{filteredWorks.map((work) => {
+        const budgetUse = work.budget > 0 ? Math.round((work.spent / work.budget) * 100) : 0;
+        const riskClass = work.risk === "Em atraso" ? "danger" : work.risk === "Atenção" ? "warning" : "ok";
+        return <article className={`works-catalog-card works-catalog-card-${riskClass}`} key={work.id}>
+          <button type="button" className="works-catalog-cover" onClick={() => onOpenWork(work)} aria-label={`Abrir ${work.title}`}>
+            <img src={propertyCoverImagesByName[work.property] ?? fallbackPropertyCover} alt={`Fachada de ${work.property}`} width="560" height="420" loading="lazy" />
+            <span>{work.interventionType ?? "Obra"}</span><em>{work.id}</em>
+          </button>
+          <div className="works-catalog-card-body">
+            <header>
+              <div className="works-catalog-identity"><span><b className={`work-priority work-priority-${work.priority.toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[\u0300-\u036f]/g, "")}`}>{work.priority}</b><small>{work.id}</small></span><h3>{work.title}</h3><em><Building2 aria-hidden="true" />{work.property}{work.unit ? ` · ${work.unit}` : ""}</em></div>
+              <div className="works-catalog-badges"><WorkStatusBadge status={work.status} /><span className={`works-catalog-risk works-catalog-risk-${riskClass}`}><i />{work.risk}</span></div>
+            </header>
+            <div className="works-catalog-highlights">
+              <span className="works-catalog-next"><small>Próxima atividade</small><strong>{work.nextActivity}</strong><em>{work.lastUpdateLabel}</em></span>
+              <span className="works-catalog-progress"><span><small>Progresso</small><strong>{work.progress}%</strong></span><i role="progressbar" aria-valuenow={work.progress} aria-valuemin={0} aria-valuemax={100} aria-label={`Progresso de ${work.title}`}><b style={{ width: `${work.progress}%` }} /></i><em>{work.progress === 100 ? "Execução concluída" : `${100 - work.progress}% restante`}</em></span>
+              <span className="works-catalog-deadline"><small>Prazo final</small><strong>{work.endLabel}</strong><em>{work.risk}</em></span>
+              <span className="works-catalog-finance"><small>Gasto / previsto</small><strong>{brl.format(work.spent)}</strong><em>{budgetUse}% de {brl.format(work.budget)}</em></span>
+            </div>
+            <footer>
+              <span className="works-catalog-manager"><i><UsersRound aria-hidden="true" /></i><span><small>Responsável</small><strong>{work.manager}</strong></span></span>
+              <span className="works-catalog-actions"><button type="button" className="works-catalog-edit" onClick={() => onEditWork(work)} aria-label={`Editar ${work.title}`}><PencilLine aria-hidden="true" />Editar</button><button type="button" className="works-catalog-open" onClick={() => onOpenWork(work)} aria-label={`Abrir ${work.title}`}>Abrir obra<ArrowRight aria-hidden="true" /></button></span>
+            </footer>
+          </div>
+        </article>;
+      })}</div> : <div className="works-catalog-empty"><CompactEmptyState mark="00" title="Nenhuma obra encontrada" description="Ajuste a busca ou limpe os filtros para visualizar outros registros." /><button type="button" className="secondary-button button-with-icon" onClick={clearFilters}><RotateCcw aria-hidden="true" />Limpar filtros</button></div>}
     </section>
   </div>;
 }
@@ -1596,6 +1693,14 @@ function WorksTeamPage({ works, onOpenWork, onNotify }: { works: WorkRecord[]; o
   const withLateActivities = activePeople.filter((person) => person.lateActivities > 0).sort((left, right) => right.lateActivities - left.lateActivities);
   const activeAllocations = activePeople.flatMap((person) => person.allocations.filter((allocation) => allocation.status === "Atual"));
   const unallocated = activePeople.filter((person) => !person.allocations.some((allocation) => allocation.status === "Atual"));
+  const allocatedPeople = activePeople.filter((person) => person.allocations.some((allocation) => allocation.status === "Atual"));
+  const employeeShare = activePeople.length ? Math.round((employees.length / activePeople.length) * 100) : 0;
+  const contractorShare = activePeople.length ? 100 - employeeShare : 0;
+  const allocationCoverage = activePeople.length ? Math.round((allocatedPeople.length / activePeople.length) * 100) : 0;
+  const teamAttentionItems = [
+    ...withLateActivities.map((person) => ({ person, tone: "danger", label: `${person.lateActivities} ${person.lateActivities === 1 ? "atividade atrasada" : "atividades atrasadas"}` })),
+    ...unallocated.filter((person) => !withLateActivities.some((latePerson) => latePerson.id === person.id)).map((person) => ({ person, tone: "neutral", label: "Sem alocação atual" })),
+  ];
   const openRelatedWork = (workId: string) => {
     const work = works.find((record) => record.id === workId);
     if (work) onOpenWork(work);
@@ -1646,15 +1751,23 @@ function WorksTeamPage({ works, onOpenWork, onNotify }: { works: WorkRecord[]; o
     <div className="works-team-page">
       <section className="works-dashboard-heading team-page-heading" aria-labelledby="team-page-title"><div><p className="eyebrow">Módulo 2 · Gestão de Obras</p><h1 id="team-page-title">Equipe</h1><p>Veja quem está alocado, quais atividades estão atrasadas e onde cada pessoa atua.</p></div><button type="button" className="primary-button button-with-icon works-new-button" onClick={() => setAction({ type: "new" })}><Plus aria-hidden="true" />Adicionar pessoa</button></section>
 
+      <section className="team-overview" aria-label="Visão operacional da equipe">
+        <article className="team-capacity-card">
+          <header><div><p className="eyebrow">Capacidade operacional</p><h2>Equipe em campo</h2></div><span><UsersRound aria-hidden="true" /></span></header>
+          <div className="team-capacity-main"><div className="team-avatar-stack" aria-label={`${activePeople.length} pessoas ativas`}>{activePeople.slice(0, 6).map((person) => <span key={person.id} className={person.type === "Funcionário" ? "employee" : "contractor"}>{person.name.split(" ").slice(0, 2).map((name) => name[0]).join("")}</span>)}{activePeople.length > 6 && <b>+{activePeople.length - 6}</b>}</div><div><strong>{allocatedPeople.length} de {activePeople.length}</strong><small>pessoas com alocação atual</small></div><em>{allocationCoverage}%</em></div>
+          <div className="team-composition"><header><span>Composição da equipe</span><strong>{employees.length} internos · {contractors.length} externos</strong></header><div role="img" aria-label={`${employeeShare}% funcionários e ${contractorShare}% prestadores`}><span style={{ width: `${employeeShare}%` }} /><i style={{ width: `${contractorShare}%` }} /></div><footer><span><i className="employee" />Funcionários</span><span><i className="contractor" />Prestadores</span></footer></div>
+          <p><BriefcaseBusiness aria-hidden="true" />{activeAllocations.length} frentes de trabalho vinculadas à equipe ativa</p>
+        </article>
+        <section className="team-metrics" aria-label="Indicadores da equipe"><article><span><UsersRound aria-hidden="true" /></span><div><small>Pessoas ativas</small><strong>{activePeople.length}</strong><p>{activeAllocations.length} alocações atuais</p></div></article><article><span><BriefcaseBusiness aria-hidden="true" /></span><div><small>Funcionários</small><strong>{employees.length}</strong><p>Equipe interna demonstrativa</p></div></article><article><span><Handshake aria-hidden="true" /></span><div><small>Prestadores</small><strong>{contractors.length}</strong><p>Especialistas externos ativos</p></div></article><article className={withLateActivities.length ? "team-metric-danger" : ""}><span><TriangleAlert aria-hidden="true" /></span><div><small>Com atividades atrasadas</small><strong>{withLateActivities.length}</strong><p>{withLateActivities.reduce((total, person) => total + person.lateActivities, 0)} atividades exigem atenção</p></div></article></section>
+      </section>
+
       <aside className="team-scope-note"><UsersRound aria-hidden="true" /><span><strong>Gestão operacional da equipe</strong>Esta página não controla folha, benefícios, férias, ponto legal ou documentos pessoais sensíveis.</span></aside>
 
-      <section className="team-metrics" aria-label="Indicadores da equipe"><article><span><UsersRound aria-hidden="true" /></span><div><small>Pessoas ativas</small><strong>{activePeople.length}</strong><p>{activeAllocations.length} alocações atuais</p></div></article><article><span><BriefcaseBusiness aria-hidden="true" /></span><div><small>Funcionários</small><strong>{employees.length}</strong><p>Equipe interna demonstrativa</p></div></article><article><span><Handshake aria-hidden="true" /></span><div><small>Prestadores</small><strong>{contractors.length}</strong><p>Especialistas externos ativos</p></div></article><article className={withLateActivities.length ? "team-metric-danger" : ""}><span><TriangleAlert aria-hidden="true" /></span><div><small>Com atividades atrasadas</small><strong>{withLateActivities.length}</strong><p>{withLateActivities.reduce((total, person) => total + person.lateActivities, 0)} atividades exigem atenção</p></div></article></section>
-
-      {(withLateActivities.length > 0 || unallocated.length > 0) && <section className="team-attention-panel" aria-labelledby="team-attention-title"><header><div><p className="eyebrow">Prioridades de alocação</p><h2 id="team-attention-title">O que precisa de atenção</h2></div><b>{withLateActivities.length + unallocated.length}</b></header><div>{withLateActivities.slice(0, 4).map((person) => <button type="button" key={person.id} className="team-attention-danger" onClick={() => setSelectedPersonId(person.id)}><TriangleAlert aria-hidden="true" /><span><strong>{person.name}</strong><small>{person.lateActivities} {person.lateActivities === 1 ? "atividade atrasada" : "atividades atrasadas"}</small></span><ArrowRight aria-hidden="true" /></button>)}{unallocated.slice(0, 2).map((person) => <button type="button" key={person.id} onClick={() => setSelectedPersonId(person.id)}><UsersRound aria-hidden="true" /><span><strong>{person.name}</strong><small>Sem alocação atual</small></span><ArrowRight aria-hidden="true" /></button>)}</div></section>}
+      {teamAttentionItems.length > 0 && <section className="team-attention-panel" aria-labelledby="team-attention-title"><header><div><p className="eyebrow">Prioridades de alocação</p><h2 id="team-attention-title">O que precisa de atenção</h2></div><b>{teamAttentionItems.length}</b></header><div>{teamAttentionItems.slice(0, 6).map(({ person, tone, label }, index) => <button type="button" key={person.id} className={`${tone === "danger" ? "team-attention-danger" : ""} ${index === 0 ? "team-attention-featured" : ""}`.trim()} onClick={() => setSelectedPersonId(person.id)}>{tone === "danger" ? <TriangleAlert aria-hidden="true" /> : <UsersRound aria-hidden="true" />}<span><strong>{person.name}</strong><small>{label} · {person.role}</small></span><ArrowRight aria-hidden="true" /></button>)}</div></section>}
 
       <section className="team-list-controls" aria-label="Busca e filtros da equipe"><div className="team-search"><Search aria-hidden="true" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por nome, função ou contato" aria-label="Buscar pessoas" /></div><label><span>Obra</span><select value={workFilter} onChange={(event) => setWorkFilter(event.target.value)}><option>Todas as obras</option>{works.map((work) => <option key={work.id} value={work.id}>{work.id} · {work.title}</option>)}</select></label><label><span>Tipo</span><select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}><option>Todos os tipos</option><option>Funcionário</option><option>Prestador</option></select></label><label><span>Situação</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option>Todas as situações</option><option>Ativa</option><option>Inativa</option></select></label><button type="button" className="secondary-button button-with-icon" disabled={!filtersActive} onClick={clearFilters}><RotateCcw aria-hidden="true" />Limpar</button><footer><span><strong>{filteredPeople.length}</strong> de {people.length} pessoas</span><small>Selecione uma pessoa para ver contatos, custos e histórico.</small></footer></section>
 
-      <section className="team-people-panel" aria-labelledby="team-people-title"><header><div><p className="eyebrow">Pessoas cadastradas</p><h2 id="team-people-title">Equipe das obras</h2></div><span>{activePeople.length} ativas · {people.length - activePeople.length} inativas</span></header>{filteredPeople.length > 0 ? <div className="team-people-list">{filteredPeople.map((person) => { const currentAllocations = person.allocations.filter((allocation) => allocation.status === "Atual"); return <article key={person.id} className={person.status === "Inativa" ? "inactive" : ""}><span className="team-person-avatar">{person.name.split(" ").slice(0, 2).map((name) => name[0]).join("")}</span><div className="team-person-identity"><small>{person.id} · {person.type}</small><strong>{person.name}</strong><em>{person.role}</em></div><div className="team-person-contact"><small>Contato</small><strong>{person.contact}</strong></div><div className="team-person-works"><small>Obras atuais</small>{currentAllocations.length ? <span>{currentAllocations.slice(0, 2).map((allocation) => { const work = works.find((record) => record.id === allocation.workId); return <button type="button" key={allocation.id} onClick={() => openRelatedWork(allocation.workId)}>{allocation.workId}<em>{work?.title}</em></button>; })}{currentAllocations.length > 2 && <b>+{currentAllocations.length - 2}</b>}</span> : <strong>Sem alocação atual</strong>}</div><div className="team-person-activities"><span><small>Em andamento</small><strong>{person.activeActivities}</strong></span><span className={person.lateActivities ? "late" : ""}><small>Atrasadas</small><strong>{person.lateActivities}</strong></span></div><div className="team-person-cost"><small>Custo de referência</small><strong>{person.costRate ? `${brl.format(person.costRate)} / ${person.costMode === "Hora" ? "h" : "dia"}` : "Não informado"}</strong></div><WorkPersonStatusBadge status={person.status} /><button type="button" className="team-person-open" onClick={() => setSelectedPersonId(person.id)}>Ver detalhes<ArrowRight aria-hidden="true" /></button></article>; })}</div> : <div className="team-empty"><CompactEmptyState mark="00" title="Nenhuma pessoa encontrada" description="Ajuste os filtros para consultar outras pessoas da equipe." /><button type="button" className="secondary-button button-with-icon" onClick={clearFilters}><RotateCcw aria-hidden="true" />Limpar filtros</button></div>}</section>
+      <section className="team-people-panel" aria-labelledby="team-people-title"><header><div><p className="eyebrow">Pessoas cadastradas</p><h2 id="team-people-title">Equipe das obras</h2></div><span>{activePeople.length} ativas · {people.length - activePeople.length} inativas</span></header>{filteredPeople.length > 0 ? <div className="team-people-list">{filteredPeople.map((person) => { const currentAllocations = person.allocations.filter((allocation) => allocation.status === "Atual"); return <article key={person.id} className={`team-person-card ${person.status === "Inativa" ? "inactive" : ""} ${person.lateActivities ? "has-late-activities" : ""}`.trim()}><header className="team-person-card-header"><span className={`team-person-avatar ${person.type === "Funcionário" ? "employee" : "contractor"}`}>{person.name.split(" ").slice(0, 2).map((name) => name[0]).join("")}</span><div className="team-person-identity"><small><b>{person.id}</b><i>{person.type}</i></small><strong>{person.name}</strong><em>{person.role}</em></div><WorkPersonStatusBadge status={person.status} /></header><div className="team-person-card-details"><span><small>Contato</small><strong>{person.contact}</strong></span><span><small>Custo de referência</small><strong>{person.costRate ? `${brl.format(person.costRate)} / ${person.costMode === "Hora" ? "h" : "dia"}` : "Não informado"}</strong></span></div><div className="team-person-works"><small>Obras atuais</small>{currentAllocations.length ? <span>{currentAllocations.slice(0, 2).map((allocation) => { const work = works.find((record) => record.id === allocation.workId); return <button type="button" key={allocation.id} onClick={() => openRelatedWork(allocation.workId)}><b>{allocation.workId}</b><em>{work?.title}</em></button>; })}{currentAllocations.length > 2 && <b>+{currentAllocations.length - 2}</b>}</span> : <strong>Sem alocação atual</strong>}</div><footer className="team-person-card-footer"><div className="team-person-activities"><span><small>Em andamento</small><strong>{person.activeActivities}</strong></span><span className={person.lateActivities ? "late" : ""}><small>Atrasadas</small><strong>{person.lateActivities}</strong></span></div><button type="button" className="team-person-open" onClick={() => setSelectedPersonId(person.id)}>Ver perfil completo<ArrowRight aria-hidden="true" /></button></footer></article>; })}</div> : <div className="team-empty"><CompactEmptyState mark="00" title="Nenhuma pessoa encontrada" description="Ajuste os filtros para consultar outras pessoas da equipe." /><button type="button" className="secondary-button button-with-icon" onClick={clearFilters}><RotateCcw aria-hidden="true" />Limpar filtros</button></div>}</section>
     </div>
     {selectedPerson && <WorkPersonDrawer person={selectedPerson} works={works} onClose={() => setSelectedPersonId(null)} onEdit={() => setAction({ type: "edit", person: selectedPerson })} onAllocate={() => setAction({ type: "allocate", person: selectedPerson })} onToggleStatus={() => togglePersonStatus(selectedPerson)} onOpenWork={openRelatedWork} />}
     {action?.type === "new" && <WorkPersonFormDrawer onClose={() => setAction(null)} onSave={(data) => savePerson(data)} />}
@@ -1857,12 +1970,28 @@ function WorksFinancialPage({ works, initialWorkId, onOpenWork, onNotify }: { wo
     { key: "2026-08", label: "Agosto", planned: scopedCash.filter((movement) => movement.direction === "Saída" && movement.dateIso.startsWith("2026-08")).reduce((sum, movement) => sum + movement.amount, 0), realized: scopedCash.filter((movement) => movement.direction === "Saída" && movement.status === "Realizado" && movement.dateIso.startsWith("2026-08")).reduce((sum, movement) => sum + movement.amount, 0) },
     { key: "2026-09", label: "Setembro", planned: scopedCash.filter((movement) => movement.direction === "Saída" && movement.dateIso.startsWith("2026-09")).reduce((sum, movement) => sum + movement.amount, 0), realized: scopedCash.filter((movement) => movement.direction === "Saída" && movement.status === "Realizado" && movement.dateIso.startsWith("2026-09")).reduce((sum, movement) => sum + movement.amount, 0) },
   ];
+  const budgetUsage = selectedBudgetTotal > 0 ? Math.round((expenseTotal / selectedBudgetTotal) * 100) : 0;
+  const projectedDelta = projectedCash - currentCash;
+  const totalFinanceAlerts = budgetDecisionGroups.length + expensesOverExpected.length + negativeCashPositions;
 
   return <>
     <div className="works-financial-page">
       <section className="works-dashboard-heading finance-page-heading" aria-labelledby="finance-page-title">
         <div><p className="eyebrow">Módulo 2 · Gestão de Obras</p><h1 id="finance-page-title">Financeiro</h1><p>Compare propostas, registre gastos e acompanhe o caixa de forma manual e simples.</p></div>
         <button type="button" className="primary-button button-with-icon" onClick={() => setAction({ type: tab === "Orçamentos" ? "budget" : tab === "Gastos" ? "expense" : "cash" })}><Plus aria-hidden="true" />{tab === "Orçamentos" ? "Novo orçamento" : tab === "Gastos" ? "Registrar gasto" : "Novo movimento"}</button>
+      </section>
+
+      <section className="finance-executive-overview" aria-label="Resumo executivo financeiro">
+        <article className="finance-pulse-card">
+          <header><div><p className="eyebrow">Resumo executivo</p><h2>Pulso financeiro das obras</h2></div><span><WalletCards aria-hidden="true" /></span></header>
+          <div className="finance-pulse-balance"><small>Saldo atual realizado</small><strong className={currentCash < 0 ? "negative" : ""}>{brl.format(currentCash)}</strong><span className={projectedDelta < 0 ? "negative" : ""}><ArrowUpDown aria-hidden="true" />{projectedDelta >= 0 ? "+ " : "− "}{brl.format(Math.abs(projectedDelta))} até o saldo projetado</span></div>
+          <div className="finance-budget-usage"><header><span>Uso da referência selecionada</span><strong className={budgetUsage > 100 ? "negative" : ""}>{budgetUsage}%</strong></header><div role="img" aria-label={`${budgetUsage}% da referência orçamentária utilizada`}><i className={budgetUsage > 100 ? "danger" : ""} style={{ width: `${Math.min(100, budgetUsage)}%` }} /></div><footer><span>{brl.format(expenseTotal)} em gastos</span><span>{brl.format(selectedBudgetTotal)} de referência</span></footer></div>
+          <footer><span><ClipboardList aria-hidden="true" /><small>Selecionado</small><strong>{brl.format(selectedBudgetTotal)}</strong></span><span><CircleCheck aria-hidden="true" /><small>Realizado</small><strong>{brl.format(paidExpenseTotal)}</strong></span><span className={projectedCash < 0 ? "danger" : ""}><WalletCards aria-hidden="true" /><small>Projetado</small><strong>{brl.format(projectedCash)}</strong></span></footer>
+        </article>
+        <aside className="finance-risk-board">
+          <header><div><p className="eyebrow">Atenção financeira</p><h2>Decisões e riscos</h2></div><b className={totalFinanceAlerts ? "has-alerts" : ""}>{totalFinanceAlerts}</b></header>
+          <div><button type="button" onClick={() => setTab("Orçamentos")}><span><ArrowUpDown aria-hidden="true" /></span><div><small>Orçamentos</small><strong>{budgetDecisionGroups.length ? `${budgetDecisionGroups.length} serviços para comparar` : "Comparações em dia"}</strong><em>{budgetsAwaitingReturn} proposta(s) aguardando retorno</em></div><ArrowRight aria-hidden="true" /></button><button type="button" className={expensesOverExpected.length ? "danger" : ""} onClick={() => setTab("Gastos")}><span><HandCoins aria-hidden="true" /></span><div><small>Gastos</small><strong>{expensesOverExpected.length ? `${expensesOverExpected.length} acima do esperado` : "Gastos dentro do previsto"}</strong><em>{expensesOverExpected.length ? `${brl.format(expenseOverrunTotal)} de diferença` : `${brl.format(expenseTotal)} lançados`}</em></div><ArrowRight aria-hidden="true" /></button><button type="button" className={negativeCashPositions ? "danger" : ""} onClick={() => setTab("Caixa")}><span><WalletCards aria-hidden="true" /></span><div><small>Caixa</small><strong>{negativeCashPositions ? `${negativeCashPositions} projeção(ões) negativa(s)` : "Projeções equilibradas"}</strong><em>{plannedCashMovements.length} movimento(s) ainda previsto(s)</em></div><ArrowRight aria-hidden="true" /></button></div>
+        </aside>
       </section>
 
       <aside className="finance-manual-banner"><WifiOff aria-hidden="true" /><span><strong>Controle manual, sem integração bancária</strong>Os valores são demonstrativos, ficam somente nesta sessão e não representam movimentações reais.</span></aside>
@@ -2000,6 +2129,18 @@ function WorksSchedulePage({ works, onOpenWork, onUpdateWork, onNotify }: { work
   const upcoming = filteredActivities.filter((activity) => activity.status !== "Concluída" && activity.status !== "Bloqueada" && activity.startDateIso > WORKS_DEMO_DATE_ISO);
   const completed = filteredActivities.filter((activity) => activity.status === "Concluída");
   const nextSevenDays = filteredActivities.filter((activity) => activity.status !== "Concluída" && activity.status !== "Bloqueada" && activity.endDateIso > WORKS_DEMO_DATE_ISO && activity.endDateIso <= shiftWorkDate(WORKS_DEMO_DATE_ISO, 7)).length;
+  const scheduleWeek = Array.from({ length: 7 }, (_, index) => {
+    const dateIso = shiftWorkDate(WORKS_DEMO_DATE_ISO, index);
+    const date = new Date(`${dateIso}T12:00:00Z`);
+    return {
+      dateIso,
+      day: dateIso.slice(8, 10),
+      weekday: new Intl.DateTimeFormat("pt-BR", { weekday: "short", timeZone: "UTC" }).format(date).replace(".", ""),
+      activities: filteredActivities.filter((activity) => activity.endDateIso === dateIso),
+    };
+  });
+  const maxScheduleWeekLoad = Math.max(1, ...scheduleWeek.map((day) => day.activities.length));
+  const criticalActivity = [...overdue, ...blocked, ...today, ...upcoming].sort((left, right) => left.endDateIso.localeCompare(right.endDateIso))[0];
   const agendaGroups = [
     { id: "delayed", title: "Atrasadas", description: "Prazo já ultrapassado", tone: "danger", rows: overdue },
     { id: "blocked", title: "Bloqueadas", description: "Dependem de uma decisão", tone: "warning", rows: blocked },
@@ -2075,7 +2216,14 @@ function WorksSchedulePage({ works, onOpenWork, onUpdateWork, onNotify }: { work
 
       <section className="schedule-command-bar" aria-label="Visualização e filtros do cronograma"><div className="schedule-view-toggle" role="group" aria-label="Forma de visualizar"><button type="button" className={view === "Agenda" ? "active" : ""} aria-pressed={view === "Agenda"} onClick={() => setView("Agenda")}><ClipboardList aria-hidden="true" />Agenda</button><button type="button" className={view === "Calendário" ? "active" : ""} aria-pressed={view === "Calendário"} onClick={() => setView("Calendário")}><CalendarClock aria-hidden="true" />Calendário</button></div><div className="schedule-filters"><label><span>Obra</span><select value={workFilter} onChange={(event) => setWorkFilter(event.target.value)}><option>Todas as obras</option>{works.map((work) => <option key={work.id} value={work.id}>{work.id} · {work.title}</option>)}</select></label><label><span>Responsável</span><select value={managerFilter} onChange={(event) => setManagerFilter(event.target.value)}><option>Todos os responsáveis</option>{managers.map((manager) => <option key={manager}>{manager}</option>)}</select></label><label><span>Situação</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option>Todas as situações</option><option>Não iniciada</option><option>Em andamento</option><option>Bloqueada</option><option>Concluída</option></select></label><button type="button" className="secondary-button button-with-icon" disabled={!filtersActive} onClick={clearFilters}><RotateCcw aria-hidden="true" />Limpar</button></div><footer><span><strong>{filteredActivities.length}</strong> de {activities.length} atividades exibidas</span><div className="schedule-legend" aria-label="Legenda"><span className="legend-delayed"><i />Atrasada</span><span className="legend-today"><i />Hoje</span><span className="legend-next"><i />Próxima</span><span className="legend-blocked"><i />Bloqueada</span><span className="legend-completed"><i />Concluída</span></div></footer></section>
 
-      <section className="schedule-metrics" aria-label="Indicadores do cronograma"><article className="schedule-metric-danger"><span><TriangleAlert aria-hidden="true" /></span><div><small>Atrasadas</small><strong>{overdue.length}</strong><p>Precisam de reprogramação</p></div></article><article className="schedule-metric-today"><span><CalendarClock aria-hidden="true" /></span><div><small>Em execução hoje</small><strong>{today.length}</strong><p>Data de referência: 24 ago</p></div></article><article className="schedule-metric-next"><span><ArrowRight aria-hidden="true" /></span><div><small>Próximos 7 dias</small><strong>{nextSevenDays}</strong><p>Entregas até 31 de agosto</p></div></article><article className="schedule-metric-blocked"><span><Pause aria-hidden="true" /></span><div><small>Bloqueadas</small><strong>{blocked.length}</strong><p>Aguardando decisão</p></div></article></section>
+      <section className="schedule-overview" aria-label="Pulso do cronograma">
+        <article className="schedule-week-pulse">
+          <header><div><p className="eyebrow">Pulso da semana</p><h2>Distribuição das entregas</h2><span>Conclusões previstas entre 24 e 30 de agosto.</span></div><CalendarClock aria-hidden="true" /></header>
+          <div className="schedule-week-chart">{scheduleWeek.map((day, index) => <span key={day.dateIso} className={index === 0 ? "today" : ""}><small>{day.weekday}</small><strong>{day.day}</strong><i><b style={{ height: `${Math.max(day.activities.length ? 18 : 5, (day.activities.length / maxScheduleWeekLoad) * 100)}%` }} /></i><em>{day.activities.length}</em></span>)}</div>
+          {criticalActivity ? <button type="button" className={`schedule-critical-activity ${overdue.some((activity) => activity.id === criticalActivity.id) ? "danger" : blocked.some((activity) => activity.id === criticalActivity.id) ? "blocked" : "next"}`} onClick={() => openActivityWork(criticalActivity)}><span><small>Ponto de atenção prioritário</small><strong>{criticalActivity.title}</strong><em>{criticalActivity.workId} · {criticalActivity.workTitle}</em></span><span><small>Prazo</small><strong>{formatExpenseDate(criticalActivity.endDateIso)}</strong><em>{criticalActivity.manager}</em></span><ArrowRight aria-hidden="true" /></button> : <div className="schedule-critical-empty"><CircleCheck aria-hidden="true" /><span><strong>Agenda sob controle</strong><small>Nenhuma atividade crítica neste filtro.</small></span></div>}
+        </article>
+        <section className="schedule-metrics" aria-label="Indicadores do cronograma"><article className="schedule-metric-danger"><span><TriangleAlert aria-hidden="true" /></span><div><small>Atrasadas</small><strong>{overdue.length}</strong><p>Precisam de reprogramação</p></div></article><article className="schedule-metric-today"><span><CalendarClock aria-hidden="true" /></span><div><small>Em execução hoje</small><strong>{today.length}</strong><p>Data de referência: 24 ago</p></div></article><article className="schedule-metric-next"><span><ArrowRight aria-hidden="true" /></span><div><small>Próximos 7 dias</small><strong>{nextSevenDays}</strong><p>Entregas até 31 de agosto</p></div></article><article className="schedule-metric-blocked"><span><Pause aria-hidden="true" /></span><div><small>Bloqueadas</small><strong>{blocked.length}</strong><p>Aguardando decisão</p></div></article></section>
+      </section>
 
       {view === "Agenda" && <section className="schedule-agenda" aria-labelledby="schedule-agenda-title"><header><div><p className="eyebrow">Agenda operacional</p><h2 id="schedule-agenda-title">Atividades por prioridade</h2><span>Itens críticos aparecem primeiro; concluídos ficam ao final.</span></div><time dateTime={WORKS_DEMO_DATE_ISO}><CalendarClock aria-hidden="true" />24 de agosto de 2026</time></header><div className="schedule-agenda-groups">{filteredActivities.length > 0 ? agendaGroups.map((group) => group.rows.length > 0 && <section key={group.id} className={`schedule-agenda-group schedule-group-${group.tone}`}><header><span><i />{group.title}</span><small>{group.description}</small><b>{group.rows.length}</b></header><div>{group.rows.sort((left, right) => left.endDateIso.localeCompare(right.endDateIso)).map((activity) => <article key={activity.id}><time dateTime={activity.endDateIso}><strong>{activity.endDateIso.slice(8, 10)}</strong><small>{new Intl.DateTimeFormat("pt-BR", { month: "short", timeZone: "UTC" }).format(new Date(`${activity.endDateIso}T12:00:00Z`)).replace(".", "").toUpperCase()}</small></time><div className="schedule-activity-identity"><small>{activity.workId} · {activity.stage}</small><strong>{activity.title}</strong><em>{activity.workTitle}</em>{activity.blockedReason && <p><TriangleAlert aria-hidden="true" />{activity.blockedReason}</p>}{activity.reprogramReason && <p><CalendarClock aria-hidden="true" />Reprogramada: {activity.reprogramReason}</p>}</div><div className="schedule-activity-context"><span><UsersRound aria-hidden="true" />{activity.manager}</span><span><Building2 aria-hidden="true" />{activity.property}</span></div><div className="schedule-activity-period"><small>Período</small><strong>{formatExpenseDate(activity.startDateIso)} — {formatExpenseDate(activity.endDateIso)}</strong></div><WorkDetailStatusBadge status={activity.status} /><div className="schedule-activity-actions">{activity.status !== "Concluída" && <button type="button" onClick={() => completeActivity(activity)}><Check aria-hidden="true" />Concluir</button>}<button type="button" onClick={() => setAction({ type: "reprogram", activity })}><CalendarClock aria-hidden="true" />Reprogramar</button><button type="button" className="schedule-open-work" onClick={() => openActivityWork(activity)} aria-label={`Abrir ${activity.workTitle}`}>Abrir obra<ArrowRight aria-hidden="true" /></button></div></article>)}</div></section>) : <div className="schedule-empty"><CompactEmptyState mark="00" title="Nenhuma atividade encontrada" description="Limpe ou ajuste os filtros para consultar outras atividades." /><button type="button" className="secondary-button button-with-icon" onClick={clearFilters}><RotateCcw aria-hidden="true" />Limpar filtros</button></div>}</div></section>}
 
@@ -2119,8 +2267,8 @@ function formatWorkDetailDateTime(value: string) {
   return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(date).replace(".", "");
 }
 
-function WorkDetailPage({ work, onBack, onEdit, onOpenFinance, onUpdateWork, onNotify }: { work: WorkRecord; onBack: () => void; onEdit: () => void; onOpenFinance: () => void; onUpdateWork: (work: WorkRecord, message: string) => void; onNotify: (message: string, reference: string) => void }) {
-  const [tab, setTab] = useState<WorkDetailTab>("Resumo");
+function WorkDetailPage({ work, initialTab, onBack, onEdit, onOpenFinance, onUpdateWork, onNotify }: { work: WorkRecord; initialTab: WorkDetailTab; onBack: () => void; onEdit: () => void; onOpenFinance: () => void; onUpdateWork: (work: WorkRecord, message: string) => void; onNotify: (message: string, reference: string) => void }) {
+  const [tab, setTab] = useState<WorkDetailTab>(initialTab);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [action, setAction] = useState<WorkDetailAction>(null);
   const [activities, setActivities] = useState<WorkActivity[]>(() => createWorkDetailMock(work).activities);
@@ -2143,6 +2291,7 @@ function WorkDetailPage({ work, onBack, onEdit, onOpenFinance, onUpdateWork, onN
   const paidExpenses = financialEntries.filter((entry) => entry.kind === "Gasto" && entry.status === "Pago").reduce((sum, entry) => sum + entry.amount, 0);
   const cashAdjustments = financialEntries.filter((entry) => entry.kind === "Aporte" || entry.kind === "Ajuste").reduce((sum, entry) => sum + entry.amount, 0);
   const availableCash = cashAdjustments - paidExpenses;
+  const budgetUse = work.budget > 0 ? Math.round((work.spent / work.budget) * 100) : 0;
   const teamCost = team.reduce((sum, allocation) => sum + allocation.quantity * allocation.unitRate, 0);
   const nextActivity = activities.find((activity) => activity.status === "Em andamento") ?? activities.find((activity) => activity.status === "Não iniciada" || activity.status === "Bloqueada");
   const displayPendingItems = [
@@ -2230,14 +2379,19 @@ function WorkDetailPage({ work, onBack, onEdit, onOpenFinance, onUpdateWork, onN
   return <>
     <div className="work-detail-page">
       <section className="work-detail-hero" aria-labelledby="work-detail-title">
+        <div className="work-detail-hero-cover">
+          <img src={propertyCoverImagesByName[work.property] ?? fallbackPropertyCover} alt={`Fachada de ${work.property}`} width="720" height="640" />
+          <span className="work-detail-hero-cover-shade" aria-hidden="true" />
+          <span className="work-detail-hero-cover-copy"><small>Local da intervenção</small><strong>{work.property}</strong><em>{work.unit ?? "Toda a área do imóvel"}</em></span>
+        </div>
         <button type="button" className="work-detail-back" onClick={onBack}><ArrowRight aria-hidden="true" />Todas as obras</button>
-        <div className="work-detail-title"><p className="eyebrow">{work.id} · {work.interventionType ?? "Obra"}</p><div><h1 id="work-detail-title">{work.title}</h1><WorkStatusBadge status={work.status} /></div><p>{work.property}{work.unit ? ` · ${work.unit}` : " · Toda a área do imóvel"}</p></div>
+        <div className="work-detail-title"><p className="eyebrow">{work.id} · {work.interventionType ?? "Obra"}</p><div><h1 id="work-detail-title">{work.title}</h1><WorkStatusBadge status={work.status} /></div><p><ClipboardList aria-hidden="true" />Próximo marco: <strong>{work.nextActivity}</strong></p></div>
         <div className="work-detail-actions"><button type="button" className="primary-button button-with-icon" onClick={() => setAction({ type: "update" })}><Plus aria-hidden="true" />Registrar atualização</button><div className="work-detail-actions-menu"><button type="button" className="secondary-button" aria-label="Mais ações da obra" aria-expanded={actionsOpen} onClick={() => setActionsOpen((current) => !current)}><MoreHorizontal aria-hidden="true" /></button>{actionsOpen && <div role="menu"><button type="button" role="menuitem" onClick={() => { setActionsOpen(false); onEdit(); }}><PencilLine aria-hidden="true" />Editar cadastro</button>{work.status === "Pausada" ? <button type="button" role="menuitem" onClick={() => updateWorkStatus("Em andamento")}><Play aria-hidden="true" />Retomar obra</button> : work.status !== "Concluída" && work.status !== "Cancelada" ? <button type="button" role="menuitem" onClick={() => updateWorkStatus("Pausada")}><Pause aria-hidden="true" />Pausar obra</button> : null}{work.status !== "Concluída" && work.status !== "Cancelada" && <button type="button" role="menuitem" onClick={() => updateWorkStatus("Concluída")}><CircleCheck aria-hidden="true" />Concluir obra</button>}{work.status !== "Cancelada" && work.status !== "Concluída" && <button type="button" role="menuitem" className="danger" onClick={() => updateWorkStatus("Cancelada")}><Ban aria-hidden="true" />Cancelar obra</button>}</div>}</div></div>
         <dl className="work-detail-hero-metrics">
           <div><dt>Progresso</dt><dd>{work.progress}%</dd><i><b style={{ width: `${work.progress}%` }} /></i></div>
           <div><dt>Prazo final</dt><dd>{work.endLabel}</dd><small className={`work-risk work-risk-${work.risk === "Em atraso" ? "danger" : work.risk === "Atenção" ? "warning" : "ok"}`}>{work.risk}</small></div>
           <div><dt>Responsável</dt><dd>{work.manager}</dd><small>{team.length} pessoas alocadas</small></div>
-          <div><dt>Previsto</dt><dd>{brl.format(work.budget)}</dd><small>{brl.format(work.spent)} gasto</small></div>
+          <div><dt>Orçamento previsto</dt><dd>{brl.format(work.budget)}</dd><small>{budgetUse}% utilizado · {brl.format(work.spent)}</small></div>
         </dl>
       </section>
 
@@ -2245,7 +2399,7 @@ function WorkDetailPage({ work, onBack, onEdit, onOpenFinance, onUpdateWork, onN
 
       {tab === "Resumo" && <div className="work-detail-summary">
         <section className="work-detail-decision-card" aria-labelledby="work-next-decision-title"><header><div><p className="eyebrow">Próxima decisão</p><h2 id="work-next-decision-title">{nextActivity?.title ?? "Planejamento concluído"}</h2></div><CalendarClock aria-hidden="true" /></header><div className="work-detail-decision-progress"><span className="work-detail-progress-ring" style={{ "--work-progress": `${work.progress * 3.6}deg` } as CSSProperties}><strong>{work.progress}%</strong><small>concluído</small></span><div><span>Prazo da atividade</span><strong>{nextActivity ? `${formatExpenseDate(nextActivity.startDateIso)} — ${formatExpenseDate(nextActivity.endDateIso)}` : "Sem próxima atividade"}</strong><small>{nextActivity?.manager ?? work.manager}</small>{nextActivity && <WorkDetailStatusBadge status={nextActivity.status} />}</div></div><footer><button type="button" onClick={() => { setTab("Planejamento"); setAction({ type: "activity" }); }}><Plus aria-hidden="true" />Adicionar atividade</button><button type="button" onClick={() => setAction({ type: "expense" })}><HandCoins aria-hidden="true" />Registrar gasto</button><button type="button" onClick={() => setAction({ type: "budget" })}><ClipboardList aria-hidden="true" />Adicionar orçamento</button></footer></section>
-        <section className="work-detail-finance-card" aria-labelledby="work-summary-finance-title"><header><div><p className="eyebrow">Financeiro</p><h2 id="work-summary-finance-title">Posição da obra</h2></div><WalletCards aria-hidden="true" /></header><dl><div><dt>Valor previsto</dt><dd>{brl.format(work.budget)}</dd></div><div><dt>Total gasto</dt><dd>{brl.format(work.spent)}</dd></div><div><dt>Saldo projetado</dt><dd className={work.projectedCashBalance < 0 ? "negative" : ""}>{brl.format(work.projectedCashBalance)}</dd></div><div><dt>Caixa disponível</dt><dd className={availableCash < 0 ? "negative" : ""}>{brl.format(availableCash)}</dd></div></dl><button type="button" onClick={() => setTab("Financeiro")}>Ver financeiro completo<ArrowRight aria-hidden="true" /></button></section>
+        <section className="work-detail-finance-card" aria-labelledby="work-summary-finance-title"><header><div><p className="eyebrow">Financeiro</p><h2 id="work-summary-finance-title">Posição da obra</h2></div><WalletCards aria-hidden="true" /></header><dl><div><dt>Valor previsto</dt><dd>{brl.format(work.budget)}</dd></div><div><dt>Total gasto</dt><dd>{brl.format(work.spent)}</dd></div><div><dt>Saldo projetado</dt><dd className={work.projectedCashBalance < 0 ? "negative" : ""}>{brl.format(work.projectedCashBalance)}</dd></div><div><dt>Caixa disponível</dt><dd className={availableCash < 0 ? "negative" : ""}>{brl.format(availableCash)}</dd></div></dl><div className="work-detail-finance-usage"><span><small>Orçamento consumido</small><strong className={budgetUse > 100 ? "negative" : ""}>{budgetUse}%</strong></span><i role="progressbar" aria-valuenow={Math.min(100, budgetUse)} aria-valuemin={0} aria-valuemax={100} aria-label={`${budgetUse}% do orçamento da obra foi utilizado`}><b style={{ width: `${Math.min(100, budgetUse)}%` }} /></i></div><button type="button" onClick={() => setTab("Financeiro")}>Ver financeiro completo<ArrowRight aria-hidden="true" /></button></section>
         <section className="work-detail-pending-card" aria-labelledby="work-pending-title"><header><div><p className="eyebrow">Atenção</p><h2 id="work-pending-title">Pendências e decisões</h2></div><b>{displayPendingItems.length}</b></header>{displayPendingItems.length ? <div>{displayPendingItems.slice(0, 4).map((item) => <article key={item.id} className={`work-detail-pending-${item.tone}`}><TriangleAlert aria-hidden="true" /><span><strong>{item.title}</strong><small>{item.description}</small></span>{pendingItems.some((pending) => pending.id === item.id) && <button type="button" onClick={() => setPendingItems((current) => current.filter((pending) => pending.id !== item.id))} aria-label={`Resolver ${item.title}`}><Check aria-hidden="true" /></button>}</article>)}</div> : <CompactEmptyState mark="✓" tone="success" title="Nenhuma pendência aberta" description="A obra não possui bloqueios ou decisões aguardando ação." />}</section>
         <section className="work-detail-team-card" aria-labelledby="work-summary-team-title"><header><div><p className="eyebrow">Responsáveis</p><h2 id="work-summary-team-title">Equipe principal</h2></div><button type="button" onClick={() => setTab("Equipe")}>Ver equipe</button></header><div>{team.slice(0, 4).map((member) => <article key={member.id}><span>{member.name.split(" ").slice(0, 2).map((name) => name[0]).join("")}</span><div><strong>{member.name}</strong><small>{member.role}</small></div><em>{member.activityIds.length} atividades</em></article>)}</div><footer><span>Custo estimado da mão de obra</span><strong>{brl.format(teamCost)}</strong></footer></section>
         <section className="work-detail-timeline-card" aria-labelledby="work-summary-history-title"><header><div><p className="eyebrow">Últimos registros</p><h2 id="work-summary-history-title">Atualizações recentes</h2></div><button type="button" onClick={() => setTab("Diário e arquivos")}>Ver diário</button></header><div>{journal.slice(0, 4).map((entry) => <article key={entry.id}><i className={`journal-${entry.kind.toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[\u0300-\u036f]/g, "")}`} /><div><strong>{entry.title}</strong><p>{entry.description}</p><small>{formatWorkDetailDateTime(entry.dateIso)} · {entry.author}{entry.files.length ? ` · ${entry.files.length} arquivo(s)` : ""}</small></div>{entry.progress !== undefined && <b>{entry.progress}%</b>}</article>)}</div></section>
@@ -2410,6 +2564,8 @@ function WorkFormPage({ work, works, properties, units, onCancel, onSave }: { wo
   };
 
   const firstError = Object.values(errors)[0];
+  const draftInvestment = (Number(draft.budget) || 0) + (Number(draft.reserve) || 0);
+  const formProgress = Math.round((step / steps.length) * 100);
   return <div className="work-form-page">
     <section className="work-form-heading" aria-labelledby="work-form-title">
       <button type="button" className="work-form-back" onClick={handleCancel}><ArrowRight aria-hidden="true" />Voltar para obras</button>
@@ -2422,7 +2578,8 @@ function WorkFormPage({ work, works, properties, units, onCancel, onSave }: { wo
     </nav>
 
     <form className="work-form-shell" onSubmit={handleSubmit} noValidate>
-      <section className="work-form-card" aria-labelledby={`work-form-step-${step}`}>
+      <div className="work-form-workspace">
+        <section className="work-form-card" aria-labelledby={`work-form-step-${step}`}>
         <header><span>0{step}</span><div><h2 id={`work-form-step-${step}`}>{steps[step - 1].title}</h2><p>{step === 1 ? "Comece pelas informações que ajudam a localizar e entender a obra." : step === 2 ? "Defina uma referência principal e o prazo planejado." : "Informe a previsão inicial e confira o resumo antes de salvar."}</p></div></header>
         {firstError && <p className="work-form-alert" role="alert"><TriangleAlert aria-hidden="true" />Revise os campos indicados antes de continuar.</p>}
 
@@ -2450,9 +2607,29 @@ function WorkFormPage({ work, works, properties, units, onCancel, onSave }: { wo
             <label className="work-form-field-wide"><span>Observações <em>opcional</em></span><textarea value={draft.notes} maxLength={500} rows={4} onChange={(event) => updateDraft("notes", event.target.value)} placeholder="Registre restrições, acordos ou orientações importantes." /><small>{draft.notes.length}/500 caracteres</small></label>
             <div className="work-form-upload work-form-field-wide"><p className="work-form-upload-label">Anexos de referência <em>opcional</em></p><label className="work-form-upload-drop"><input type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" onChange={(event) => updateDraft("attachments", Array.from(event.target.files ?? []).map((file) => file.name))} /><span><ArrowDownToLine aria-hidden="true" /><strong>Escolher arquivos</strong><small>PDF, imagens ou documentos. Nesta demonstração, somente os nomes são mantidos.</small></span></label>{draft.attachments.length > 0 && <ul>{draft.attachments.map((attachment) => <li key={attachment}><FileSignature aria-hidden="true" /><span>{attachment}</span><button type="button" onClick={() => updateDraft("attachments", draft.attachments.filter((name) => name !== attachment))} aria-label={`Remover ${attachment}`}><X aria-hidden="true" /></button></li>)}</ul>}</div>
           </div>
-          <section className="work-form-review" aria-labelledby="work-form-review-title"><header><div><p className="eyebrow">Conferência rápida</p><h3 id="work-form-review-title">Resumo da obra</h3></div><CircleCheck aria-hidden="true" /></header><dl><div><dt>Intervenção</dt><dd>{draft.interventionType} · {draft.priority}</dd><small>{draft.title}</small></div><div><dt>Local</dt><dd>{draft.property}</dd><small>{draft.unit || "Toda a área do imóvel"}</small></div><div><dt>Responsável</dt><dd>{draft.manager}</dd><small>{draft.team.length ? `+ ${draft.team.length} na equipe` : "Sem equipe adicional"}</small></div><div><dt>Prazo</dt><dd>{draft.startDateIso ? formatExpenseDate(draft.startDateIso) : "Não informado"}</dd><small>até {draft.endDateIso ? formatExpenseDate(draft.endDateIso) : "não informado"}</small></div><div><dt>Previsão total</dt><dd>{draft.budget ? brl.format(Number(draft.budget) + Number(draft.reserve || 0)) : "Não informada"}</dd><small>Valor previsto + reserva</small></div><div><dt>Situação</dt><dd><WorkStatusBadge status={draft.status} /></dd><small>{draft.attachments.length ? `${draft.attachments.length} anexo(s)` : "Sem anexos"}</small></div></dl><p><WifiOff aria-hidden="true" /><span><strong>Cadastro demonstrativo</strong>As informações ficam somente na memória desta sessão e não são enviadas a bancos ou integrações externas.</span></p></section>
+          <section className="work-form-review" aria-labelledby="work-form-review-title"><header><div><p className="eyebrow">Conferência rápida</p><h3 id="work-form-review-title">Resumo da obra</h3></div><CircleCheck aria-hidden="true" /></header><dl><div><dt>Intervenção</dt><dd>{draft.interventionType} · {draft.priority}</dd><small>{draft.title}</small></div><div><dt>Local</dt><dd>{draft.property}</dd><small>{draft.unit || "Toda a área do imóvel"}</small></div><div><dt>Responsável</dt><dd>{draft.manager}</dd><small>{draft.team.length ? `+ ${draft.team.length} na equipe` : "Sem equipe adicional"}</small></div><div><dt>Prazo</dt><dd>{draft.startDateIso ? formatExpenseDate(draft.startDateIso) : "Não informado"}</dd><small>até {draft.endDateIso ? formatExpenseDate(draft.endDateIso) : "não informado"}</small></div><div><dt>Previsão total</dt><dd>{draft.budget ? brl.format(Number(draft.budget) + Number(draft.reserve || 0)) : "Não informada"}</dd><small>Valor previsto + reserva</small></div><div><dt>Situação</dt><dd><WorkStatusBadge status={draft.status} /></dd><small>{draft.attachments.length ? `${draft.attachments.length} anexo(s)` : "Sem anexos"}</small></div></dl></section>
         </>}
-      </section>
+        </section>
+
+        <aside className="work-form-context" aria-label="Visão resumida do cadastro">
+          <div className={`work-form-context-image ${selectedProperty ? "selected" : "empty"}`}>
+            <img src={selectedProperty ? propertyCoverImages[selectedProperty.id] ?? fallbackPropertyCover : fallbackPropertyCover} alt={selectedProperty ? `Fachada de ${selectedProperty.name}` : ""} width="640" height="440" />
+            <span className="work-form-context-shade" aria-hidden="true" />
+            <span className="work-form-context-copy"><small>Contexto da intervenção</small><strong>{selectedProperty?.name ?? "Escolha o imóvel da obra"}</strong><em>{selectedProperty?.address ?? "A imagem e os dados do local aparecerão aqui."}</em></span>
+          </div>
+          <div className="work-form-context-body">
+            <header><div><p className="eyebrow">Visão do cadastro</p><h2>{draft.title.trim() || (isEditing ? "Atualização da obra" : "Nova intervenção")}</h2></div><b>{formProgress}%</b></header>
+            <span className="work-form-context-progress" role="progressbar" aria-valuenow={formProgress} aria-valuemin={0} aria-valuemax={100} aria-label={`${formProgress}% do fluxo de cadastro percorrido`}><i style={{ width: `${formProgress}%` }} /></span>
+            <dl>
+              <div><dt><Building2 aria-hidden="true" />Local</dt><dd><strong>{draft.property || "Ainda não selecionado"}</strong><span>{draft.unit || (selectedProperty ? `${selectedProperty.units} ${selectedProperty.units === 1 ? "unidade cadastrada" : "unidades cadastradas"}` : "Defina na primeira etapa")}</span></dd></div>
+              <div><dt><CalendarClock aria-hidden="true" />Prazo</dt><dd><strong>{draft.endDateIso ? formatExpenseDate(draft.endDateIso) : "A definir"}</strong><span>{draft.startDateIso ? `Início em ${formatExpenseDate(draft.startDateIso)}` : "Datas ainda não informadas"}</span></dd></div>
+              <div><dt><HandCoins aria-hidden="true" />Investimento</dt><dd><strong>{draftInvestment > 0 ? brl.format(draftInvestment) : "A definir"}</strong><span>{draft.reserve ? "Inclui reserva de contingência" : "Valor previsto + eventual reserva"}</span></dd></div>
+              <div><dt><ClipboardList aria-hidden="true" />Situação</dt><dd><WorkStatusBadge status={draft.status} /><span>{draft.manager ? `Responsável: ${draft.manager}` : "Responsável ainda não definido"}</span></dd></div>
+            </dl>
+            <p className="work-form-context-note"><WifiOff aria-hidden="true" /><span><strong>Cadastro demonstrativo</strong>Os dados permanecem somente nesta sessão.</span></p>
+          </div>
+        </aside>
+      </div>
 
       <footer className="work-form-footer"><div><strong>Etapa {step} de 3</strong><span>{step === 3 ? "Revise e confirme o cadastro." : "Você poderá voltar sem perder o preenchimento."}</span></div><div><button type="button" className="secondary-button" disabled={step === 1} onClick={() => { setStep((current) => Math.max(1, current - 1)); setErrors({}); }}>Voltar</button><button type="submit" className="primary-button button-with-icon">{step === 3 ? <><Check aria-hidden="true" />{isEditing ? "Salvar alterações" : "Cadastrar obra"}</> : <>Avançar<ArrowRight aria-hidden="true" /></>}</button></div></footer>
     </form>
