@@ -685,9 +685,9 @@ td small { display:block;margin-top:4px;color:var(--muted-strong);font-size:var(
 .tenant-overview>button:last-child { border-right:0; }
 .tenant-overview>button:hover,.tenant-overview>button[aria-pressed="true"] { z-index:1;background:#fcfbfa;box-shadow:inset 0 -3px 0 var(--tenant-overview-accent); }
 .tenant-overview>button:focus-visible { z-index:2;outline:2px solid var(--color-focus);outline-offset:-3px; }
-.tenant-overview span { color:#727785;font-size:9px;font-weight:760;letter-spacing:.105em;text-transform:uppercase; }
+.tenant-overview span { color:#686e7b;font-size:10.5px;font-weight:760;letter-spacing:.085em;text-transform:uppercase; }
 .tenant-overview strong { margin-top:7px;overflow:hidden;color:#2c3140;font-size:22px;line-height:1.05;font-weight:690;letter-spacing:-.035em;text-overflow:ellipsis;white-space:nowrap; }
-.tenant-overview small { margin-top:6px;overflow:hidden;color:#7f8490;font-size:9px;line-height:1.4;text-overflow:ellipsis;white-space:nowrap; }
+.tenant-overview small { margin-top:6px;overflow:hidden;color:#747b88;font-size:10.5px;line-height:1.45;text-overflow:ellipsis;white-space:nowrap; }
 .tenant-overview-intro { isolation:isolate;overflow:hidden;color:#fff;background:linear-gradient(135deg,#20283a,#35405b 65%,#4c526b); }
 .tenant-overview-intro::after { content:"";position:absolute;z-index:-1;width:190px;height:190px;right:-76px;top:-112px;border:1px solid rgba(222,213,191,.15);border-radius:50%;box-shadow:0 0 0 38px rgba(222,213,191,.025); }
 .tenant-overview-intro span { color:#d7c9ad; }
@@ -706,8 +706,8 @@ td small { display:block;margin-top:4px;color:var(--muted-strong);font-size:var(
 .tenant-agency-hub-icon { width:42px;height:42px;display:grid;place-items:center;color:#315f7d;background:#eaf2f7;border:1px solid #d1e1eb;border-radius:12px; }
 .tenant-agency-hub-icon>svg { width:19px;height:19px;stroke-width:1.8; }
 .tenant-agency-hub>header>div { min-width:0; }
-.tenant-agency-hub>header h2 { margin:4px 0 3px;color:#263442;font-size:16px;letter-spacing:-.025em; }
-.tenant-agency-hub>header>div>span { display:block;overflow:hidden;color:#7b8792;font-size:9px;line-height:1.45;text-overflow:ellipsis;white-space:nowrap; }
+.tenant-agency-hub>header h2 { margin:4px 0 3px;color:#263442;font-size:17px;letter-spacing:-.025em; }
+.tenant-agency-hub>header>div>span { display:block;overflow:hidden;color:#6f7c87;font-size:10.5px;line-height:1.5;text-overflow:ellipsis;white-space:nowrap; }
 .tenant-agency-hub>header .secondary-button { display:inline-flex;align-items:center;gap:7px;white-space:nowrap; }
 .tenant-agency-hub>header .secondary-button>svg { width:14px;height:14px; }
 .tenant-agency-grid { padding:12px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;background:#f6f7f8; }
@@ -717,17 +717,17 @@ td small { display:block;margin-top:4px;color:var(--muted-strong);font-size:var(
 .tenant-agency-card:focus-visible { outline:2px solid var(--color-focus);outline-offset:2px; }
 .tenant-agency-monogram { width:39px;height:39px;display:grid;place-items:center;color:#fff;background:linear-gradient(145deg,#294d66,#4a809b);border-radius:10px;font-size:10px;font-weight:800;letter-spacing:-.03em; }
 .tenant-agency-copy { min-width:0;display:grid;gap:3px; }
-.tenant-agency-copy>small { overflow:hidden;color:#81909b;font-family:var(--font-geist-mono),monospace;font-size:7px;letter-spacing:.03em;text-overflow:ellipsis;white-space:nowrap; }
-.tenant-agency-copy>strong { overflow:hidden;color:#2f3b46;font-size:10px;text-overflow:ellipsis;white-space:nowrap; }
-.tenant-agency-copy>span { overflow:hidden;color:#7b858e;font-size:8px;text-overflow:ellipsis;white-space:nowrap; }
+.tenant-agency-copy>small { overflow:hidden;color:#74838e;font-family:var(--font-geist-mono),monospace;font-size:9px;letter-spacing:.025em;text-overflow:ellipsis;white-space:nowrap; }
+.tenant-agency-copy>strong { overflow:hidden;color:#2f3b46;font-size:12px;line-height:1.25;text-overflow:ellipsis;white-space:nowrap; }
+.tenant-agency-copy>span { overflow:hidden;color:#707b84;font-size:10px;line-height:1.35;text-overflow:ellipsis;white-space:nowrap; }
 .tenant-agency-count { min-width:40px;padding-left:10px;display:grid;gap:2px;text-align:center;border-left:1px solid #e5e8ea; }
 .tenant-agency-count>strong { color:#315f7d;font-size:17px;line-height:1; }
-.tenant-agency-count>small { color:#84909a;font-size:7px; }
-.tenant-agency-hub>footer { min-height:43px;padding:9px 15px;display:flex;align-items:center;justify-content:space-between;gap:14px;color:#73808a;background:#fff;border-top:1px solid #e4e7e9;font-size:8px; }
+.tenant-agency-count>small { color:#74818b;font-size:9px; }
+.tenant-agency-hub>footer { min-height:45px;padding:9px 15px;display:flex;align-items:center;justify-content:space-between;gap:14px;color:#66747e;background:#fff;border-top:1px solid #e4e7e9;font-size:10px;line-height:1.4; }
 .tenant-agency-hub>footer>span,.tenant-agency-hub>footer>button { display:inline-flex;align-items:center;gap:7px; }
 .tenant-agency-hub>footer svg { width:13px;height:13px;stroke-width:2; }
 .tenant-agency-hub>footer>span svg { color:#398064; }
-.tenant-agency-hub>footer>button { min-height:28px;padding:0 9px;color:#956633;background:#faf4eb;border:1px solid #ead8c3;border-radius:7px;font-size:8px;font-weight:720;cursor:pointer; }
+.tenant-agency-hub>footer>button { min-height:30px;padding:0 10px;color:#8b5e2e;background:#faf4eb;border:1px solid #ead8c3;border-radius:7px;font-size:9.5px;font-weight:720;cursor:pointer; }
 .tenant-agency-hub>footer>button[aria-pressed="true"] { color:#fff;background:#956633;border-color:#956633; }
 .tenant-mobile-new { display:none; }
 .tenant-card-grid { padding:14px;display:grid;grid-template-columns:repeat(2,minmax(380px,1fr));gap:14px;background:linear-gradient(180deg,#f7f8fa,#f3f4f6); }
@@ -741,26 +741,26 @@ td small { display:block;margin-top:4px;color:var(--muted-strong);font-size:var(
 .tenant-card-avatar { width:52px;height:52px;display:grid;place-items:center;color:#fff;background:linear-gradient(145deg,color-mix(in srgb,var(--tenant-accent) 76%,#2a3345),var(--tenant-accent));border-radius:15px;box-shadow:0 8px 18px color-mix(in srgb,var(--tenant-accent) 20%,transparent);font-size:15px;font-weight:800;letter-spacing:-.04em; }
 .tenant-card-identity { min-width:0;display:grid;gap:4px; }
 .tenant-card-identity>span { display:flex;align-items:center;gap:8px; }
-.tenant-card-identity>span b { color:#777d88;font-size:8px;letter-spacing:.07em;text-transform:uppercase; }
-.tenant-card-identity>span small { padding-left:8px;color:#8b9099;border-left:1px solid #dfe2e7;font-family:var(--font-geist-mono),monospace;font-size:8px;letter-spacing:.04em; }
+.tenant-card-identity>span b { color:#69717d;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase; }
+.tenant-card-identity>span small { padding-left:8px;color:#747b85;border-left:1px solid #dfe2e7;font-family:var(--font-geist-mono),monospace;font-size:9.5px;letter-spacing:.035em; }
 .tenant-card-identity>strong { overflow:hidden;color:#29303d;font-size:16px;line-height:1.2;letter-spacing:-.025em;text-overflow:ellipsis;white-space:nowrap; }
-.tenant-card-identity>small { color:#7b818b;font-size:9px; }
-.tenant-relationship-badge { display:inline-flex;align-items:center;gap:6px;padding:6px 8px;color:var(--tenant-accent);background:var(--tenant-soft);border:1px solid color-mix(in srgb,var(--tenant-accent) 22%,white);border-radius:var(--radius-round);font-size:8px;font-weight:760;white-space:nowrap; }
+.tenant-card-identity>small { color:#6f7681;font-size:10.5px; }
+.tenant-relationship-badge { display:inline-flex;align-items:center;gap:6px;padding:6px 9px;color:var(--tenant-accent);background:var(--tenant-soft);border:1px solid color-mix(in srgb,var(--tenant-accent) 22%,white);border-radius:var(--radius-round);font-size:9.5px;font-weight:760;white-space:nowrap; }
 .tenant-relationship-badge i { width:5px;height:5px;background:currentColor;border-radius:50%; }
 .tenant-card-agency { min-height:54px;padding:10px 18px;display:grid;grid-template-columns:28px minmax(0,1fr) auto;align-items:center;gap:10px;background:#f8fafb;border-bottom:1px solid #e5e8ea; }
 .tenant-card-agency>span:first-child { width:28px;height:28px;display:grid;place-items:center;color:#315f7d;background:#e8f1f6;border:1px solid #d3e2ea;border-radius:8px; }
 .tenant-card-agency>span:first-child>svg { width:13px;height:13px;stroke-width:2; }
 .tenant-card-agency>span:nth-child(2) { min-width:0;display:grid;gap:3px; }
-.tenant-card-agency small { color:#818b94;font-size:7px;font-weight:720;letter-spacing:.065em;text-transform:uppercase; }
-.tenant-card-agency strong { overflow:hidden;color:#34424c;font-size:9px;text-overflow:ellipsis;white-space:nowrap; }
-.tenant-card-agency>b { color:#547184;font-family:var(--font-geist-mono),monospace;font-size:8px;font-weight:650; }
+.tenant-card-agency small { color:#727e88;font-size:9px;font-weight:720;letter-spacing:.055em;text-transform:uppercase; }
+.tenant-card-agency strong { overflow:hidden;color:#34424c;font-size:11px;line-height:1.3;text-overflow:ellipsis;white-space:nowrap; }
+.tenant-card-agency>b { color:#48677a;font-family:var(--font-geist-mono),monospace;font-size:9.5px;font-weight:650; }
 .tenant-card-agency-missing>span:first-child { color:#9a7041;background:#faf4eb;border-color:#ead8c3; }
 .tenant-card-agency-missing strong { color:#8b6841; }
 .tenant-card-contract { padding:16px 18px;display:grid;grid-template-columns:.65fr 1.25fr 1fr;gap:15px;border-bottom:1px solid #e7e8ec; }
 .tenant-card-contract>span,.tenant-card-financial>span { min-width:0;display:grid;gap:5px; }
-.tenant-card-contract small,.tenant-card-financial small { color:#858a94;font-size:8px;line-height:1.25;font-weight:720;letter-spacing:.055em;text-transform:uppercase; }
-.tenant-card-contract strong { overflow:hidden;color:#363d49;font-size:10px;line-height:1.35;text-overflow:ellipsis;white-space:nowrap; }
-.tenant-card-contract>span:first-child strong { color:var(--tenant-accent);font-family:var(--font-geist-mono),monospace;font-size:9px; }
+.tenant-card-contract small,.tenant-card-financial small { color:#747b85;font-size:9.5px;line-height:1.3;font-weight:720;letter-spacing:.05em;text-transform:uppercase; }
+.tenant-card-contract strong { overflow:hidden;color:#363d49;font-size:11.5px;line-height:1.4;text-overflow:ellipsis;white-space:nowrap; }
+.tenant-card-contract>span:first-child strong { color:var(--tenant-accent);font-family:var(--font-geist-mono),monospace;font-size:10.5px; }
 .tenant-card-financial { padding:15px 18px;display:grid;grid-template-columns:1.15fr 1fr .45fr;gap:15px;background:#fafafa; }
 .tenant-card-financial strong { overflow:hidden;color:#343b47;font-size:13px;line-height:1.2;text-overflow:ellipsis;white-space:nowrap; }
 .tenant-card-financial .tenant-value-attention { color:#af484d; }
@@ -768,13 +768,15 @@ td small { display:block;margin-top:4px;color:var(--muted-strong);font-size:var(
 .tenant-card-empty-link>i { flex:0 0 34px;width:34px;height:34px;display:grid;place-items:center;color:#fff;background:#a2794d;border-radius:50%;font-style:normal;font-size:18px; }
 .tenant-card-empty-link>i>svg { width:16px;height:16px;stroke-width:2; }
 .tenant-card-empty-link>span { display:grid;gap:4px; }
-.tenant-card-empty-link strong { color:#674d31;font-size:11px; }
-.tenant-card-empty-link small { color:#8b7965;font-size:9px; }
-.tenant-card-arrow { padding:11px 18px;display:flex;align-items:center;justify-content:flex-end;gap:7px;color:#7a8089;border-top:1px solid #e7e8ec;font-size:9px;font-weight:690; }
+.tenant-card-empty-link strong { color:#674d31;font-size:12.5px; }
+.tenant-card-empty-link small { color:#7c6956;font-size:10.5px;line-height:1.4; }
+.tenant-card-arrow { padding:11px 18px;display:flex;align-items:center;justify-content:flex-end;gap:7px;color:#68717c;border-top:1px solid #e7e8ec;font-size:10.5px;font-weight:690; }
 .tenant-card-arrow b { color:var(--tenant-accent);font-size:13px; }
 .tenant-card>footer { min-height:49px;padding:10px 14px 10px 18px;display:flex;align-items:center;justify-content:space-between;gap:12px;background:#fff;border-top:1px solid #e5e7ea; }
-.tenant-card>footer>span { color:#7c828c;font-size:9px; }
-.tenant-card>footer button { min-height:32px;padding:0 10px;color:var(--tenant-accent);background:var(--tenant-soft);border:1px solid color-mix(in srgb,var(--tenant-accent) 18%,white);border-radius:8px;font-size:9px;font-weight:720;cursor:pointer; }
+.tenant-card>footer>span { color:#6e7680;font-size:10.5px;line-height:1.4; }
+.tenant-card>footer button { min-height:34px;padding:0 11px;color:var(--tenant-accent);background:var(--tenant-soft);border:1px solid color-mix(in srgb,var(--tenant-accent) 18%,white);border-radius:8px;font-size:10.5px;font-weight:720;cursor:pointer; }
+.tenants-page .search-field input,.tenants-page .filter-select select { font-size:11px; }
+.tenants-page .table-footer { font-size:10.5px; }
 .tenant-card>footer button:hover { filter:brightness(.98); }
 .agency-modal { --entity-accent:#397696;--entity-deep:#1e3749;--entity-mid:#315f78; }
 .contract-overview { min-height:126px;margin-bottom:18px;display:grid;grid-template-columns:minmax(280px,1.45fr) repeat(3,minmax(145px,1fr));overflow:hidden;background:#fff;border:1px solid #dddfe8;border-radius:14px;box-shadow:0 8px 28px rgba(30,38,64,.055); }
@@ -1153,48 +1155,48 @@ td small { display:block;margin-top:4px;color:var(--muted-strong);font-size:var(
 .tenant-detail-hero-copy { position:absolute;z-index:1;left:24px;right:88px;bottom:24px;display:grid;grid-template-columns:58px minmax(0,1fr);align-items:center;gap:15px; }
 .tenant-detail-avatar { width:58px;height:58px;display:grid;place-items:center;color:#2c2e38;background:linear-gradient(145deg,#f1e4ca,#c9a977);border:1px solid rgba(255,255,255,.32);border-radius:17px;box-shadow:0 9px 24px rgba(9,12,20,.25);font-size:17px;font-weight:820;letter-spacing:-.04em; }
 .tenant-detail-hero-copy>div { min-width:0; }
-.tenant-detail-hero-copy>div>span { color:#d9d6df;font-family:var(--font-geist-mono),monospace;font-size:8px;letter-spacing:.055em;text-transform:uppercase; }
+.tenant-detail-hero-copy>div>span { color:#e2dfe7;font-family:var(--font-geist-mono),monospace;font-size:10px;letter-spacing:.05em;text-transform:uppercase; }
 .tenant-detail-hero-copy h2 { margin:7px 0 4px;overflow:hidden;color:#fff;font-size:25px;line-height:1.08;letter-spacing:-.04em;text-overflow:ellipsis;white-space:nowrap; }
-.tenant-detail-hero-copy p { margin:0;overflow:hidden;color:#d1d3dc;font-size:9px;text-overflow:ellipsis;white-space:nowrap; }
+.tenant-detail-hero-copy p { margin:0;overflow:hidden;color:#d9dbe3;font-size:11px;text-overflow:ellipsis;white-space:nowrap; }
 .tenant-detail-status { position:absolute;z-index:1;right:25px;bottom:28px;width:43px;height:43px;display:grid;place-items:center;color:#fff;background:color-mix(in srgb,var(--tenant-detail-accent) 38%,transparent);border:1px solid rgba(255,255,255,.23);border-radius:50%;box-shadow:0 0 0 7px color-mix(in srgb,var(--tenant-detail-accent) 9%,transparent);font-style:normal;font-size:15px;font-weight:800;backdrop-filter:blur(8px); }
 .tenant-detail-summary { margin:-4px 0 21px;display:grid;grid-template-columns:1.3fr repeat(3,.82fr);overflow:hidden;background:linear-gradient(120deg,#faf9f7,#fff);border:1px solid #e4e1dc;border-radius:11px; }
 .tenant-detail-summary>div { min-width:0;min-height:96px;padding:15px 14px;display:flex;flex-direction:column;justify-content:center;border-right:1px solid #e6e3df; }
 .tenant-detail-summary>div:last-child { border-right:0; }
-.tenant-detail-summary span { color:#7e7b77;font-size:8px;font-weight:730;letter-spacing:.07em;text-transform:uppercase; }
+.tenant-detail-summary span { color:#716f6b;font-size:10px;font-weight:730;letter-spacing:.06em;text-transform:uppercase; }
 .tenant-detail-summary strong { margin-top:7px;overflow:hidden;color:#353942;font-size:14px;line-height:1.15;text-overflow:ellipsis;white-space:nowrap; }
-.tenant-detail-summary small { margin-top:5px;overflow:hidden;color:#898682;font-size:8px;line-height:1.3;text-overflow:ellipsis;white-space:nowrap; }
+.tenant-detail-summary small { margin-top:5px;overflow:hidden;color:#777470;font-size:10px;line-height:1.4;text-overflow:ellipsis;white-space:nowrap; }
 .tenant-detail-summary .tenant-detail-revenue strong { color:#72583c;font-size:17px; }
 .tenant-detail-summary .tenant-detail-attention strong { color:#ad4d52; }
 .tenant-contract-panel,.tenant-financial-panel { margin-bottom:18px;overflow:hidden;background:#fff;border:1px solid #e1e2e6;border-radius:10px; }
 .tenant-contract-panel>header,.tenant-financial-panel>header { min-height:61px;padding:12px 15px;display:flex;align-items:center;justify-content:space-between;gap:16px;background:#f9f9fa;border-bottom:1px solid #e4e5e8; }
 .tenant-contract-panel>header>div,.tenant-financial-panel>header>div { display:grid;gap:3px; }
-.tenant-contract-panel header span,.tenant-financial-panel header span { color:#81848d;font-size:8px;letter-spacing:.075em;text-transform:uppercase; }
-.tenant-contract-panel h3,.tenant-financial-panel h3 { margin:0;color:#343945;font-size:13px; }
+.tenant-contract-panel header span,.tenant-financial-panel header span { color:#747881;font-size:10px;letter-spacing:.065em;text-transform:uppercase; }
+.tenant-contract-panel h3,.tenant-financial-panel h3 { margin:0;color:#343945;font-size:14px; }
 .tenant-contract-panel>header>b { width:25px;height:25px;display:grid;place-items:center;color:#72583c;background:#f5efe6;border:1px solid #e5d6c1;border-radius:50%;font-size:9px; }
 .tenant-contract-panel>div { display:grid;gap:1px;background:#e5e6e9; }
 .tenant-contract-panel article { padding:15px;display:grid;grid-template-columns:.62fr 1.2fr .75fr;gap:14px;background:#fff; }
 .tenant-contract-panel article>span { min-width:0;display:grid;gap:5px; }
-.tenant-contract-panel article small { color:#858891;font-size:8px;letter-spacing:.055em;text-transform:uppercase; }
-.tenant-contract-panel article strong { overflow:hidden;color:#383d48;font-size:10px;line-height:1.3;text-overflow:ellipsis;white-space:nowrap; }
-.tenant-contract-panel .tenant-contract-id strong { color:#70583f;font-family:var(--font-geist-mono),monospace;font-size:9px; }
-.tenant-contract-panel article>footer { grid-column:1/-1;padding-top:11px;display:flex;justify-content:space-between;gap:12px;color:#7d818a;border-top:1px solid #e6e7ea;font-size:8px; }
+.tenant-contract-panel article small { color:#747881;font-size:10px;letter-spacing:.05em;text-transform:uppercase; }
+.tenant-contract-panel article strong { overflow:hidden;color:#383d48;font-size:11.5px;line-height:1.4;text-overflow:ellipsis;white-space:nowrap; }
+.tenant-contract-panel .tenant-contract-id strong { color:#70583f;font-family:var(--font-geist-mono),monospace;font-size:10.5px; }
+.tenant-contract-panel article>footer { grid-column:1/-1;padding-top:11px;display:flex;justify-content:space-between;gap:12px;color:#6f747d;border-top:1px solid #e6e7ea;font-size:10px;line-height:1.4; }
 .tenant-unlinked-note { margin-bottom:18px;padding:16px;display:flex;align-items:center;gap:13px;color:#785a38;background:linear-gradient(135deg,#fbf6ee,#fff);border:1px solid #e8d9c6;border-left:3px solid #a87a45;border-radius:10px; }
 .tenant-unlinked-note>span { flex:0 0 31px;width:31px;height:31px;display:grid;place-items:center;color:#fff;background:#a87a45;border-radius:50%;font-size:18px; }
-.tenant-unlinked-note strong { font-size:11px; }
-.tenant-unlinked-note p { margin:3px 0 0;color:#856f58;font-size:9px;line-height:1.45; }
-.tenant-financial-panel>header>b { padding:5px 8px;color:#34775c;background:#edf8f2;border:1px solid #cde4d8;border-radius:var(--radius-round);font-size:8px; }
+.tenant-unlinked-note strong { font-size:12px; }
+.tenant-unlinked-note p { margin:3px 0 0;color:#78634f;font-size:10.5px;line-height:1.5; }
+.tenant-financial-panel>header>b { padding:5px 8px;color:#34775c;background:#edf8f2;border:1px solid #cde4d8;border-radius:var(--radius-round);font-size:10px; }
 .tenant-financial-panel>header>b.has-attention { color:#a6464b;background:#fff0f0;border-color:#edcacc; }
 .tenant-financial-panel>div { display:grid; }
 .tenant-financial-panel>div>span { min-height:50px;padding:10px 14px;display:grid;grid-template-columns:112px 1fr 68px 92px;align-items:center;gap:10px;border-bottom:1px solid #e7e8ea; }
 .tenant-financial-panel>div>span:last-child { border-bottom:0; }
-.tenant-financial-panel .status { justify-self:start;padding:4px 7px;font-size:8px; }
-.tenant-financial-panel>div>span>strong { color:#3b414b;font-family:var(--font-geist-mono),monospace;font-size:9px; }
-.tenant-financial-panel>div>span>small { color:#82868f;font-size:8px; }
-.tenant-financial-panel>div>span>b { justify-self:end;color:#4a505a;font-size:9px; }
-.tenant-financial-panel>p { margin:0;padding:18px;color:#80858e;font-size:9px; }
+.tenant-financial-panel .status { justify-self:start;padding:4px 7px;font-size:9.5px; }
+.tenant-financial-panel>div>span>strong { color:#3b414b;font-family:var(--font-geist-mono),monospace;font-size:10.5px; }
+.tenant-financial-panel>div>span>small { color:#747881;font-size:10px; }
+.tenant-financial-panel>div>span>b { justify-self:end;color:#4a505a;font-size:10.5px; }
+.tenant-financial-panel>p { margin:0;padding:18px;color:#737983;font-size:10.5px;line-height:1.5; }
 .tenant-detail-section-title { margin:22px 0 0;padding-top:18px;display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid #e4e5e8; }
 .tenant-detail-section-title span { color:#373d48;font-size:12px;font-weight:730; }
-.tenant-detail-section-title small { color:#858a93;font-size:9px; }
+.tenant-detail-section-title small { color:#747b85;font-size:10.5px; }
 .tenant-detail-drawer .registry-detail-list { margin-top:9px;margin-bottom:24px; }
 .tenant-detail-footer { background:#fff; }
 .contract-detail-hero { position:relative;isolation:isolate;flex:0 0 235px;overflow:hidden;color:#fff;background:linear-gradient(135deg,#24263b,#40385e 65%,#64527f); }
@@ -2184,7 +2186,7 @@ td small { display:block;margin-top:4px;color:var(--muted-strong);font-size:var(
 .work-detail-decision-card>header .eyebrow { color:#9fc4e7; }
 .work-detail-decision-card>header h2 { color:#fff;font-size:17px; }
 .work-detail-decision-card>header>svg { color:#b9d8f2; }
-.work-detail-decision-progress { min-height:166px;padding:21px;display:grid;grid-template-columns:122px minmax(0,1fr);align-items:center;gap:22px;background:linear-gradient(145deg,#fff,#f8fbfd); }
+.work-detail-decision-progress { flex:1;min-height:166px;padding:21px 21px 21px 85px;display:grid;grid-template-columns:122px minmax(220px,320px);align-items:center;justify-content:center;gap:22px;background:linear-gradient(145deg,#fff,#f8fbfd); }
 .work-detail-progress-ring { --work-progress:0deg;position:relative;width:106px;height:106px;display:grid;place-items:center;align-content:center;background:radial-gradient(circle at center,#fff 58%,transparent 59%),conic-gradient(#3e75a7 var(--work-progress),#e5eaf0 0);border-radius:50%; }
 .work-detail-progress-ring::after { content:"";position:absolute;inset:7px;border:1px solid rgba(255,255,255,.75);border-radius:50%; }
 .work-detail-progress-ring strong { position:relative;z-index:1;color:#315f90;font-size:21px;line-height:1; }

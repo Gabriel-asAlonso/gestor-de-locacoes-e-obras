@@ -2447,7 +2447,7 @@ function TenantsPage({ tenants, agencies, contracts, charges, search, setSearch,
   });
   const toggleRelationship = (filter: "Com contrato" | "Sem contrato") => setRelationshipFilter(relationshipFilter === filter ? "Todos" : filter);
 
-  return <><PageHeading eyebrow="Relacionamentos de locação" title="Locatários" description="Acompanhe vínculos, ocupação e situação financeira de cada relacionamento." action="Novo locatário" onAction={onNew} />
+  return <div className="tenants-page"><PageHeading eyebrow="Relacionamentos de locação" title="Locatários" description="Acompanhe vínculos, ocupação e situação financeira de cada relacionamento." action="Novo locatário" onAction={onNew} />
     <section className="tenant-overview" aria-label="Resumo dos locatários">
       <div className="tenant-overview-intro"><span>Base de relacionamentos</span><strong>{tenants.length} {tenants.length === 1 ? "locatário cadastrado" : "locatários cadastrados"}</strong><small>Pessoas e empresas conectadas à operação</small></div>
       <div className="tenant-overview-revenue"><span>Receita mensal vinculada</span><strong>{brl.format(monthlyRevenue)}</strong><small>aluguel base dos contratos ativos</small></div>
@@ -2489,7 +2489,7 @@ function TenantsPage({ tenants, agencies, contracts, charges, search, setSearch,
         </article>;
       })}</div> : <EmptyState filtered={Boolean(search.trim() || relationshipFilter !== "Todos" || agencyFilter !== "Todas as imobiliárias")} entity="locatário" mark="LO" tone="tenant" eyebrow="Base de relacionamentos" title="Cadastre o primeiro locatário" description="Construa uma base pronta para conectar pessoas e empresas aos contratos e à operação financeira." action="Novo locatário" onAction={onNew} onClear={() => { setSearch(""); setRelationshipFilter("Todos"); setAgencyFilter("Todas as imobiliárias"); }} />}
     </TableSection>
-  </>;
+  </div>;
 }
 
 function AgencyModal({ agencies, onClose, onSave }: { agencies: RealEstateAgency[]; onClose: () => void; onSave: (agency: Omit<RealEstateAgency, "id">) => void }) {
