@@ -35,7 +35,7 @@ export type WorkAttention = {
   workId: string;
   property: string;
   dateIso: string;
-  kind: "schedule" | "budget" | "cost" | "update" | "payment";
+  kind: "schedule" | "supplier" | "update" | "payment";
   title: string;
   description: string;
   meta: string;
@@ -228,10 +228,10 @@ export const workAttentionRecords: WorkAttention[] = [
     workId: "OBR-004",
     property: "Shopping Alameda",
     dateIso: "2026-08-24",
-    kind: "cost",
-    title: "Gasto acima do valor previsto",
+    kind: "supplier",
+    title: "Fornecedor com pagamento vencido",
     description: "Renovação dos sanitários das lojas",
-    meta: "R$ 7.800 acima",
+    meta: "R$ 7.800 pendentes",
     tone: "danger",
   },
   {
@@ -239,10 +239,10 @@ export const workAttentionRecords: WorkAttention[] = [
     workId: "OBR-003",
     property: "Edifício Horizonte",
     dateIso: "2026-08-26",
-    kind: "budget",
-    title: "Orçamento aguardando escolha",
+    kind: "supplier",
+    title: "Fornecedor aguardando cadastro",
     description: "Recuperação da fachada principal",
-    meta: "3 propostas recebidas",
+    meta: "Definir serviço contratado",
     tone: "warning",
   },
   {
