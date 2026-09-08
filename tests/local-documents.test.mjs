@@ -11,7 +11,7 @@ import {
   formatDocumentSize,
   isImageDocument,
   validateDocumentFile,
-} from "../app/local-documents.ts";
+} from "../src/app/core/utils/local-documents.ts";
 
 test("aceita os formatos configurados, inclusive extensões em maiúsculas", () => {
   const names = ["arquivo.pdf", "arquivo.doc", "arquivo.docx", "arquivo.xls", "arquivo.xlsx", "foto.jpg", "foto.jpeg", "foto.PNG"];

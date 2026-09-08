@@ -1,46 +1,38 @@
 {
-  "name": "locacoes-recebiveis-modulo-1",
-  "version": "0.1.0",
+  "name": "gestor-de-locacoes-e-obras-angular",
+  "version": "1.0.0",
   "private": true,
   "engines": {
-    "node": ">=22.13.0"
+    "node": ">=24.15.0"
   },
   "scripts": {
-    "install:ci": "bash scripts/install-ci.sh",
-    "dev": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vite",
-    "build": "bash scripts/build-verified.sh",
-    "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
-    "test": "npm run build && node --experimental-strip-types --test tests/rendered-html.test.mjs tests/local-documents.test.mjs tests/accounting-report.test.mjs tests/work-partners.test.mjs",
-    "validate:artifact": "bash scripts/validate-artifact.sh",
-    "lint": "bash scripts/sites-env.sh -- eslint . --ignore-pattern dist --ignore-pattern .next",
-    "db:generate": "bash scripts/sites-env.sh -- drizzle-kit generate"
+    "ng": "ng",
+    "dev": "ng serve --host 127.0.0.1",
+    "start": "ng serve --host 127.0.0.1",
+    "build": "ng build --configuration production",
+    "test": "npm run build && npm run test:unit",
+    "test:unit": "node --experimental-strip-types --test tests/local-documents.test.mjs tests/accounting-report.test.mjs tests/charge-negotiation.test.mjs tests/work-partners.test.mjs tests/routes.test.mjs tests/rendered-html.test.mjs",
+    "lint": "tsc -p tsconfig.app.json --noEmit"
   },
   "dependencies": {
-    "drizzle-orm": "0.45.2",
+    "@angular/common": "^22.1.0",
+    "@angular/compiler": "^22.1.0",
+    "@angular/core": "^22.1.0",
+    "@angular/forms": "^22.1.0",
+    "@angular/platform-browser": "^22.1.0",
+    "@angular/router": "^22.1.0",
     "exceljs": "^4.4.0",
-    "lucide-react": "^1.34.0",
-    "next": "16.2.6",
-    "react": "19.2.6",
-    "react-dom": "19.2.6"
+    "rxjs": "^7.8.2",
+    "tslib": "^2.8.1",
+    "zone.js": "^0.15.1"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "1.37.1",
-    "@tailwindcss/postcss": "4.2.1",
-    "@types/node": "22.19.19",
-    "@types/react": "19.2.14",
-    "@types/react-dom": "19.2.3",
-    "@vitejs/plugin-react": "6.0.2",
-    "@vitejs/plugin-rsc": "0.5.26",
-    "drizzle-kit": "0.31.10",
-    "eslint": "9.39.4",
-    "eslint-config-next": "16.2.6",
-    "react-server-dom-webpack": "19.2.6",
-    "tailwindcss": "4.2.1",
-    "typescript": "5.9.3",
-    "vinext": "0.0.50",
-    "vite": "8.0.13",
-    "wrangler": "4.92.0"
+    "@angular/build": "^22.1.0",
+    "@angular/cli": "^22.1.0",
+    "@angular/compiler-cli": "^22.1.0",
+    "@types/node": "^24.0.0",
+    "typescript": "~6.0.0"
   },
   "type": "module",
-  "displayName": "Loca\u00e7\u00f5es e Receb\u00edveis \u2014 M\u00f3dulo 1"
+  "displayName": "Locações e Recebíveis — Angular"
 }

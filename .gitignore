@@ -13,9 +13,8 @@
 # testing
 /coverage
 
-# next.js
-/.next/
-/out/
+# Angular build cache
+/.angular/
 
 # misc
 .DS_Store
@@ -34,7 +33,6 @@ yarn-error.log*
 .vercel
 
 # typescript
-next-env.d.ts
 /dist/
 /.wrangler/
 /.sites-runtime/

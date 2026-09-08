@@ -1,35 +1,12 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const developmentPreviewMeta =
-  /<meta(?=[^>]*\bname=["']codex-preview["'])(?=[^>]*\bcontent=["']development["'])[^>]*>/i;
-
-test("renders product metadata without the starter preview marker", async () => {
-  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
-  workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
-  const { default: worker } = await import(workerUrl.href);
-
-  const response = await worker.fetch(
-    new Request("http://localhost/", {
-      headers: { accept: "text/html" },
-    }),
-    {
-      ASSETS: {
-        fetch: async () => new Response("Not found", { status: 404 }),
-      },
-    },
-    {
-      waitUntil() {},
-      passThroughOnException() {},
-    },
-  );
-
-  assert.equal(response.status, 200);
-  assert.match(
-    response.headers.get("content-type") ?? "",
-    /^text\/html\b/i,
-  );
-  const html = await response.text();
-  assert.doesNotMatch(html, developmentPreviewMeta);
-  assert.match(html, /<title>Locações e Recebíveis — Módulo 1<\/title>/i);
+test("a distribuição Angular contém a raiz, metadados e assets do produto", async () => {
+  const html = await readFile(new URL("../dist/index.html", import.meta.url), "utf8");
+  assert.match(html, /<app-root><\/app-root>/i);
+  assert.match(html, /<title>Locações e Recebíveis — Gestão patrimonial<\/title>/i);
+  assert.match(html, /name="description"/i);
+  assert.match(html, /property="og:image" content="\/og-properties-v2\.png"/i);
+  assert.doesNotMatch(html, /codex-preview/i);
 });

@@ -8,8 +8,8 @@ import {
   competenceToInputValue,
   inputValueToCompetence,
   suggestedAccountingReportFilename,
-} from "../app/accounting-report.ts";
-import { createAccountingReportWorkbook, downloadAccountingReport } from "../app/accounting-report-workbook.ts";
+} from "../src/app/core/utils/accounting-report.ts";
+import { createAccountingReportWorkbook, downloadAccountingReport } from "../src/app/core/utils/accounting-report-workbook.ts";
 
 const portfolios = [
   { id: "CAR-001", name: "Carteira Atlas", holder: "Atlas Patrimonial Ltda.", document: "12.345.678/0001-10" },
