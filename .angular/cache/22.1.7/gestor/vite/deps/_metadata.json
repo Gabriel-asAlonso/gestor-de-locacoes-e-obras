@@ -1,0 +1,76 @@
+{
+  "hash": "3a3f96db",
+  "configHash": "0eb04dd2",
+  "lockfileHash": "f78753f7",
+  "browserHash": "baa4afbf",
+  "optimized": {
+    "@angular/core": {
+      "src": "../../../../../../node_modules/@angular/core/fesm2022/core.mjs",
+      "file": "@angular_core.js",
+      "fileHash": "84af8b54",
+      "needsInterop": false
+    },
+    "@angular/forms": {
+      "src": "../../../../../../node_modules/@angular/forms/fesm2022/forms.mjs",
+      "file": "@angular_forms.js",
+      "fileHash": "46217e4d",
+      "needsInterop": false
+    },
+    "@angular/platform-browser": {
+      "src": "../../../../../../node_modules/@angular/platform-browser/fesm2022/platform-browser.mjs",
+      "file": "@angular_platform-browser.js",
+      "fileHash": "d63a039d",
+      "needsInterop": false
+    },
+    "@angular/router": {
+      "src": "../../../../../../node_modules/@angular/router/fesm2022/router.mjs",
+      "file": "@angular_router.js",
+      "fileHash": "f6871739",
+      "needsInterop": false
+    },
+    "exceljs": {
+      "src": "../../../../../../node_modules/exceljs/dist/exceljs.min.js",
+      "file": "exceljs.js",
+      "fileHash": "f537910e",
+      "needsInterop": true
+    },
+    "rxjs": {
+      "src": "../../../../../../node_modules/rxjs/dist/esm5/index.js",
+      "file": "rxjs.js",
+      "fileHash": "91f00503",
+      "needsInterop": false
+    },
+    "zone.js": {
+      "src": "../../../../../../node_modules/zone.js/fesm2015/zone.js",
+      "file": "zone__js.js",
+      "fileHash": "dae507fd",
+      "needsInterop": true
+    }
+  },
+  "chunks": {
+    "asyncToGenerator-DvjXcFn4": {
+      "file": "asyncToGenerator-DvjXcFn4.js",
+      "isDynamicEntry": false
+    },
+    "common-S0VuwLUE": {
+      "file": "common-S0VuwLUE.js",
+      "isDynamicEntry": false
+    },
+    "core-CVZKNsfr": {
+      "file": "core-CVZKNsfr.js",
+      "isDynamicEntry": false
+    },
+    "esm5-ChK3bs0s": {
+      "file": "esm5-ChK3bs0s.js",
+      "isDynamicEntry": false
+    },
+    "objectSpread2-B0LLX49r": {
+      "file": "objectSpread2-B0LLX49r.js",
+      "isDynamicEntry": false
+    },
+    "platform-browser-Djz9qZ0S": {
+      "file": "platform-browser-Djz9qZ0S.js",
+      "isDynamicEntry": false
+    }
+  }
+}
