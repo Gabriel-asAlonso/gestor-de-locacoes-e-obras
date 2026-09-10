@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import type { WorkSupplier, WorkSupplierStatus } from "./work-detail-mocks";
+import { FileField } from "./file-field";
 
 const DEMO_DATE_ISO = "2026-08-24";
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
@@ -69,7 +70,7 @@ export function WorkSuppliersPanel({ suppliers, onChange, onNotify, onEvent }: {
   }, [query, status, suppliers]);
 
   const saveSupplier = (data: FormData) => {
-    const files = data.getAll("documents").filter((file): file is File => file instanceof File && file.size > 0).map((file) => file.name);
+    const files = data.getAll("documents").map(String).filter(Boolean);
     const contractedAmount = Number(data.get("contractedAmount") ?? 0);
     const dueDateIso = String(data.get("dueDateIso") ?? "");
     const supplier: WorkSupplier = {
@@ -96,8 +97,7 @@ export function WorkSuppliersPanel({ suppliers, onChange, onNotify, onEvent }: {
     const amount = Number(data.get("amount") ?? 0);
     const dateIso = String(data.get("dateIso") ?? "");
     const note = String(data.get("note") ?? "").trim() || undefined;
-    const file = data.get("document");
-    const document = file instanceof File && file.size > 0 ? file.name : undefined;
+    const document = String(data.get("document") ?? "").trim() || undefined;
     const paidAmount = Math.min(supplier.contractedAmount, supplier.paidAmount + amount);
     const payment = { id: nextId("PAG-FOR", supplier.payments.map((item) => item.id)), amount, dateIso, note, document };
     const updated: WorkSupplier = {
@@ -135,18 +135,17 @@ export function WorkSuppliersPanel({ suppliers, onChange, onNotify, onEvent }: {
       </div>
 
       {filtered.length ? <div className="work-suppliers-table-wrap"><table className="work-suppliers-table">
-        <thead><tr><th>Fornecedor</th><th>Fornecimento</th><th>Contratado</th><th>Pago</th><th>Pendente</th><th>Status</th><th>Vencimento</th><th><span className="sr-only">Ações</span></th></tr></thead>
+        <caption className="sr-only">Fornecedores da obra: fornecimento, valores contratados e pagos, pendências, status e vencimento</caption>
+        <thead><tr><th>Fornecedor</th><th>Fornecimento</th><th>Contratado / pago</th><th>Pendente</th><th>Status · vencimento</th><th><span className="sr-only">Ações</span></th></tr></thead>
         <tbody>{filtered.map((supplier) => {
           const supplierPending = Math.max(0, supplier.contractedAmount - supplier.paidAmount);
           return <tr key={supplier.id}>
-            <td><button type="button" className="work-supplier-name" onClick={() => setSelected(supplier)}><span>{supplier.name.split(" ").slice(0, 2).map((part) => part[0]).join("")}</span><b>{supplier.name}</b><small>{supplier.id}</small></button></td>
-            <td><b>{supplier.description}</b><small>{supplier.supplyType}</small></td>
-            <td><b>{brl.format(supplier.contractedAmount)}</b></td>
-            <td><b className="positive">{brl.format(supplier.paidAmount)}</b></td>
-            <td><b className={supplier.status === "Vencido" ? "negative" : ""}>{brl.format(supplierPending)}</b></td>
-            <td><SupplierStatus status={supplier.status} /></td>
-            <td><b>{formatDate(supplier.dueDateIso)}</b><small>{supplier.documents.length} documento(s)</small></td>
-            <td><button type="button" className="work-supplier-open" onClick={() => setSelected(supplier)} aria-label={`Abrir detalhes de ${supplier.name}`}>Detalhes<ArrowRight aria-hidden="true" /></button></td>
+            <td data-label="Fornecedor"><button type="button" className="work-supplier-name" onClick={() => setSelected(supplier)}><span>{supplier.name.split(" ").slice(0, 2).map((part) => part[0]).join("")}</span><b>{supplier.name}</b><small>{supplier.id}</small></button></td>
+            <td data-label="Fornecimento"><b>{supplier.description}</b><small>{supplier.supplyType}</small></td>
+            <td data-label="Contratado / pago"><b>{brl.format(supplier.contractedAmount)}</b><small className="positive">pago {brl.format(supplier.paidAmount)}</small></td>
+            <td data-label="Pendente"><b className={supplier.status === "Vencido" ? "negative" : ""}>{brl.format(supplierPending)}</b></td>
+            <td data-label="Status e vencimento"><SupplierStatus status={supplier.status} /><small>vence {formatDate(supplier.dueDateIso)}</small></td>
+            <td data-label="Ações"><button type="button" className="work-supplier-open" onClick={() => setSelected(supplier)} aria-label={`Abrir detalhes de ${supplier.name}`}>Detalhes<ArrowRight aria-hidden="true" /></button></td>
           </tr>;
         })}</tbody>
       </table></div> : <div className="work-suppliers-empty"><PackageSearch aria-hidden="true" /><strong>{suppliers.length ? "Nenhum fornecedor encontrado" : "Nenhum fornecedor vinculado"}</strong><p>{suppliers.length ? "Ajuste a busca ou o filtro para visualizar outros registros." : "Adicione o primeiro fornecedor para acompanhar contratos e pagamentos desta obra."}</p>{!suppliers.length && <button type="button" className="primary-button button-with-icon" onClick={() => setCreating(true)}><Plus aria-hidden="true" />Adicionar fornecedor</button>}</div>}
@@ -179,6 +178,7 @@ function SupplierDetail({ supplier, onClose, onPayment }: { supplier: WorkSuppli
 
 function SupplierForm({ onClose, onSave }: { onClose: () => void; onSave: (data: FormData) => void }) {
   const formRef = useRef<HTMLFormElement>(null);
+  const [documents, setDocuments] = useState<string[]>([]);
   useEffect(() => { window.requestAnimationFrame(() => formRef.current?.querySelector<HTMLElement>("input")?.focus()); }, []);
   return <div className="modal-layer" role="dialog" aria-modal="true" aria-label="Adicionar fornecedor">
     <button type="button" className="drawer-backdrop" onClick={onClose} aria-label="Fechar formulário" />
@@ -192,7 +192,7 @@ function SupplierForm({ onClose, onSave }: { onClose: () => void; onSave: (data:
         <label>Data da contratação<input name="contractDateIso" type="date" defaultValue={DEMO_DATE_ISO} required /></label>
         <label>Vencimento<input name="dueDateIso" type="date" required /></label>
         <label className="full-field">Observações<textarea name="notes" rows={3} placeholder="Condições, responsáveis ou orientações relevantes" /></label>
-        <label className="full-field">Documentos ou comprovantes<input name="documents" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" /><small>Somente os nomes dos arquivos serão mantidos nesta demonstração.</small></label>
+        <FileField className="full-field" name="documents" multiple label="Documentos ou comprovantes" optional hint="Somente os nomes dos arquivos são mantidos nesta demonstração." accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" value={documents} onChange={setDocuments} />
       </div></div>
       <footer><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button type="submit" className="primary-button button-with-icon"><Check aria-hidden="true" />Adicionar fornecedor</button></footer>
     </form>
@@ -201,6 +201,7 @@ function SupplierForm({ onClose, onSave }: { onClose: () => void; onSave: (data:
 
 function SupplierPaymentForm({ supplier, onClose, onSave }: { supplier: WorkSupplier; onClose: () => void; onSave: (data: FormData) => void }) {
   const pending = Math.max(0, supplier.contractedAmount - supplier.paidAmount);
+  const [document, setDocument] = useState<string[]>([]);
   return <div className="modal-layer" role="dialog" aria-modal="true" aria-label={`Registrar pagamento para ${supplier.name}`}>
     <button type="button" className="drawer-backdrop" onClick={onClose} aria-label="Fechar formulário" />
     <form className="receipt-modal work-detail-modal supplier-form-modal" onSubmit={(event) => { event.preventDefault(); onSave(new FormData(event.currentTarget)); }}>
@@ -210,7 +211,7 @@ function SupplierPaymentForm({ supplier, onClose, onSave }: { supplier: WorkSupp
         <label>Valor pago<input name="amount" type="number" min="0.01" max={pending} step="0.01" required autoFocus /></label>
         <label>Data do pagamento<input name="dateIso" type="date" defaultValue={DEMO_DATE_ISO} required /></label>
         <label className="full-field">Observação<textarea name="note" rows={3} placeholder="Parcela, medição ou referência do pagamento" /></label>
-        <label className="full-field">Comprovante<input name="document" type="file" accept=".pdf,.jpg,.jpeg,.png" /><small>Somente o nome do arquivo será mantido nesta demonstração.</small></label>
+        <FileField className="full-field" name="document" label="Comprovante" optional hint="Somente o nome do arquivo é mantido nesta demonstração." accept=".pdf,.jpg,.jpeg,.png" value={document} onChange={setDocument} />
       </div></div>
       <footer><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button type="submit" className="primary-button button-with-icon"><Check aria-hidden="true" />Registrar pagamento</button></footer>
     </form>
