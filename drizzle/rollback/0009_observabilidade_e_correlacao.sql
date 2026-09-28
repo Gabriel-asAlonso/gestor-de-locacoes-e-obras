@@ -1,0 +1,18 @@
+DROP INDEX auditoria_evento_data_idx;
+DROP INDEX auditoria_request_idx;
+DROP TRIGGER auditoria_metadata_insert;
+DROP TRIGGER auditoria_metadata_update;
+DROP TRIGGER auditoria_eventos_immutable;
+DROP TRIGGER __context_identity;
+CREATE TRIGGER auditoria_eventos_immutable BEFORE UPDATE ON auditoria_eventos BEGIN SELECT RAISE(ABORT, 'Registro imutavel; use estorno ou nova versao'); END;
+CREATE TRIGGER __context_identity BEFORE UPDATE ON __write_context WHEN NEW.id!=OLD.id OR NEW.ator_usuario_id IS NOT OLD.ator_usuario_id OR NEW.contexto_ator IS NOT OLD.contexto_ator OR NEW.motivo IS NOT OLD.motivo OR NEW.iniciado_em IS NOT OLD.iniciado_em OR NEW.encerramento_obrigatorio IS NOT OLD.encerramento_obrigatorio BEGIN SELECT RAISE(ABORT, 'Contexto de autoria imutavel na transacao'); END;
+ALTER TABLE __write_context DROP COLUMN origem;
+ALTER TABLE __write_context DROP COLUMN modulo;
+ALTER TABLE __write_context DROP COLUMN categoria;
+ALTER TABLE __write_context DROP COLUMN event_code;
+ALTER TABLE __write_context DROP COLUMN request_id;
+ALTER TABLE auditoria_eventos DROP COLUMN origem;
+ALTER TABLE auditoria_eventos DROP COLUMN modulo;
+ALTER TABLE auditoria_eventos DROP COLUMN categoria;
+ALTER TABLE auditoria_eventos DROP COLUMN event_code;
+ALTER TABLE auditoria_eventos DROP COLUMN request_id;

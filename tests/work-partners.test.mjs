@@ -9,7 +9,7 @@ import {
   participationTotal,
   shareRemaining,
   shareStatus,
-} from "../src/app/core/utils/work-partners.ts";
+} from "../app/work-partners-model.ts";
 
 const partners = [
   { id: "SOC-001", name: "Sócio A", participationPercent: 50 },

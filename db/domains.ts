@@ -1,0 +1,26 @@
+/** Persisted codes. Presentation labels and computed settlement statuses stay out of the schema. */
+export const domains = {
+  perfil: ['administrador'],
+  papelUsuario: ['master', 'usuario'],
+  usuarioStatus: ['pendente', 'ativo', 'rejeitado', 'inativo'],
+  pessoa: ['PF', 'PJ'],
+  imovel: ['edificio_comercial', 'centro_comercial', 'complexo_logistico', 'outro'],
+  unidade: ['sala_comercial', 'loja', 'galpao', 'modulo', 'outro'],
+  pagamento: ['boleto', 'pix', 'transferencia'],
+  contrato: ['rascunho', 'ativo', 'encerrado', 'cancelado'],
+  natureza: ['aluguel', 'encargo'],
+  negociacaoMotivo: ['inadimplencia_temporaria', 'renegociacao_comercial', 'acordo_extrajudicial', 'outro'],
+  despesaOrigem: ['operacao', 'contratacao_obra'],
+  intervencao: ['obra', 'reforma', 'reparo', 'manutencao', 'emergencia'],
+  prioridade: ['baixa', 'media', 'alta', 'urgente'],
+  obra: ['planejada', 'em_andamento', 'pausada', 'concluida', 'cancelada'],
+  risco: ['dentro_prazo', 'atencao', 'em_atraso'],
+  etapa: ['preparacao', 'execucao', 'entrega'],
+  atividade: ['nao_iniciada', 'em_andamento', 'bloqueada', 'concluida'],
+  modalidade: ['horas', 'diarias'],
+  fornecimento: ['servico', 'produto', 'material'],
+  diario: ['atualizacao', 'ocorrencia', 'pendencia', 'arquivo'],
+  severidade: ['informativa', 'atencao', 'critica'],
+  documento: ['referenciado', 'disponivel', 'retirado'],
+} as const;
+export type DomainCode<K extends keyof typeof domains> = (typeof domains)[K][number];

@@ -1,5 +1,104 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "entries": []
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1789406735888,
+      "tag": "0000_estrutura_inicial",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1789406735889,
+      "tag": "0001_integridade_e_auditoria",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1789406735890,
+      "tag": "0002_refinamentos_de_integridade",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1789424700000,
+      "tag": "0003_revogacao_sessoes",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1789429156334,
+      "tag": "0004_greedy_maverick",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1789435652610,
+      "tag": "0005_brief_violations",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1789438025835,
+      "tag": "0006_oval_norman_osborn",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1789573446031,
+      "tag": "0007_usuarios_status_aprovacao",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1789604630634,
+      "tag": "0008_aspiring_azazel",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1789617600000,
+      "tag": "0009_observabilidade_e_correlacao",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1789704000000,
+      "tag": "0010_minimizacao_auditoria",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1790611577320,
+      "tag": "0011_aromatic_tyrannus",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1790614943959,
+      "tag": "0012_stiff_hellfire_club",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1790615910636,
+      "tag": "0013_long_madame_hydra",
+      "breakpoints": true
+    }
+  ]
 }

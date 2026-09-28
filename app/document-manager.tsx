@@ -13,6 +13,7 @@ import {
   fileExtension,
   formatDocumentSize,
   isImageDocument,
+  localDocumentFingerprint,
   validateDocumentFile,
   type CategorizedDocuments,
   type LocalDocument,
@@ -83,7 +84,7 @@ export function DocumentManager({ documents, onChange, onRemove, embedded = fals
   const addFiles = (files: FileList | File[]) => {
     const nextDocuments: LocalDocument[] = [];
     const nextErrors: string[] = [];
-    const fingerprints = new Set(documents.map((document) => documentFingerprint(document.file)));
+    const fingerprints = new Set(documents.map(localDocumentFingerprint));
 
     Array.from(files).forEach((file) => {
       const extension = fileExtension(file.name);

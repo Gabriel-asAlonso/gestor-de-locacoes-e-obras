@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "skipLibCheck": true,
+    "types": ["node"],
+    "target": "ES2022",
+    "strict": true,
+    "noPropertyAccessFromIndexSignature": false
+  },
+  "include": ["server/**/*.ts"]
+}

@@ -1,0 +1,13 @@
+ALTER TABLE contratos DROP COLUMN nome_documento;
+ALTER TABLE contratos DROP COLUMN forma_pagamento_texto;
+ALTER TABLE contratos DROP COLUMN regra_primeira_cobranca;
+ALTER TABLE contratos DROP COLUMN garantia_detalhe;
+ALTER TABLE contratos DROP COLUMN garantia_tipo;
+ALTER TABLE contratos DROP COLUMN canal_envio;
+ALTER TABLE contratos DROP COLUMN juros_mensal_percentual;
+ALTER TABLE contratos DROP COLUMN multa_atraso_percentual;
+ALTER TABLE contratos DROP COLUMN periodicidade_reajuste_meses;
+ALTER TABLE contratos DROP COLUMN referencia_pagamento;
+ALTER TABLE contratos DROP COLUMN data_assinatura;
+ALTER TABLE contratos DROP COLUMN data_ocupacao;
+ALTER TABLE contratos DROP COLUMN finalidade;

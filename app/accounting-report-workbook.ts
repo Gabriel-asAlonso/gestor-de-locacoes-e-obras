@@ -4,7 +4,9 @@ import type { AccountingReportModel } from "./accounting-report";
 const ACCOUNTING_NUMBER_FORMAT = '_-"R$" * #,##0.00_-;-"R$" * #,##0.00_-;_-"R$" * "-"??_-;_-@_-';
 const FIRST_DATA_ROW = 8;
 const FONT_NAME = "Times New Roman";
-const FRAME_BORDER: Partial<ExcelJS.Border> = { style: "medium", color: { indexed: 64 } };
+// ExcelJS supports indexed colors at runtime, but omits them from its Color type.
+const FRAME_COLOR: Partial<ExcelJS.Color> & { indexed: number } = { indexed: 64 };
+const FRAME_BORDER: Partial<ExcelJS.Border> = { style: "medium", color: FRAME_COLOR };
 
 type PageFrame = {
   frameStart: number;

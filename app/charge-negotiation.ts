@@ -15,6 +15,7 @@ export type NegotiationInstallment = {
 
 export type ChargeNegotiation = NegotiationTerms & {
   id: string;
+  databaseId?: string;
   chargeId: string;
   negotiatedTotal: number;
   financedAmount: number;

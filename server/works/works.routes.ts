@@ -1,0 +1,23 @@
+import { Hono } from 'hono';
+import type { AppEnv } from '../common/types.ts';
+import { created, ok } from '../common/http.ts';
+import { NotFoundError } from '../common/errors.ts';
+import { readJson, readParams, readQuery } from '../common/validation.ts';
+import { requireAuth } from '../auth/auth.middleware.ts';
+import { requirePermission } from '../permissions/authorize.middleware.ts';
+import { PERMISSIONS } from '../permissions/permissions.ts';
+import { workCreateSchema, workIdSchema, workListQuerySchema, workProgressSchema, workStateSchema, workUpdateSchema } from './dto.ts';
+import { createWork, findWork, listWorks, transitionState, updateProgress, updateWork } from './works.service.ts';
+import { allWorkFinances } from '../work-finance/finance.service.ts';
+import { workPanel } from '../work-panel/panel.service.ts';
+
+export const worksRoutes = new Hono<AppEnv>();
+worksRoutes.use('*', requireAuth);
+worksRoutes.get('/', requirePermission(PERMISSIONS.OBRAS_LER), async (c) => c.json(await listWorks(readQuery(c, workListQuerySchema))));
+worksRoutes.get('/financeiro-resumo', requirePermission(PERMISSIONS.OBRAS_LER), async (c) => c.json(await allWorkFinances()));
+worksRoutes.get('/painel', requirePermission(PERMISSIONS.OBRAS_LER), async (c) => ok(c, await workPanel()));
+worksRoutes.get('/:id', requirePermission(PERMISSIONS.OBRAS_LER), async (c) => { const row = await findWork(readParams(c, workIdSchema).id); if (!row) throw new NotFoundError('Obra não encontrada.'); return ok(c, row); });
+worksRoutes.post('/', requirePermission(PERMISSIONS.OBRAS_CRIAR), async (c) => created(c, await createWork(await readJson(c, workCreateSchema), { actorId: c.get('user').id })));
+worksRoutes.patch('/:id', requirePermission(PERMISSIONS.OBRAS_EDITAR), async (c) => ok(c, await updateWork(readParams(c, workIdSchema).id, await readJson(c, workUpdateSchema), { actorId: c.get('user').id })));
+worksRoutes.post('/:id/progresso', requirePermission(PERMISSIONS.OBRAS_EDITAR), async (c) => ok(c, await updateProgress(readParams(c, workIdSchema).id, await readJson(c, workProgressSchema), { actorId: c.get('user').id })));
+worksRoutes.post('/:id/estado', requirePermission(PERMISSIONS.OBRAS_EDITAR), async (c) => ok(c, await transitionState(readParams(c, workIdSchema).id, await readJson(c, workStateSchema), { actorId: c.get('user').id })));

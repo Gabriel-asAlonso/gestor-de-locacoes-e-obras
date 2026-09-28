@@ -5,7 +5,7 @@ import {
   buildNegotiationSchedule,
   calculateNegotiationTotals,
   validateNegotiationTerms,
-} from "../src/app/core/utils/charge-negotiation.ts";
+} from "../app/charge-negotiation.ts";
 
 test("calcula desconto, acréscimo, entrada e saldo parcelado em centavos", () => {
   assert.deepEqual(calculateNegotiationTotals({

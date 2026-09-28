@@ -1,0 +1,16 @@
+ALTER TABLE recebimentos DROP COLUMN observacoes;
+ALTER TABLE recebimentos DROP COLUMN comprovante_nome;
+ALTER TABLE recebimentos DROP COLUMN pagador_descricao;
+ALTER TABLE recebimentos DROP COLUMN conta_descricao;
+ALTER TABLE recebimentos DROP COLUMN acrescimo;
+ALTER TABLE recebimentos DROP COLUMN desconto;
+ALTER TABLE recebimentos DROP COLUMN valor_recebido;
+ALTER TABLE recebimentos DROP COLUMN data_credito;
+ALTER TABLE negociacoes DROP COLUMN observacoes;
+ALTER TABLE negociacoes DROP COLUMN documento_nome;
+ALTER TABLE negociacoes DROP COLUMN contato_canal;
+ALTER TABLE negociacoes DROP COLUMN contato_nome;
+ALTER TABLE negociacoes DROP COLUMN correcao;
+ALTER TABLE negociacoes DROP COLUMN juros;
+ALTER TABLE negociacoes DROP COLUMN multa;
+ALTER TABLE negociacoes DROP COLUMN motivo_outro;

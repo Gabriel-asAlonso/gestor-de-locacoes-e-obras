@@ -5,7 +5,7 @@ const ALLOWED_EXTENSIONS = new Set(["pdf", "doc", "docx", "xls", "xlsx", "jpg", 
 
 export type LocalDocument = {
   id: string;
-  file: File;
+  file?: File;
   name: string;
   extension: string;
   typeLabel: string;
@@ -86,6 +86,10 @@ export function isImageDocument(document: Pick<LocalDocument, "extension">) {
 
 export function documentFingerprint(file: Pick<File, "name" | "size">) {
   return `${file.name.trim().toLocaleLowerCase("pt-BR")}::${file.size}`;
+}
+
+export function localDocumentFingerprint(document: Pick<LocalDocument, "name" | "size">) {
+  return `${document.name.trim().toLocaleLowerCase("pt-BR")}::${document.size}`;
 }
 
 export function validateDocumentFile(file: File, fingerprints: ReadonlySet<string>) {

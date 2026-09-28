@@ -46,11 +46,15 @@ function SupplierStatus({ status }: { status: WorkSupplierStatus }) {
 
 type SupplierEvent = { title: string; description: string; files: string[] };
 
-export function WorkSuppliersPanel({ suppliers, onChange, onNotify, onEvent }: {
+export function WorkSuppliersPanel({ suppliers, onChange, onNotify, onEvent, onCreateContract, onRegisterPayment }: {
   suppliers: WorkSupplier[];
   onChange: (suppliers: WorkSupplier[]) => void;
   onNotify: (message: string, reference: string) => void;
   onEvent: (event: SupplierEvent) => void;
+  // Grupo 8: quando informados, a criação de contratação e o pagamento são persistidos via API
+  // (a lista completa devolvida substitui o estado). Sem eles, o painel opera localmente (demo).
+  onCreateContract?: (data: FormData) => Promise<WorkSupplier[]>;
+  onRegisterPayment?: (supplier: WorkSupplier, data: FormData) => Promise<WorkSupplier[]>;
 }) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("Todos os status");
@@ -69,7 +73,16 @@ export function WorkSuppliersPanel({ suppliers, onChange, onNotify, onEvent }: {
     });
   }, [query, status, suppliers]);
 
-  const saveSupplier = (data: FormData) => {
+  const saveSupplier = async (data: FormData) => {
+    if (onCreateContract) {
+      try {
+        const next = await onCreateContract(data);
+        onChange(next);
+        onNotify("Fornecedor vinculado à obra.", next[0]?.id ?? "");
+        setCreating(false);
+      } catch (error) { onNotify(error instanceof Error ? error.message : "Não foi possível vincular o fornecedor.", "erro"); }
+      return;
+    }
     const files = data.getAll("documents").map(String).filter(Boolean);
     const contractedAmount = Number(data.get("contractedAmount") ?? 0);
     const dueDateIso = String(data.get("dueDateIso") ?? "");
@@ -93,7 +106,17 @@ export function WorkSuppliersPanel({ suppliers, onChange, onNotify, onEvent }: {
     setCreating(false);
   };
 
-  const savePayment = (supplier: WorkSupplier, data: FormData) => {
+  const savePayment = async (supplier: WorkSupplier, data: FormData) => {
+    if (onRegisterPayment) {
+      try {
+        const next = await onRegisterPayment(supplier, data);
+        onChange(next);
+        onNotify("Pagamento do fornecedor registrado.", supplier.id);
+        setPaymentTarget(null);
+        setSelected(next.find((item) => item.databaseId === supplier.databaseId) ?? null);
+      } catch (error) { onNotify(error instanceof Error ? error.message : "Não foi possível registrar o pagamento.", "erro"); }
+      return;
+    }
     const amount = Number(data.get("amount") ?? 0);
     const dateIso = String(data.get("dateIso") ?? "");
     const note = String(data.get("note") ?? "").trim() || undefined;

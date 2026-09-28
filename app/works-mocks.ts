@@ -5,6 +5,7 @@ export type WorkInterventionType = "Obra" | "Reforma" | "Reparo" | "Manutenção
 
 export type WorkRecord = {
   id: string;
+  databaseId?: string;
   title: string;
   property: string;
   unit?: string;
@@ -208,121 +209,5 @@ export const workRecords: WorkRecord[] = [
     projectedCashBalance: 112800,
     nextActivity: "Validar projeto executivo",
     lastUpdateLabel: "Atualizada há 4 dias",
-  },
-];
-
-export const workAttentionRecords: WorkAttention[] = [
-  {
-    id: "ATE-001",
-    workId: "OBR-002",
-    property: "Complexo Aurora",
-    dateIso: "2026-08-24",
-    kind: "schedule",
-    title: "Atividade atrasada há 4 dias",
-    description: "Troca do quadro de distribuição",
-    meta: "Carlos Mendes",
-    tone: "danger",
-  },
-  {
-    id: "ATE-002",
-    workId: "OBR-004",
-    property: "Shopping Alameda",
-    dateIso: "2026-08-24",
-    kind: "supplier",
-    title: "Fornecedor com pagamento vencido",
-    description: "Renovação dos sanitários das lojas",
-    meta: "R$ 7.800 pendentes",
-    tone: "danger",
-  },
-  {
-    id: "ATE-003",
-    workId: "OBR-003",
-    property: "Edifício Horizonte",
-    dateIso: "2026-08-26",
-    kind: "supplier",
-    title: "Fornecedor aguardando cadastro",
-    description: "Recuperação da fachada principal",
-    meta: "Definir serviço contratado",
-    tone: "warning",
-  },
-  {
-    id: "ATE-004",
-    workId: "OBR-004",
-    property: "Shopping Alameda",
-    dateIso: "2026-08-24",
-    kind: "update",
-    title: "Obra sem atualização recente",
-    description: "Último registro realizado há 6 dias",
-    meta: "Patrícia Nunes",
-    tone: "warning",
-  },
-  {
-    id: "ATE-005",
-    workId: "OBR-001",
-    property: "Centro Empresarial Nexo",
-    dateIso: "2026-08-27",
-    kind: "payment",
-    title: "Pagamento previsto para esta semana",
-    description: "2ª medição da impermeabilização",
-    meta: "R$ 28.500",
-    tone: "info",
-  },
-];
-
-export const workCommitments: WorkCommitment[] = [
-  {
-    id: "COM-001",
-    workId: "OBR-002",
-    property: "Complexo Aurora",
-    dateIso: "2026-08-24",
-    day: "24",
-    month: "AGO",
-    title: "Regularizar quadro elétrico",
-    description: "Galpão 02 · Carlos Mendes",
-    status: "Atrasado",
-  },
-  {
-    id: "COM-002",
-    workId: "OBR-006",
-    property: "Parque Logístico Vereda",
-    dateIso: "2026-08-24",
-    day: "24",
-    month: "AGO",
-    title: "Teste de vazão",
-    description: "Galpão A · 15:00",
-    status: "Hoje",
-  },
-  {
-    id: "COM-003",
-    workId: "OBR-001",
-    property: "Centro Empresarial Nexo",
-    dateIso: "2026-08-26",
-    day: "26",
-    month: "AGO",
-    title: "Vistoria do setor B",
-    description: "Rafael Almeida · 09:30",
-    status: "Próximo",
-  },
-  {
-    id: "COM-004",
-    workId: "OBR-003",
-    property: "Edifício Horizonte",
-    dateIso: "2026-08-27",
-    day: "27",
-    month: "AGO",
-    title: "Escolha do orçamento",
-    description: "Reparo da fachada · 14:00",
-    status: "Próximo",
-  },
-  {
-    id: "COM-005",
-    workId: "OBR-004",
-    property: "Shopping Alameda",
-    dateIso: "2026-08-28",
-    day: "28",
-    month: "AGO",
-    title: "Revisão do escopo hidráulico",
-    description: "Patrícia Nunes · 11:00",
-    status: "Próximo",
   },
 ];

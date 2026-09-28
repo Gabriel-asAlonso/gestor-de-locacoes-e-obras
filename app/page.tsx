@@ -1,15 +1,17 @@
 "use client";
 
 import type { CSSProperties, ReactNode } from "react";
-import { createContext, FormEvent, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, FormEvent, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownToLine,
   ArrowRight,
   Info,
   ArrowUpDown,
+  AtSign,
   BadgeDollarSign,
   BriefcaseBusiness,
   Building2,
+  Bug,
   CalendarClock,
   Check,
   ChevronsUpDown,
@@ -34,11 +36,13 @@ import {
   PanelRightOpen,
   Pause,
   PencilLine,
+  Phone,
   Play,
   Plus,
   ReceiptText,
   RotateCcw,
   Search,
+  ShieldCheck,
   SlidersHorizontal,
   Trash2,
   TriangleAlert,
@@ -49,7 +53,6 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import {
-  createWorkDetailMock,
   type WorkActivity,
   type WorkActivityStatus,
   type WorkContribution,
@@ -61,8 +64,8 @@ import {
   type WorkTeamAllocation,
 } from "./work-detail-mocks";
 import { WorkSuppliersPanel } from "./work-suppliers";
-import { WorkPartnersPanel, type PartnerPaymentEvent } from "./work-partners";
-import { contributionRemaining, participationTotal } from "./work-partners-model";
+import { WorkPartnersPanel } from "./work-partners";
+import { participationTotal } from "./work-partners-model";
 import {
   ALL_REPORT_PORTFOLIOS,
   buildAccountingReportModel,
@@ -78,10 +81,19 @@ import {
   type ChargeNegotiation,
   type NegotiationTerms,
 } from "./charge-negotiation";
+import { PartialJournalUploadError, registryService, type AgencyRecord, type CategoryRecord, type ChargeBundle, type ChargeItemRecord, type ChargeRecord, type ContractRecord, type ExpenseRecord, type PortfolioRecord, type ProfessionalRecord, type PropertyRecord, type SupplierRecord, type TenantRecord, type UnitRecord, type WorkFinanceRecord, type WorkPanelRecord } from "./services/registry.service";
 import { CategorizedDocumentManager, DocumentCollection, DocumentManager } from "./document-manager";
 import { FileField } from "./file-field";
 import { ConfirmDialog, useDiscardGuard, type ConfirmPrompt } from "./confirm-dialog";
 import { ModalPortal } from "./modal-portal";
+import { LoginView } from "./components/auth/login-view";
+import { AccessManagementPage } from "./components/access-management/access-management-page";
+import { LogsPage } from "./components/logs/logs-page";
+import type { AccessUser } from "./components/access-management/access-management.types";
+import { SessionGate } from "./session-gate";
+import type { SessionInfo } from "./services/api-client";
+import { userAccessService } from "./services/user-access.service";
+import { reportClientError } from "./services/client-observability";
 import {
   createEmptyCategorizedDocuments,
   flattenCategorizedDocuments,
@@ -90,9 +102,6 @@ import {
   type LocalDocument,
 } from "./local-documents";
 import {
-  workAttentionRecords,
-  workCommitments,
-  workRecords,
   type WorkAttention,
   type WorkInterventionType,
   type WorkPriority,
@@ -103,15 +112,24 @@ import {
 type Status = "Vencida" | "Em aberto" | "Próxima" | "Parcial" | "Negociada" | "Recebida";
 type ExpenseStatus = "Pendente" | "Pago" | "Vencido";
 type AppModule = "Módulo 1" | "Módulo 2";
-type Page = "Visão geral" | "Carteiras" | "Imóveis" | "Unidades" | "Locatários" | "Contratos" | "Cobranças" | "Despesas" | "Obras" | "Nova obra" | "Detalhe da obra";
+type Page = "Visão geral" | "Carteiras" | "Imóveis" | "Unidades" | "Locatários" | "Contratos" | "Cobranças" | "Despesas" | "Obras" | "Nova obra" | "Detalhe da obra" | "Usuários e acessos" | "Logs e auditoria";
 const MODULE_LABEL: Record<AppModule, string> = { "Módulo 1": "Locações", "Módulo 2": "Obras" };
 const PAGE_AREA: Partial<Record<Page, string>> = {
   Carteiras: "Estrutura", Imóveis: "Estrutura", Unidades: "Estrutura", Locatários: "Estrutura",
   Contratos: "Locação", Cobranças: "Locação", Despesas: "Financeiro",
   "Nova obra": "Obras", "Detalhe da obra": "Obras",
+  "Usuários e acessos": "Administração",
+  "Logs e auditoria": "Administração",
 };
+const PAGE_VIEW_PERMISSION: Partial<Record<Page, string>> = {
+  Carteiras: 'carteiras:ler', Imóveis: 'imoveis:ler', Unidades: 'unidades:ler', Locatários: 'locatarios:ler',
+  Contratos: 'contratos:ler', Cobranças: 'cobrancas:ler', Despesas: 'despesas:ler', Obras: 'obras:ler',
+  'Nova obra': 'obras:criar', 'Detalhe da obra': 'obras:ler', 'Usuários e acessos': 'usuarios:ler', 'Logs e auditoria': 'logs:auditoria:ler',
+};
+const MODULE_ONE_READ_PERMISSIONS = ['painel:ler', 'carteiras:ler', 'imoveis:ler', 'unidades:ler', 'locatarios:ler', 'contratos:ler', 'cobrancas:ler', 'despesas:ler'];
 const breadcrumbTrail = (module: AppModule, page: Page) =>
-  [MODULE_LABEL[module], PAGE_AREA[page], page].filter((segment, index, list): segment is string => Boolean(segment) && segment !== list[index - 1]);
+  (page === "Usuários e acessos" || page === "Logs e auditoria" ? ["Administração", page] : [MODULE_LABEL[module], PAGE_AREA[page], page])
+    .filter((segment, index, list): segment is string => Boolean(segment) && segment !== list[index - 1]);
 type FormKind = "portfolio" | "property" | "unit" | "tenant" | "contract" | "charge" | "expense" | null;
 type ContentState = "ready" | "loading" | "error";
 type ToastMessage = { message: string; reference: string } | null;
@@ -152,81 +170,20 @@ type WorkCostSummary = {
   cashMovements: number;
   availableCash: number;
 };
-type Portfolio = {
-  id: string;
-  name: string;
-  holder: string;
-  document: string;
-  properties: number;
-  units: number;
-  manager?: string;
-  description?: string;
-  notes?: string;
+const EMPTY_WORK_COSTS: WorkCostSummary = {
+  teamCost: 0, supplierContracted: 0, supplierPaid: 0, supplierPending: 0,
+  totalCommitted: 0, contributionsReceived: 0, cashAdjustments: 0,
+  cashMovements: 0, availableCash: 0,
 };
-type Property = {
-  id: string;
-  portfolio: string;
-  name: string;
-  address: string;
-  units: number;
-  propertyType?: string;
-  cep?: string;
-  street?: string;
-  number?: string;
-  complement?: string;
-  district?: string;
-  city?: string;
-  state?: string;
-  municipalRegistration?: string;
-  registryNumber?: string;
-  registryOffice?: string;
-  manager?: string;
-  notes?: string;
+type Portfolio = PortfolioRecord & {
 };
-type Unit = {
-  id: string;
-  property: string;
-  portfolio: string;
-  name: string;
-  area: number;
-  occupied: boolean;
-  unitType?: string;
-  code?: string;
-  block?: string;
-  floor?: string;
-  totalArea?: number;
-  municipalRegistration?: string;
-  notes?: string;
-};
-type Tenant = {
-  id: string;
-  type: "PJ" | "PF";
-  name: string;
-  document: string;
-  contracts: number;
-  tradeName?: string;
-  contactName?: string;
-  phone?: string;
-  email?: string;
-  preferredChannel?: string;
-  billingAddress?: string;
-  municipalRegistration?: string;
-  responsibleAgencyId?: string;
-  notes?: string;
-};
-type RealEstateAgency = {
-  id: string;
-  name: string;
-  tradeName?: string;
-  document: string;
-  creci: string;
-  contactName: string;
-  phone?: string;
-  email?: string;
-  notes?: string;
-};
+type Property = PropertyRecord;
+type Unit = UnitRecord;
+type Tenant = TenantRecord;
+type RealEstateAgency = AgencyRecord;
 type RegistryDetail = { kind: "property"; record: Property } | { kind: "unit"; record: Unit } | { kind: "tenant"; record: Tenant };
 const FilterStateContext = createContext(false);
+const PortfolioOptionsContext = createContext<Portfolio[]>([]);
 type ContractChargeRule = {
   name: string;
   responsibility: string;
@@ -236,84 +193,11 @@ type ContractChargeRule = {
   recurrence: string;
   proofRequired: boolean;
 };
-type ChargeItem = {
-  name: string;
-  dueDate: string;
-  dueDateIso?: string;
-  amount: number;
-  received: number;
-  reference?: string;
-  supportDocumentName?: string;
-};
+type ChargeItem = ChargeItemRecord;
 type ChargeDraftItem = { name: string; due: string; amount: number; reference?: string; supportDocumentName?: string };
-type Charge = {
-  id: string;
-  contract: string;
-  portfolio: string;
-  property: string;
-  units: string[];
-  tenant: string;
-  competence: string;
-  status: Status;
-  items: ChargeItem[];
-  inclusionType?: string;
-  paymentMethod?: string;
-  notes?: string;
-};
-type Contract = {
-  id: string;
-  portfolio: string;
-  property: string;
-  units: string[];
-  tenant: string;
-  period: string;
-  rent: number;
-  due: number;
-  adjustment: string;
-  charges: string[];
-  chargeRules?: ContractChargeRule[];
-  startIso?: string;
-  endIso?: string;
-  occupancyDate?: string;
-  purpose?: string;
-  paymentReference?: string;
-  adjustmentIndex?: string;
-  adjustmentPeriod?: number;
-  lateFee?: number;
-  monthlyInterest?: number;
-  paymentMethod?: string;
-  deliveryChannel?: string;
-  guaranteeType?: string;
-  guaranteeDetails?: string;
-  signatureDate?: string;
-  firstChargeRule?: string;
-  documentName?: string;
-  notes?: string;
-};
-type Expense = {
-  id: string;
-  supplier: string;
-  description: string;
-  category: string;
-  amount: number;
-  dueDate: string;
-  dueIso: string;
-  paidDate: string | null;
-  status: ExpenseStatus;
-  allocationType?: string;
-  allocationId?: string;
-  competence?: string;
-  issueDate?: string;
-  documentType?: string;
-  documentNumber?: string;
-  plannedDate?: string;
-  entryType?: string;
-  recurrence?: string;
-  paymentMethod?: string;
-  financialAccount?: string;
-  attachmentName?: string;
-  notes?: string;
-};
+type Charge = ChargeRecord;
+type Contract = ContractRecord;
+type Expense = ExpenseRecord;
 type ReceiptAllocation = { itemIndex: number; amount: number };
 type ReceiptDraft = {
   id: string;
@@ -333,22 +217,6 @@ type ReceiptDraft = {
 };
 const expenseStatusPriority: Record<ExpenseStatus, number> = { Vencido: 0, Pendente: 1, Pago: 2 };
 
-const portfolios: Portfolio[] = [
-  { id: "CAR-001", name: "Carteira Atlas", holder: "Atlas Patrimonial Ltda.", document: "12.345.678/0001-10", properties: 4, units: 9 },
-  { id: "CAR-002", name: "Carteira Horizonte", holder: "Horizonte Imóveis Ltda.", document: "98.765.432/0001-20", properties: 4, units: 5 },
-];
-
-const properties: Property[] = [
-  { id: "IMO-001", portfolio: "Carteira Atlas", name: "Centro Empresarial Nexo", address: "Rua das Acácias, 240 · Centro", units: 3 },
-  { id: "IMO-002", portfolio: "Carteira Atlas", name: "Complexo Aurora", address: "Av. do Contorno, 1180 · Norte", units: 2 },
-  { id: "IMO-003", portfolio: "Carteira Horizonte", name: "Edifício Horizonte", address: "Rua do Mercado, 84 · Centro", units: 1 },
-  { id: "IMO-004", portfolio: "Carteira Horizonte", name: "Galeria Pátio Azul", address: "Alameda Sul, 510 · Jardins", units: 1 },
-  { id: "IMO-005", portfolio: "Carteira Atlas", name: "Parque Logístico Vereda", address: "Rod. das Indústrias, 920 · Distrito Industrial", units: 2 },
-  { id: "IMO-006", portfolio: "Carteira Atlas", name: "Edifício Jardim Central", address: "Av. das Nações, 860 · Bela Vista", units: 2 },
-  { id: "IMO-007", portfolio: "Carteira Horizonte", name: "Shopping Alameda", address: "Praça das Flores, 145 · Savassi", units: 2 },
-  { id: "IMO-008", portfolio: "Carteira Horizonte", name: "Centro Comercial Orla", address: "Av. Beira-Mar, 780 · Praia", units: 1 },
-];
-
 const propertyCoverImages: Record<string, string> = {
   "IMO-001": "/properties/centro-empresarial-nexo.jpg",
   "IMO-002": "/properties/complexo-aurora.jpg",
@@ -360,69 +228,16 @@ const propertyCoverImages: Record<string, string> = {
   "IMO-008": "/properties/centro-comercial-orla.jpg",
 };
 const fallbackPropertyCover = "/properties/centro-empresarial-nexo.jpg";
-const propertyCoverImagesByName = Object.fromEntries(properties.map((property) => [property.name, propertyCoverImages[property.id] ?? fallbackPropertyCover])) as Record<string, string>;
+const propertyCoverImagesByName: Record<string, string> = {
+  "Centro Empresarial Nexo": propertyCoverImages["IMO-001"], "Complexo Aurora": propertyCoverImages["IMO-002"],
+  "Edifício Horizonte": propertyCoverImages["IMO-003"], "Galeria Pátio Azul": propertyCoverImages["IMO-004"],
+  "Parque Logístico Vereda": propertyCoverImages["IMO-005"], "Edifício Jardim Central": propertyCoverImages["IMO-006"],
+  "Shopping Alameda": propertyCoverImages["IMO-007"], "Centro Comercial Orla": propertyCoverImages["IMO-008"],
+};
 
-const units: Unit[] = [
-  { id: "UNI-001", property: "Centro Empresarial Nexo", portfolio: "Carteira Atlas", name: "Sala 101", area: 42, occupied: true },
-  { id: "UNI-002", property: "Centro Empresarial Nexo", portfolio: "Carteira Atlas", name: "Sala 102", area: 39, occupied: true },
-  { id: "UNI-003", property: "Centro Empresarial Nexo", portfolio: "Carteira Atlas", name: "Sala 201", area: 68, occupied: false },
-  { id: "UNI-004", property: "Complexo Aurora", portfolio: "Carteira Atlas", name: "Galpão 01", area: 310, occupied: true },
-  { id: "UNI-005", property: "Complexo Aurora", portfolio: "Carteira Atlas", name: "Galpão 02", area: 280, occupied: true },
-  { id: "UNI-006", property: "Edifício Horizonte", portfolio: "Carteira Horizonte", name: "Módulo A", area: 96, occupied: true },
-  { id: "UNI-007", property: "Galeria Pátio Azul", portfolio: "Carteira Horizonte", name: "Loja 04", area: 74, occupied: false },
-  { id: "UNI-008", property: "Parque Logístico Vereda", portfolio: "Carteira Atlas", name: "Galpão A", area: 420, occupied: false },
-  { id: "UNI-009", property: "Parque Logístico Vereda", portfolio: "Carteira Atlas", name: "Galpão B", area: 380, occupied: true },
-  { id: "UNI-010", property: "Edifício Jardim Central", portfolio: "Carteira Atlas", name: "Sala 301", area: 74, occupied: true },
-  { id: "UNI-011", property: "Edifício Jardim Central", portfolio: "Carteira Atlas", name: "Sala 302", area: 68, occupied: false },
-  { id: "UNI-012", property: "Shopping Alameda", portfolio: "Carteira Horizonte", name: "Loja 11", area: 55, occupied: true },
-  { id: "UNI-013", property: "Shopping Alameda", portfolio: "Carteira Horizonte", name: "Loja 12", area: 61, occupied: false },
-  { id: "UNI-014", property: "Centro Comercial Orla", portfolio: "Carteira Horizonte", name: "Loja térrea", area: 88, occupied: false },
-];
-
-const tenants: Tenant[] = [
-  { id: "LOC-018", type: "PJ", name: "Estúdio Vereda Ltda.", document: "23.456.789/0001-95", contracts: 1, responsibleAgencyId: "IMB-001" },
-  { id: "LOC-021", type: "PJ", name: "Clínica Lumina Ltda.", document: "34.567.890/0001-30", contracts: 1, responsibleAgencyId: "IMB-001" },
-  { id: "LOC-009", type: "PJ", name: "Logística Prisma Ltda.", document: "45.678.901/0001-75", contracts: 1, responsibleAgencyId: "IMB-002" },
-  { id: "LOC-014", type: "PJ", name: "Oficina Sete Ltda.", document: "12.345.678/0001-95", contracts: 1, responsibleAgencyId: "IMB-003" },
-  { id: "LOC-004", type: "PF", name: "Marina Duarte", document: "123.456.789-09", contracts: 0 },
-];
-
-const realEstateAgencies: RealEstateAgency[] = [
-  { id: "IMB-001", name: "Nexo Administração de Imóveis Ltda.", tradeName: "Nexo Imóveis", document: "11.444.777/0001-61", creci: "CRECI-MG 12.845-J", contactName: "Renata Alves", phone: "(31) 99842-1300", email: "relacionamento@nexoimoveis.com.br" },
-  { id: "IMB-002", name: "Prisma Gestão Imobiliária Ltda.", tradeName: "Prisma Gestão", document: "45.678.901/0001-75", creci: "CRECI-MG 18.302-J", contactName: "Carlos Menezes", phone: "(31) 3345-8900", email: "gestao@prismaimobiliaria.com.br" },
-  { id: "IMB-003", name: "Horizonte Locações Ltda.", tradeName: "Horizonte Locações", document: "34.567.890/0001-30", creci: "CRECI-MG 21.774-J", contactName: "Beatriz Lima", phone: "(31) 99102-4488", email: "atendimento@horizontelocacoes.com.br" },
-];
-
-const contracts: Contract[] = [
-  { id: "CTR-014", portfolio: "Carteira Atlas", property: "Centro Empresarial Nexo", units: ["Sala 101"], tenant: "Estúdio Vereda Ltda.", period: "01 fev 2026 — 31 jan 2027", rent: 3200, due: 10, adjustment: "Fevereiro", charges: ["Aluguel", "IPTU", "Condomínio"] },
-  { id: "CTR-021", portfolio: "Carteira Atlas", property: "Centro Empresarial Nexo", units: ["Sala 102"], tenant: "Clínica Lumina Ltda.", period: "01 jun 2026 — 31 mai 2027", rent: 4850, due: 12, adjustment: "Junho", charges: ["Aluguel", "Condomínio"] },
-  { id: "CTR-009", portfolio: "Carteira Atlas", property: "Complexo Aurora", units: ["Galpão 01", "Galpão 02"], tenant: "Logística Prisma Ltda.", period: "15 mar 2026 — 14 mar 2027", rent: 8900, due: 14, adjustment: "Março", charges: ["Aluguel", "IPTU", "Água"] },
-  { id: "CTR-018", portfolio: "Carteira Horizonte", property: "Edifício Horizonte", units: ["Módulo A"], tenant: "Oficina Sete Ltda.", period: "01 ago 2026 — 31 jul 2027", rent: 2750, due: 15, adjustment: "Agosto", charges: ["Aluguel", "Condomínio"] },
-];
-
-const charges: Charge[] = [
-  { id: "COB-0084", contract: "CTR-014", portfolio: "Carteira Atlas", property: "Centro Empresarial Nexo", units: ["Sala 101"], tenant: "Estúdio Vereda Ltda.", competence: "07/2026", status: "Vencida", items: [
-    { name: "Aluguel", dueDate: "10 ago 2026", amount: 3200, received: 0 },
-    { name: "IPTU", dueDate: "10 ago 2026", amount: 385, received: 0 },
-    { name: "Condomínio", dueDate: "12 ago 2026", amount: 640, received: 0 },
-  ] },
-  { id: "COB-0086", contract: "CTR-021", portfolio: "Carteira Atlas", property: "Centro Empresarial Nexo", units: ["Sala 102"], tenant: "Clínica Lumina Ltda.", competence: "08/2026", status: "Parcial", items: [
-    { name: "Aluguel", dueDate: "12 ago 2026", amount: 4850, received: 2000 },
-    { name: "Condomínio", dueDate: "12 ago 2026", amount: 820, received: 0 },
-  ] },
-  { id: "COB-0087", contract: "CTR-009", portfolio: "Carteira Atlas", property: "Complexo Aurora", units: ["Galpão 01", "Galpão 02"], tenant: "Logística Prisma Ltda.", competence: "08/2026", status: "Próxima", items: [
-    { name: "Aluguel", dueDate: "14 ago 2026", amount: 8900, received: 0 },
-    { name: "Água", dueDate: "18 ago 2026", amount: 460, received: 0 },
-  ] },
-  { id: "COB-0088", contract: "CTR-018", portfolio: "Carteira Horizonte", property: "Edifício Horizonte", units: ["Módulo A"], tenant: "Oficina Sete Ltda.", competence: "08/2026", status: "Próxima", items: [
-    { name: "Aluguel", dueDate: "15 ago 2026", amount: 2750, received: 0 },
-    { name: "Condomínio", dueDate: "15 ago 2026", amount: 530, received: 0 },
-  ] },
-  { id: "COB-0078", contract: "CTR-014", portfolio: "Carteira Atlas", property: "Centro Empresarial Nexo", units: ["Sala 101"], tenant: "Estúdio Vereda Ltda.", competence: "06/2026", status: "Recebida", items: [
-    { name: "Aluguel", dueDate: "10 jul 2026", amount: 3200, received: 3200 },
-    { name: "IPTU", dueDate: "10 jul 2026", amount: 385, received: 385 },
-  ] },
-];
+// Unidades, locatários e imobiliárias agora vêm da API (registry.service). Contratos/cobranças
+// permanecem demonstrativos até os grupos seguintes.
+// Cobranças, recebimentos e negociações agora vêm da API (registry.service) — Grupo 4.
 
 function contractDueDate(competence: string, dueDay: number, paymentReference = "Mês a vencer") {
   const [sourceYear, sourceMonth] = competence.split("-").map(Number);
@@ -434,29 +249,24 @@ function contractDueDate(competence: string, dueDay: number, paymentReference = 
   return `${year}-${String(month).padStart(2, "0")}-${String(Math.min(dueDay, lastDay)).padStart(2, "0")}`;
 }
 
+function currentMonthInputValue(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
 function buildChargeItemsFromContract(contract: Contract, competence: string): ChargeDraftItem[] {
   const rules = contract.chargeRules?.length ? contract.chargeRules : contract.charges.map((name) => ({ name, amount: name === "Aluguel" ? contract.rent : 0 }));
   return rules.map((rule) => {
     const name = rule.name;
-    const previousCharge = charges.find((charge) => charge.contract === contract.id && charge.items.some((item) => item.name === name));
-    const previousAmount = previousCharge?.items.find((item) => item.name === name)?.amount;
     return {
       name,
       due: contractDueDate(competence, contract.due, contract.paymentReference),
-      amount: name === "Aluguel" ? contract.rent : rule.amount || previousAmount || 0,
+      amount: name === "Aluguel" ? contract.rent : rule.amount || 0,
       reference: "",
     };
   });
 }
 
-const expenses: Expense[] = [
-  { id: "PAG-0031", supplier: "Energia Azul Distribuição", description: "Energia elétrica · Centro Empresarial Nexo", category: "Utilidades", amount: 1840.70, dueDate: "09 ago 2026", dueIso: "2026-08-09", paidDate: null, status: "Vencido" },
-  { id: "PAG-0032", supplier: "Condomínio Empresarial Nexo", description: "Cota condominial · agosto/2026", category: "Condomínio", amount: 2460, dueDate: "12 ago 2026", dueIso: "2026-08-12", paidDate: null, status: "Pendente" },
-  { id: "PAG-0033", supplier: "Manutenção Nova Chave", description: "Revisão preventiva do portão de acesso", category: "Manutenção", amount: 780, dueDate: "15 ago 2026", dueIso: "2026-08-15", paidDate: null, status: "Pendente" },
-  { id: "PAG-0034", supplier: "Prefeitura Municipal", description: "IPTU · parcela 08/10", category: "Tributos", amount: 1340, dueDate: "20 ago 2026", dueIso: "2026-08-20", paidDate: null, status: "Pendente" },
-  { id: "PAG-0028", supplier: "Seguradora Farol", description: "Apólice patrimonial · parcela 04/06", category: "Seguros", amount: 2250, dueDate: "05 ago 2026", dueIso: "2026-08-05", paidDate: "04 ago 2026", status: "Pago" },
-  { id: "PAG-0027", supplier: "Conecta Telecom", description: "Internet corporativa · julho/2026", category: "Telecom", amount: 389.90, dueDate: "02 ago 2026", dueIso: "2026-08-02", paidDate: "01 ago 2026", status: "Pago" },
-];
+// Despesas, fornecedores e categorias agora vêm da API (registry.service) — Grupo 5.
 
 const MANAGER_OPTIONS = ["Núcleo Patrimonial", "Operação Comercial", "Financeiro e Contratos"];
 const PROPERTY_TYPE_OPTIONS = ["Edifício comercial", "Centro comercial", "Galeria", "Shopping", "Complexo logístico", "Galpão", "Outro"];
@@ -465,7 +275,17 @@ const EXPENSE_CATEGORY_OPTIONS = ["Condomínio", "Manutenção", "Seguros", "Tel
 const FINANCIAL_ACCOUNT_OPTIONS = ["Banco Operacional", "Conta de Recebíveis", "Caixa administrativo"];
 const PAYMENT_METHOD_OPTIONS = ["Boleto bancário", "Pix", "Transferência bancária", "Débito automático", "Dinheiro"];
 const DOCUMENT_TYPE_OPTIONS = ["Nota fiscal", "Boleto", "Guia", "Recibo", "Contrato", "Outro"];
-const WORKS_DEMO_DATE_ISO = "2026-08-24";
+function currentDateIso(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function addDaysIso(isoDate: string, days: number) {
+  const date = new Date(`${isoDate}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+const WORKS_DEMO_DATE_ISO = currentDateIso();
 const WORK_INTERVENTION_OPTIONS: WorkInterventionType[] = ["Obra", "Reforma", "Reparo", "Manutenção", "Emergência"];
 const WORK_PRIORITY_OPTIONS: WorkPriority[] = ["Baixa", "Média", "Alta", "Urgente"];
 const WORK_TEAM_OPTIONS = [
@@ -491,19 +311,9 @@ const formatExpenseDate = (value: string) => {
   const [year, month, day] = value.split("-").map(Number);
   return `${String(day).padStart(2, "0")} ${expenseMonths[month - 1]} ${year}`;
 };
-const formatAddress = (...parts: Array<string | undefined>) => parts.filter((part) => part?.trim()).join(", ");
 const nextRecordId = (prefix: string, records: Array<{ id: string }>, size = 3) => {
   const next = records.reduce((largest, record) => Math.max(largest, Number(record.id.match(/\d+/)?.[0] ?? 0)), 0) + 1;
   return `${prefix}-${String(next).padStart(size, "0")}`;
-};
-const chargeStatusFromItems = (items: ChargeItem[]): Status => {
-  const dueDates = items.map((item) => item.dueDateIso).filter((value): value is string => Boolean(value)).sort();
-  const earliestDue = dueDates[0];
-  if (!earliestDue) return "Em aberto";
-  if (earliestDue < DEMO_DATE_ISO) return "Vencida";
-  const dueTime = Date.parse(`${earliestDue}T00:00:00Z`);
-  const demoTime = Date.parse(`${DEMO_DATE_ISO}T00:00:00Z`);
-  return dueTime - demoTime <= UPCOMING_WINDOW_DAYS * DAY_IN_MS ? "Próxima" : "Em aberto";
 };
 const documentDigits = (value: string) => value.replace(/\D/g, "");
 
@@ -535,7 +345,7 @@ function hasValidCnpj(value: string) {
   };
   return calculate(12) === Number(digits[12]) && calculate(13) === Number(digits[13]);
 }
-const DEMO_DATE_ISO = "2026-08-12";
+const DEMO_DATE_ISO = currentDateIso();
 const UPCOMING_WINDOW_DAYS = 7;
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 type ContractTermTone = "ok" | "renova" | "vencido";
@@ -560,9 +370,9 @@ const contractTermBadgeLabel = (info: ReturnType<typeof contractTermInfo>) => {
   return `${info.tone === "renova" ? "Renova" : "Vence"} em ${info.monthsLeft} ${info.monthsLeft === 1 ? "mês" : "meses"}`;
 };
 const chargeTotal = (charge: Charge) => charge.items.reduce((sum, item) => sum + item.amount, 0);
-const receivedTotal = (charge: Charge) => charge.items.reduce((sum, item) => sum + item.received, 0);
-const chargeBalance = (charge: Charge) => chargeTotal(charge) - receivedTotal(charge);
-const operationalChargeBalance = (charge: Charge, negotiation?: ChargeNegotiation) => negotiation?.negotiatedTotal ?? chargeBalance(charge);
+const receivedTotal = (charge: Charge) => charge.receivedAmount ?? charge.items.reduce((sum, item) => sum + item.received, 0);
+const chargeBalance = (charge: Charge) => charge.operationalBalance ?? chargeTotal(charge) - receivedTotal(charge);
+const operationalChargeBalance = (charge: Charge, _negotiation?: ChargeNegotiation) => chargeBalance(charge);
 
 const FOCUSABLE_ELEMENTS = [
   "a[href]",
@@ -725,11 +535,22 @@ function StatusBadge({ status }: { status: Status }) {
 }
 
 export default function Home() {
+  return <SessionGate loginView={LoginView} workspace={Workspace} />;
+}
+
+function Workspace({ session, onLogout }: { session: SessionInfo; onLogout: () => Promise<void> }) {
   useDialogManagement();
-  const [authenticated, setAuthenticated] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [activeModule, setActiveModule] = useState<AppModule>("Módulo 1");
-  const [page, setPage] = useState<Page>("Visão geral");
+  const sessionPermissionSet = useMemo(() => new Set(session.permissoes), [session.permissoes]);
+  const canUseModuleOne = MODULE_ONE_READ_PERMISSIONS.some(permission => sessionPermissionSet.has(permission));
+  const canUseModuleTwo = sessionPermissionSet.has('obras:ler');
+  const initialModule: AppModule = canUseModuleOne || !canUseModuleTwo ? 'Módulo 1' : 'Módulo 2';
+  const initialPage: Page = sessionPermissionSet.has('painel:ler') ? 'Visão geral'
+    : canUseModuleTwo ? 'Obras'
+      : sessionPermissionSet.has('usuarios:ler') ? 'Usuários e acessos'
+        : sessionPermissionSet.has('logs:auditoria:ler') ? 'Logs e auditoria'
+        : (Object.entries(PAGE_VIEW_PERMISSION).find(([, permission]) => sessionPermissionSet.has(permission))?.[0] as Page | undefined) ?? 'Visão geral';
+  const [activeModule, setActiveModule] = useState<AppModule>(initialModule);
+  const [page, setPage] = useState<Page>(initialPage);
   const [search, setSearch] = useState("");
   const [portfolioFilter, setPortfolioFilter] = useState("Todas as carteiras");
   const [statusFilter, setStatusFilter] = useState("Todas");
@@ -743,31 +564,37 @@ export default function Home() {
   const [reportOpen, setReportOpen] = useState(false);
   const [form, setForm] = useState<FormKind>(null);
   const [chargeSourceContract, setChargeSourceContract] = useState<Contract | null>(null);
-  const [portfolioRecords, setPortfolioRecords] = useState<Portfolio[]>(portfolios);
+  const [portfolioRecords, setPortfolioRecords] = useState<Portfolio[]>([]);
   const [editingPortfolio, setEditingPortfolio] = useState<Portfolio | null>(null);
-  const [propertyRecords, setPropertyRecords] = useState<Property[]>(properties);
+  const [propertyRecords, setPropertyRecords] = useState<Property[]>([]);
   const [editingProperty, setEditingProperty] = useState<Property | null>(null);
-  const [unitRecords, setUnitRecords] = useState<Unit[]>(units);
+  const [unitRecords, setUnitRecords] = useState<Unit[]>([]);
   const [editingUnit, setEditingUnit] = useState<Unit | null>(null);
-  const [tenantRecords, setTenantRecords] = useState<Tenant[]>(tenants);
+  const [tenantRecords, setTenantRecords] = useState<Tenant[]>([]);
   const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
-  const [agencyRecords, setAgencyRecords] = useState<RealEstateAgency[]>(realEstateAgencies);
+  const [agencyRecords, setAgencyRecords] = useState<RealEstateAgency[]>([]);
   const [agencyModalOpen, setAgencyModalOpen] = useState(false);
-  const [contractRecords, setContractRecords] = useState<Contract[]>(contracts);
-  const [chargeRecords, setChargeRecords] = useState<Charge[]>(charges);
+  const [contractRecords, setContractRecords] = useState<Contract[]>([]);
+  const [chargeRecords, setChargeRecords] = useState<Charge[]>([]);
   const [negotiationsByCharge, setNegotiationsByCharge] = useState<Record<string, ChargeNegotiation>>({});
   const [receiptsByCharge, setReceiptsByCharge] = useState<Record<string, ReceiptDraft[]>>({});
   const [documentsByOwner, setDocumentsByOwner] = useState<Record<string, LocalDocument[]>>({});
   const documentsByOwnerRef = useRef(documentsByOwner);
   const [categorizedDocumentsByOwner, setCategorizedDocumentsByOwner] = useState<Record<string, CategorizedDocuments>>({});
   const categorizedDocumentsByOwnerRef = useRef(categorizedDocumentsByOwner);
-  const [expenseRecords, setExpenseRecords] = useState<Expense[]>(expenses);
-  const [workRecordState, setWorkRecordState] = useState<WorkRecord[]>(workRecords);
+  const [expenseRecords, setExpenseRecords] = useState<Expense[]>([]);
+  const [supplierRecords, setSupplierRecords] = useState<SupplierRecord[]>([]);
+  const [categoryRecords, setCategoryRecords] = useState<CategoryRecord[]>([]);
+  const [workRecordState, setWorkRecordState] = useState<WorkRecord[]>([]);
+  const [professionalRecords, setProfessionalRecords] = useState<ProfessionalRecord[]>([]);
+  const [accessUsers, setAccessUsers] = useState<AccessUser[]>([]);
+  const [accessUsersLoading, setAccessUsersLoading] = useState(false);
+  const [accessUsersError, setAccessUsersError] = useState("");
   const [workTeamsById, setWorkTeamsById] = useState<Record<string, WorkTeamAllocation[]>>({});
   const [workSuppliersById, setWorkSuppliersById] = useState<Record<string, WorkSupplier[]>>({});
-  const [workPartnersById, setWorkPartnersById] = useState<Record<string, WorkPartner[]>>({});
-  const [workContributionsById, setWorkContributionsById] = useState<Record<string, WorkContribution[]>>({});
   const [workFinancialEntriesById, setWorkFinancialEntriesById] = useState<Record<string, WorkFinancialEntry[]>>({});
+  const [workFinanceById, setWorkFinanceById] = useState<Record<string, WorkFinanceRecord>>({});
+  const [workPanel, setWorkPanel] = useState<WorkPanelRecord>({ attentions: [], commitments: [], positionDateIso: '' });
   const [workJournalById, setWorkJournalById] = useState<Record<string, WorkJournalEntry[]>>({});
   const [workPendingItemsById, setWorkPendingItemsById] = useState<Record<string, WorkPendingItem[]>>({});
   const [editingWork, setEditingWork] = useState<WorkRecord | null>(null);
@@ -782,17 +609,82 @@ export default function Home() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [overlayNavigation, setOverlayNavigation] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const canViewAccessManagement = session.permissoes.includes("usuarios:ler");
+  const canViewLogs = session.permissoes.includes('logs:auditoria:ler');
+  const canViewTechnicalLogs = session.permissoes.includes('logs:tecnicos:ler');
+  const canViewPage = useCallback((target: Page, module: AppModule = activeModule) => {
+    if (target === 'Visão geral') return module === 'Módulo 2' ? canUseModuleTwo : sessionPermissionSet.has('painel:ler');
+    const permission = PAGE_VIEW_PERMISSION[target];
+    return !permission || sessionPermissionSet.has(permission);
+  }, [activeModule, canUseModuleTwo, sessionPermissionSet]);
 
-  const workCostsById = useMemo(() => Object.fromEntries(workRecordState.map((work) => {
-    const detail = createWorkDetailMock(work);
-    return [work.id, summarizeWorkCosts(workTeamsById[work.id] ?? detail.team, workSuppliersById[work.id] ?? detail.suppliers, workFinancialEntriesById[work.id] ?? detail.financialEntries)];
-  })), [workFinancialEntriesById, workRecordState, workSuppliersById, workTeamsById]);
+  const loadAccessUsers = useCallback(async () => {
+    if (!canViewAccessManagement) return;
+    setAccessUsersLoading(true);
+    setAccessUsersError("");
+    try {
+      setAccessUsers(await userAccessService.list());
+    } catch (error) {
+      setAccessUsersError(error instanceof Error ? error.message : "Não foi possível carregar os usuários.");
+    } finally {
+      setAccessUsersLoading(false);
+    }
+  }, [canViewAccessManagement]);
+
+  const loadRegistryData = useCallback(async () => {
+    setContentState("loading");
+    try {
+      const [loadedPortfolios, loadedProperties, loadedUnits, loadedTenants, loadedAgencies, loadedContracts, loadedCharges, loadedExpenses, loadedSuppliers, loadedCategories, loadedWorks, loadedProfessionals, loadedWorkFinances, loadedWorkPanel] = await Promise.all([
+        sessionPermissionSet.has('carteiras:ler') ? registryService.listPortfolios() : Promise.resolve([]),
+        sessionPermissionSet.has('imoveis:ler') ? registryService.listProperties() : Promise.resolve([]),
+        sessionPermissionSet.has('unidades:ler') ? registryService.listUnits() : Promise.resolve([]),
+        sessionPermissionSet.has('locatarios:ler') ? registryService.listTenants() : Promise.resolve([]),
+        sessionPermissionSet.has('imobiliarias:ler') ? registryService.listAgencies() : Promise.resolve([]),
+        sessionPermissionSet.has('contratos:ler') ? registryService.listContracts() : Promise.resolve([]),
+        sessionPermissionSet.has('cobrancas:ler') ? registryService.listCharges() : Promise.resolve([]),
+        sessionPermissionSet.has('despesas:ler') ? registryService.listExpenses() : Promise.resolve([]),
+        sessionPermissionSet.has('fornecedores:ler') ? registryService.listSuppliers() : Promise.resolve([]),
+        sessionPermissionSet.has('categorias-despesa:ler') ? registryService.listExpenseCategories() : Promise.resolve([]),
+        canUseModuleTwo ? registryService.listWorks() : Promise.resolve([]),
+        sessionPermissionSet.has('profissionais:ler') ? registryService.listProfessionals() : Promise.resolve([]),
+        canUseModuleTwo ? registryService.listWorkFinances() : Promise.resolve([]),
+        canUseModuleTwo ? registryService.getWorkPanel() : Promise.resolve({ attentions: [], commitments: [], positionDateIso: '' }),
+      ]);
+      setPortfolioRecords(loadedPortfolios);
+      setPropertyRecords(loadedProperties);
+      setUnitRecords(loadedUnits);
+      setTenantRecords(loadedTenants);
+      setAgencyRecords(loadedAgencies);
+      setContractRecords(loadedContracts);
+      setChargeRecords(loadedCharges.map((bundle) => bundle.charge));
+      setNegotiationsByCharge(Object.fromEntries(loadedCharges.filter((bundle) => bundle.negotiation).map((bundle) => [bundle.charge.id, bundle.negotiation!])));
+      setReceiptsByCharge(Object.fromEntries(loadedCharges.map((bundle) => [bundle.charge.id, bundle.receipts])));
+      setExpenseRecords(loadedExpenses);
+      setSupplierRecords(loadedSuppliers);
+      setCategoryRecords(loadedCategories);
+      setWorkRecordState(loadedWorks);
+      setWorkFinanceById(Object.fromEntries(loadedWorkFinances.map((finance) => [finance.workDatabaseId, finance])));
+      setWorkPanel(loadedWorkPanel);
+      setProfessionalRecords(loadedProfessionals);
+      setOnline(true);
+      setContentState("ready");
+    } catch (error) {
+      reportClientError(error, 'FRONTEND_REGISTRY_LOAD_FAILED');
+      setContentState("error");
+    }
+  }, [canUseModuleTwo, sessionPermissionSet]);
+
+  const workCostsById = useMemo(() => Object.fromEntries(workRecordState.map((work) => [work.id,
+    work.databaseId && workFinanceById[work.databaseId] ? workFinanceById[work.databaseId] : EMPTY_WORK_COSTS,
+  ])), [workFinanceById, workRecordState]);
 
   useEffect(() => { documentsByOwnerRef.current = documentsByOwner; }, [documentsByOwner]);
   useEffect(() => { categorizedDocumentsByOwnerRef.current = categorizedDocumentsByOwner; }, [categorizedDocumentsByOwner]);
   useEffect(() => () => revokeDocumentUrls(Object.values(documentsByOwnerRef.current).flat()), []);
   useEffect(() => () => revokeDocumentUrls(Object.values(categorizedDocumentsByOwnerRef.current).flatMap(flattenCategorizedDocuments)), []);
   useEffect(() => () => { if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current); }, []);
+  useEffect(() => { queueMicrotask(() => { void loadRegistryData(); }); }, [loadRegistryData]);
+  useEffect(() => { if (canViewAccessManagement) queueMicrotask(() => { void loadAccessUsers(); }); }, [canViewAccessManagement, loadAccessUsers]);
 
   useEffect(() => {
     const navigationQuery = window.matchMedia("(max-width: 900px)");
@@ -863,6 +755,7 @@ export default function Home() {
     setToast(null);
   };
   const changePage = (next: Page) => {
+    if (!canViewPage(next)) return;
     setPage(next);
     setSearch("");
     setPortfolioFilter("Todas as carteiras");
@@ -870,12 +763,22 @@ export default function Home() {
     setCategoryFilter("Todas as categorias");
     setMenuOpen(false);
     setContentState(navigator.onLine ? "ready" : "error");
+    if (next === 'Visão geral' && activeModule === 'Módulo 2') {
+      void Promise.all([registryService.getWorkPanel(), registryService.listWorkFinances()]).then(([panel, finances]) => {
+        setWorkPanel(panel);
+        setWorkFinanceById(Object.fromEntries(finances.map((finance) => [finance.workDatabaseId, finance])));
+      }).catch(() => setContentState('error'));
+    }
     window.requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: "auto" }));
   };
   const changeModule = (next: AppModule) => {
+    if ((next === 'Módulo 1' && !canUseModuleOne) || (next === 'Módulo 2' && !canUseModuleTwo)) return;
     if (next === activeModule) return;
     setActiveModule(next);
-    setPage("Visão geral");
+    const nextPage: Page = canViewPage('Visão geral', next) ? 'Visão geral'
+      : next === 'Módulo 2' ? 'Obras'
+        : (['Carteiras', 'Imóveis', 'Unidades', 'Locatários', 'Contratos', 'Cobranças', 'Despesas'] as Page[]).find(candidate => canViewPage(candidate, next)) ?? 'Visão geral';
+    setPage(nextPage);
     setSearch("");
     setPortfolioFilter("Todas as carteiras");
     setStatusFilter("Todas");
@@ -910,32 +813,39 @@ export default function Home() {
     setEditingWork(null);
     changePage(workFormOrigin === "Detalhe da obra" && selectedWork ? "Detalhe da obra" : "Obras");
   };
-  const saveWork = (nextWork: WorkRecord) => {
-    const isEditing = workRecordState.some((work) => work.id === nextWork.id);
-    setWorkRecordState((current) => isEditing
-      ? current.map((work) => work.id === nextWork.id ? nextWork : work)
-      : [nextWork, ...current]);
-    setWorkTeamsById((current) => current[nextWork.id] ? current : { ...current, [nextWork.id]: isEditing ? createWorkDetailMock(nextWork).team : [] });
-    setWorkSuppliersById((current) => current[nextWork.id] ? current : { ...current, [nextWork.id]: isEditing ? createWorkDetailMock(nextWork).suppliers : [] });
-    setWorkPartnersById((current) => current[nextWork.id] ? current : { ...current, [nextWork.id]: isEditing ? createWorkDetailMock(nextWork).partners : [] });
-    setWorkContributionsById((current) => current[nextWork.id] ? current : { ...current, [nextWork.id]: isEditing ? createWorkDetailMock(nextWork).contributions : [] });
-    setWorkFinancialEntriesById((current) => current[nextWork.id] ? current : { ...current, [nextWork.id]: isEditing ? createWorkDetailMock(nextWork).financialEntries : [] });
-    setWorkJournalById((current) => current[nextWork.id] ? current : { ...current, [nextWork.id]: createWorkDetailMock(nextWork).journal });
-    setWorkPendingItemsById((current) => current[nextWork.id] ? current : { ...current, [nextWork.id]: createWorkDetailMock(nextWork).pendingItems });
-    setEditingWork(null);
-    setSelectedWork(nextWork);
-    setSelectedWorkTab("Resumo");
-    notify(isEditing ? "Obra atualizada nesta sessão." : "Obra adicionada à demonstração.", nextWork.id);
-    changePage("Detalhe da obra");
+  const saveWork = async (nextWork: WorkRecord) => {
+    const existing = workRecordState.find((work) => Boolean(work.databaseId) && work.databaseId === nextWork.databaseId);
+    try {
+      let saved = await registryService.saveWork(nextWork, propertyRecords, unitRecords, professionalRecords);
+      if (existing && nextWork.status !== existing.status) {
+        try { saved = await registryService.transitionWorkState(saved, nextWork.status); }
+        catch { notify("Cadastro salvo. Para mudar a situação, use as ações da obra.", saved.id); }
+      }
+      void registryService.listProfessionals().then(setProfessionalRecords).catch((error) => reportClientError(error, 'FRONTEND_BACKGROUND_REFRESH_FAILED', { resource: 'professionals' }));
+      setWorkRecordState((current) => existing ? current.map((work) => work.databaseId === saved.databaseId ? saved : work) : [saved, ...current]);
+      setEditingWork(null);
+      setSelectedWork(saved);
+      setSelectedWorkTab("Resumo");
+      notify(existing ? "Obra atualizada com sucesso." : "Obra criada com sucesso.", saved.id);
+      changePage("Detalhe da obra");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível salvar a obra.", "erro");
+    }
+  };
+  const transitionWork = async (status: WorkStatus, motivo?: string) => {
+    if (!selectedWork?.databaseId) return false;
+    try {
+      const saved = await registryService.transitionWorkState(selectedWork, status, motivo);
+      setWorkRecordState((current) => current.map((work) => work.databaseId === saved.databaseId ? saved : work));
+      setSelectedWork(saved);
+      notify(`Situação alterada para ${status}.`, saved.id);
+      return true;
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível alterar a situação.", "erro");
+      return false;
+    }
   };
   const openWorkDetail = (work: WorkRecord, initialTab: WorkDetailTab = "Resumo") => {
-    setWorkTeamsById((current) => current[work.id] ? current : { ...current, [work.id]: createWorkDetailMock(work).team });
-    setWorkSuppliersById((current) => current[work.id] ? current : { ...current, [work.id]: createWorkDetailMock(work).suppliers });
-    setWorkPartnersById((current) => current[work.id] ? current : { ...current, [work.id]: createWorkDetailMock(work).partners });
-    setWorkContributionsById((current) => current[work.id] ? current : { ...current, [work.id]: createWorkDetailMock(work).contributions });
-    setWorkFinancialEntriesById((current) => current[work.id] ? current : { ...current, [work.id]: createWorkDetailMock(work).financialEntries });
-    setWorkJournalById((current) => current[work.id] ? current : { ...current, [work.id]: createWorkDetailMock(work).journal });
-    setWorkPendingItemsById((current) => current[work.id] ? current : { ...current, [work.id]: createWorkDetailMock(work).pendingItems });
     setSelectedWork(work);
     setSelectedWorkTab(initialTab);
     changePage("Detalhe da obra");
@@ -948,273 +858,125 @@ export default function Home() {
   const retryContent = () => {
     const connected = navigator.onLine;
     setOnline(connected);
-    setContentState(connected ? "ready" : "error");
+    if (connected) void loadRegistryData();
+    else setContentState("error");
   };
-  const login = (event: FormEvent) => {
-    event.preventDefault();
-    setLoading(true);
-    window.setTimeout(() => { setAuthenticated(true); setLoading(false); }, 650);
+  // Aplica o estado derivado devolvido pela API (total/recebido/saldo/status/parcelas) no estado local.
+  const applyChargeBundle = (bundle: ChargeBundle) => {
+    setChargeRecords((records) => records.map((charge) => charge.databaseId === bundle.charge.databaseId ? bundle.charge : charge));
+    setSelectedCharge((charge) => charge?.databaseId === bundle.charge.databaseId ? bundle.charge : charge);
+    setNegotiationsByCharge((current) => {
+      const next = { ...current };
+      if (bundle.negotiation) next[bundle.charge.id] = bundle.negotiation; else delete next[bundle.charge.id];
+      return next;
+    });
+    setReceiptsByCharge((current) => ({ ...current, [bundle.charge.id]: bundle.receipts }));
   };
-  const saveReceipt = (receipt: ReceiptDraft) => {
-    const updateCharge = (charge: Charge) => {
-      const items = charge.items.map((item, itemIndex) => {
-        const allocation = receipt.allocations.find((entry) => entry.itemIndex === itemIndex)?.amount ?? 0;
-        return { ...item, received: Math.min(item.amount, item.received + allocation) };
-      });
-      const settled = items.every((item) => item.received >= item.amount - 0.009);
-      return { ...charge, items, status: settled ? "Recebida" as const : "Parcial" as const };
-    };
-    setChargeRecords((records) => records.map((charge) => charge.id === receipt.chargeId ? updateCharge(charge) : charge));
-    setSelectedCharge((charge) => charge?.id === receipt.chargeId ? updateCharge(charge) : charge);
-    setReceiptsByCharge((current) => ({ ...current, [receipt.chargeId]: [...(current[receipt.chargeId] ?? []), receipt] }));
-    setReceiptOpen(false);
-    notify("Recebimento registrado e distribuído entre os itens.", receipt.id);
-  };
-  const saveNegotiation = (negotiation: ChargeNegotiation) => {
-    const updating = Boolean(negotiationsByCharge[negotiation.chargeId]);
-    setNegotiationsByCharge((current) => ({ ...current, [negotiation.chargeId]: negotiation }));
-    setChargeRecords((records) => records.map((charge) => charge.id === negotiation.chargeId ? { ...charge, status: "Negociada" } : charge));
-    setSelectedCharge((charge) => charge?.id === negotiation.chargeId ? { ...charge, status: "Negociada" } : charge);
-    setNegotiationOpen(false);
-    notify(updating ? "Condições da negociação atualizadas." : "Negociação registrada com sucesso.", negotiation.id);
-  };
-  const saveForm = (data: FormData, documents?: FormDocuments) => {
-    let savedReference = "REG-DEMO";
-    let message = "Cadastro salvo neste ambiente demonstrativo.";
-    if (form === "portfolio") {
-      savedReference = editingPortfolio?.id ?? nextRecordId("CAR", portfolioRecords);
-      const values = {
-        name: String(data.get("portfolioName") ?? ""),
-        holder: String(data.get("portfolioHolder") ?? ""),
-        document: String(data.get("portfolioDocument") ?? ""),
-        manager: String(data.get("portfolioManager") ?? ""),
-        description: String(data.get("portfolioDescription") ?? ""),
-        notes: String(data.get("portfolioNotes") ?? ""),
-      };
-      if (editingPortfolio) {
-        setPortfolioRecords((records) => records.map((record) => record.id === editingPortfolio.id ? { ...record, ...values } : record));
-        message = "Carteira atualizada neste ambiente demonstrativo.";
-      } else {
-        setPortfolioRecords((records) => [...records, { id: savedReference, ...values, properties: 0, units: 0 }]);
-        message = "Carteira criada neste ambiente demonstrativo.";
-      }
-    } else if (form === "property") {
-      savedReference = editingProperty?.id ?? nextRecordId("IMO", propertyRecords);
-      const street = String(data.get("propertyStreet") ?? "");
-      const number = String(data.get("propertyNumber") ?? "");
-      const complement = String(data.get("propertyComplement") ?? "");
-      const district = String(data.get("propertyDistrict") ?? "");
-      const city = String(data.get("propertyCity") ?? "");
-      const state = String(data.get("propertyState") ?? "");
-      const values = {
-        portfolio: String(data.get("propertyPortfolio") ?? ""),
-        name: String(data.get("propertyName") ?? ""),
-        propertyType: String(data.get("propertyType") ?? ""),
-        cep: String(data.get("propertyCep") ?? ""),
-        street,
-        number,
-        complement,
-        district,
-        city,
-        state,
-        address: formatAddress(street, number, complement, district, city && state ? `${city}/${state}` : city || state) || editingProperty?.address || "",
-        municipalRegistration: String(data.get("propertyMunicipalRegistration") ?? ""),
-        registryNumber: String(data.get("propertyRegistryNumber") ?? ""),
-        registryOffice: String(data.get("propertyRegistryOffice") ?? ""),
-        manager: String(data.get("propertyManager") ?? ""),
-        notes: String(data.get("propertyNotes") ?? ""),
-      };
-      if (editingProperty) {
-        setPropertyRecords((records) => records.map((record) => record.id === editingProperty.id ? { ...record, ...values } : record));
-        message = "Imóvel atualizado neste ambiente demonstrativo.";
-      } else {
-        setPropertyRecords((records) => [...records, { id: savedReference, ...values, units: 0 }]);
-        message = "Imóvel criado neste ambiente demonstrativo.";
-      }
-    } else if (form === "unit") {
-      savedReference = editingUnit?.id ?? nextRecordId("UNI", unitRecords);
-      const unitProperty = editingUnit?.occupied ? editingUnit.property : String(data.get("unitProperty") ?? "");
-      const selectedProperty = propertyRecords.find((record) => record.name === unitProperty);
-      const unitType = String(data.get("unitType") ?? "");
-      const code = String(data.get("unitCode") ?? "");
-      const values = {
-        property: unitProperty,
-        portfolio: editingUnit?.occupied ? editingUnit.portfolio : selectedProperty?.portfolio ?? editingUnit?.portfolio ?? portfolioRecords[0]?.name ?? "",
-        unitType,
-        code,
-        name: editingUnit?.occupied ? editingUnit.name : `${unitType.replace(" comercial", "")} ${code}`.trim(),
-        area: Number(data.get("unitArea")),
-        occupied: editingUnit?.occupied ?? false,
-        block: String(data.get("unitBlock") ?? ""),
-        floor: String(data.get("unitFloor") ?? ""),
-        totalArea: Number(data.get("unitTotalArea")) || undefined,
-        municipalRegistration: String(data.get("unitMunicipalRegistration") ?? ""),
-        notes: String(data.get("unitNotes") ?? ""),
-      };
-      if (editingUnit) {
-        setUnitRecords((records) => records.map((record) => record.id === editingUnit.id ? { ...record, ...values } : record));
-        message = "Unidade atualizada neste ambiente demonstrativo.";
-      } else {
-        setUnitRecords((records) => [...records, { id: savedReference, ...values }]);
-        message = "Unidade criada neste ambiente demonstrativo.";
-      }
-    } else if (form === "tenant") {
-      savedReference = editingTenant?.id ?? nextRecordId("LOC", tenantRecords);
-      const values = {
-        type: String(data.get("tenantType") ?? "PJ") as Tenant["type"],
-        name: String(data.get("tenantName") ?? ""),
-        document: String(data.get("tenantDocument") ?? ""),
-        tradeName: String(data.get("tenantTradeName") ?? ""),
-        contactName: String(data.get("tenantContactName") ?? ""),
-        phone: String(data.get("tenantPhone") ?? ""),
-        email: String(data.get("tenantEmail") ?? ""),
-        preferredChannel: String(data.get("tenantPreferredChannel") ?? ""),
-        billingAddress: formatAddress(
-          String(data.get("tenantBillingStreet") ?? ""),
-          String(data.get("tenantBillingNumber") ?? ""),
-          String(data.get("tenantBillingComplement") ?? ""),
-          String(data.get("tenantBillingDistrict") ?? ""),
-          String(data.get("tenantBillingCity") ?? ""),
-          String(data.get("tenantBillingState") ?? ""),
-          String(data.get("tenantBillingCep") ?? ""),
-        ) || editingTenant?.billingAddress || "",
-        municipalRegistration: String(data.get("tenantMunicipalRegistration") ?? ""),
-        responsibleAgencyId: String(data.get("tenantResponsibleAgency") ?? "") || undefined,
-        notes: String(data.get("tenantNotes") ?? ""),
-      };
-      if (editingTenant) {
-        setTenantRecords((records) => records.map((record) => record.id === editingTenant.id ? { ...record, ...values } : record));
-        if (values.name !== editingTenant.name) {
-          setContractRecords((records) => records.map((record) => record.tenant === editingTenant.name ? { ...record, tenant: values.name } : record));
-          setChargeRecords((records) => records.map((record) => record.tenant === editingTenant.name ? { ...record, tenant: values.name } : record));
-        }
-        message = "Locatário atualizado neste ambiente demonstrativo.";
-      } else {
-        setTenantRecords((records) => [...records, { id: savedReference, ...values, contracts: 0 }]);
-        message = "Locatário criado neste ambiente demonstrativo.";
-      }
-    } else if (form === "contract") {
-      savedReference = nextRecordId("CTR", contractRecords);
-      const propertyName = String(data.get("contractProperty") ?? "");
-      const selectedProperty = propertyRecords.find((record) => record.name === propertyName);
-      const selectedUnitIds = data.getAll("contractUnits").map(String);
-      const selectedUnitNames = selectedUnitIds.map((id) => unitRecords.find((unit) => unit.id === id)?.name).filter((name): name is string => Boolean(name));
-      const tenantId = String(data.get("contractTenant") ?? "");
-      const selectedTenant = tenantRecords.find((record) => record.id === tenantId);
-      const startIso = String(data.get("contractStart") ?? "");
-      const endIso = String(data.get("contractEnd") ?? "");
-      const rules = JSON.parse(String(data.get("contractRulesJson") ?? "[]")) as ContractChargeRule[];
-      const contract: Contract = {
-        id: savedReference,
-        portfolio: selectedProperty?.portfolio ?? String(data.get("contractPortfolio") ?? ""),
-        property: propertyName,
-        units: selectedUnitNames,
-        tenant: selectedTenant?.name ?? "",
-        period: `${formatExpenseDate(startIso)} — ${formatExpenseDate(endIso)}`,
-        rent: Number(data.get("contractRent")),
-        due: Number(data.get("contractDueDay")),
-        adjustment: String(data.get("contractAdjustmentMonth") ?? ""),
-        charges: rules.map((rule) => rule.name),
-        chargeRules: rules,
-        startIso,
-        endIso,
-        occupancyDate: String(data.get("contractOccupancyDate") ?? ""),
-        purpose: String(data.get("contractPurpose") ?? ""),
-        paymentReference: String(data.get("contractPaymentReference") ?? ""),
-        adjustmentIndex: String(data.get("contractAdjustmentIndex") ?? ""),
-        adjustmentPeriod: Number(data.get("contractAdjustmentPeriod")) || 12,
-        lateFee: Number(data.get("contractLateFee")) || 0,
-        monthlyInterest: Number(data.get("contractMonthlyInterest")) || 0,
-        paymentMethod: String(data.get("contractPaymentMethod") ?? ""),
-        deliveryChannel: String(data.get("contractDeliveryChannel") ?? ""),
-        guaranteeType: String(data.get("contractGuaranteeType") ?? ""),
-        guaranteeDetails: String(data.get("contractGuaranteeDetails") ?? ""),
-        signatureDate: String(data.get("contractSignatureDate") ?? ""),
-        firstChargeRule: String(data.get("contractFirstChargeRule") ?? ""),
-        documentName: String(data.get("contractDocumentName") ?? ""),
-        notes: String(data.get("contractNotes") ?? ""),
-      };
-      setContractRecords((records) => [...records, contract]);
-      setUnitRecords((records) => records.map((unit) => selectedUnitIds.includes(unit.id) ? { ...unit, occupied: true } : unit));
-      setTenantRecords((records) => records.map((record) => record.id === tenantId ? { ...record, contracts: record.contracts + 1 } : record));
-      message = "Contrato criado e unidades vinculadas neste ambiente demonstrativo.";
-    } else if (form === "charge") {
-      savedReference = nextRecordId("COB", chargeRecords, 4);
-      const contractId = String(data.get("chargeContract") ?? "");
-      const selectedContract = contractRecords.find((record) => record.id === contractId);
-      const competenceInput = String(data.get("chargeCompetence") ?? "");
-      const [year, month] = competenceInput.split("-");
-      const draftItems = JSON.parse(String(data.get("chargeItemsJson") ?? "[]")) as ChargeDraftItem[];
-      const items: ChargeItem[] = draftItems.map((item) => ({
-        name: item.name,
-        reference: item.reference,
-        supportDocumentName: item.supportDocumentName,
-        dueDate: formatExpenseDate(item.due),
-        dueDateIso: item.due,
-        amount: item.amount,
-        received: 0,
-      }));
-      const charge: Charge = {
-        id: savedReference,
-        contract: contractId,
-        portfolio: selectedContract?.portfolio ?? "",
-        property: selectedContract?.property ?? "",
-        units: selectedContract?.units ?? [],
-        tenant: selectedContract?.tenant ?? "",
-        competence: `${month}/${year}`,
-        status: chargeStatusFromItems(items),
-        items,
-        inclusionType: String(data.get("chargeInclusionType") ?? "Normal"),
-        paymentMethod: String(data.get("chargePaymentMethod") ?? selectedContract?.paymentMethod ?? ""),
-        notes: String(data.get("chargeNotes") ?? ""),
-      };
-      setChargeRecords((records) => [...records, charge]);
-      message = "Cobrança criada e vinculada ao contrato.";
-    } else if (form === "expense") {
-      savedReference = nextRecordId("PAG", expenseRecords, 4);
-      const dueIso = String(data.get("expenseDueDate") ?? "");
-      const alreadyPaid = data.get("expenseAlreadyPaid") === "on";
-      const paidIso = String(data.get("expensePaidDate") ?? "");
-      const status: ExpenseStatus = alreadyPaid ? "Pago" : dueIso < DEMO_DATE_ISO ? "Vencido" : "Pendente";
-      setExpenseRecords((records) => [...records, {
-        id: savedReference,
-        supplier: String(data.get("expenseSupplier") ?? ""),
-        description: String(data.get("expenseDescription") ?? ""),
-        category: String(data.get("expenseCategory") ?? ""),
-        amount: Number(data.get("expenseAmount")),
-        dueDate: formatExpenseDate(dueIso),
-        dueIso,
-        paidDate: alreadyPaid && paidIso ? formatExpenseDate(paidIso) : null,
-        status,
-        allocationType: String(data.get("expenseAllocationType") ?? "Geral"),
-        allocationId: String(data.get("expenseAllocationId") ?? ""),
-        competence: String(data.get("expenseCompetence") ?? ""),
-        issueDate: String(data.get("expenseIssueDate") ?? ""),
-        documentType: String(data.get("expenseDocumentType") ?? ""),
-        documentNumber: String(data.get("expenseDocumentNumber") ?? ""),
-        plannedDate: String(data.get("expensePlannedDate") ?? ""),
-        entryType: String(data.get("expenseEntryType") ?? "Única"),
-        recurrence: String(data.get("expenseRecurrence") ?? ""),
-        paymentMethod: String(data.get("expensePaymentMethod") ?? ""),
-        financialAccount: String(data.get("expenseFinancialAccount") ?? ""),
-        attachmentName: String(data.get("expenseAttachmentName") ?? ""),
-        notes: String(data.get("expenseNotes") ?? ""),
-      }]);
-      message = "Despesa cadastrada neste ambiente demonstrativo.";
+  const saveReceipt = async (receipt: ReceiptDraft) => {
+    if (!selectedCharge) return;
+    try {
+      const bundle = await registryService.saveReceipt(selectedCharge, receipt);
+      applyChargeBundle(bundle);
+      setReceiptOpen(false);
+      notify("Recebimento registrado e distribuído entre os itens.", bundle.charge.id);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível registrar o recebimento.", "erro");
     }
-    if (documents && Array.isArray(documents) && (form === "tenant" || form === "unit")) {
-      setDocumentsByOwner((current) => {
-        const retainedIds = new Set(documents.map((document) => document.id));
-        revokeDocumentUrls((current[savedReference] ?? []).filter((document) => !retainedIds.has(document.id)));
-        return { ...current, [savedReference]: documents };
-      });
-    } else if (documents && !Array.isArray(documents) && form === "property") {
-      setCategorizedDocumentsByOwner((current) => {
-        const retainedIds = new Set(flattenCategorizedDocuments(documents).map((document) => document.id));
-        const previousDocuments = current[savedReference] ? flattenCategorizedDocuments(current[savedReference]) : [];
-        revokeDocumentUrls(previousDocuments.filter((document) => !retainedIds.has(document.id)));
-        return { ...current, [savedReference]: documents };
-      });
+  };
+  const saveNegotiation = async (negotiation: ChargeNegotiation) => {
+    if (!selectedCharge) return;
+    const existing = negotiationsByCharge[negotiation.chargeId];
+    try {
+      const bundle = await registryService.saveNegotiation(selectedCharge, negotiation, existing?.databaseId);
+      applyChargeBundle(bundle);
+      setNegotiationOpen(false);
+      notify(existing ? "Nova versão da negociação registrada." : "Negociação registrada com sucesso.", bundle.charge.id);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível registrar a negociação.", "erro");
+    }
+  };
+  const persistOwnerDocuments = (ownerId: string, documents?: FormDocuments) => {
+    if (!documents || !Array.isArray(documents)) return;
+    setDocumentsByOwner((current) => {
+      const retainedIds = new Set(documents.map((document) => document.id));
+      revokeDocumentUrls((current[ownerId] ?? []).filter((document) => !retainedIds.has(document.id)));
+      return { ...current, [ownerId]: documents };
+    });
+  };
+  const saveForm = async (data: FormData, documents?: FormDocuments) => {
+    // Grupo 2 — unidades e locatários são persistidos via API. Erros sobem para o formulário.
+    if (form === "unit") {
+      const editing = editingUnit;
+      const saved = await registryService.saveUnit(data, propertyRecords, editing);
+      setUnitRecords((records) => editing ? records.map((record) => record.databaseId === saved.databaseId ? saved : record) : [...records, saved]);
+      persistOwnerDocuments(saved.id, documents);
+      setForm(null); setEditingUnit(null);
+      notify(editing ? "Unidade atualizada com sucesso." : "Unidade criada com sucesso.", saved.id);
+      return;
+    }
+    if (form === "tenant") {
+      const editing = editingTenant;
+      const saved = await registryService.saveTenant(data, agencyRecords, editing);
+      setTenantRecords((records) => editing ? records.map((record) => record.databaseId === saved.databaseId ? saved : record) : [...records, saved]);
+      if (editing && editing.name !== saved.name) {
+        setContractRecords((records) => records.map((record) => record.tenant === editing.name ? { ...record, tenant: saved.name } : record));
+        setChargeRecords((records) => records.map((record) => record.tenant === editing.name ? { ...record, tenant: saved.name } : record));
+      }
+      persistOwnerDocuments(saved.id, documents);
+      setForm(null); setEditingTenant(null);
+      notify(editing ? "Locatário atualizado com sucesso." : "Locatário criado com sucesso.", saved.id);
+      return;
+    }
+    if (form === "contract") {
+      const saved = await registryService.saveContract(data, propertyRecords, unitRecords, tenantRecords);
+      setContractRecords((records) => [...records, saved]);
+      setForm(null);
+      notify("Contrato criado e vinculado às unidades.", saved.id);
+      return;
+    }
+    if (form === "charge") {
+      const bundle = await registryService.saveCharge(data, contractRecords);
+      setChargeRecords((records) => [...records, bundle.charge]);
+      if (bundle.negotiation) setNegotiationsByCharge((current) => ({ ...current, [bundle.charge.id]: bundle.negotiation! }));
+      setReceiptsByCharge((current) => ({ ...current, [bundle.charge.id]: bundle.receipts }));
+      setForm(null); setChargeSourceContract(null);
+      notify("Cobrança criada e vinculada ao contrato.", bundle.charge.id);
+      return;
+    }
+    if (form === "expense") {
+      const saved = await registryService.saveExpense(data, categoryRecords, supplierRecords);
+      setExpenseRecords((records) => [saved, ...records]);
+      // O fornecedor pode ter sido criado agora; recarrega a lista para o datalist refletir.
+      void registryService.listSuppliers().then(setSupplierRecords).catch((error) => reportClientError(error, 'FRONTEND_BACKGROUND_REFRESH_FAILED', { resource: 'suppliers' }));
+      setForm(null);
+      notify(saved.status === "Pago" ? "Despesa cadastrada e baixa registrada." : "Despesa cadastrada com sucesso.", saved.id);
+      return;
+    }
+    if (form === "portfolio") {
+      // Grupo 1 — carteiras persistidas via API (antes a gravação era só local/demonstrativa).
+      const editing = editingPortfolio;
+      const saved = await registryService.savePortfolio(data, editing);
+      setPortfolioRecords((records) => editing ? records.map((record) => record.databaseId === saved.databaseId ? saved : record) : [...records, saved]);
+      setForm(null); setEditingPortfolio(null);
+      notify(editing ? "Carteira atualizada com sucesso." : "Carteira criada com sucesso.", saved.id);
+      return;
+    }
+    if (form === "property") {
+      // Grupo 1 — imóveis persistidos via API; documentos categorizados seguem locais (D16).
+      const editing = editingProperty;
+      const saved = await registryService.saveProperty(data, portfolioRecords, editing);
+      setPropertyRecords((records) => editing ? records.map((record) => record.databaseId === saved.databaseId ? saved : record) : [...records, saved]);
+      if (documents && !Array.isArray(documents)) {
+        setCategorizedDocumentsByOwner((current) => {
+          const retainedIds = new Set(flattenCategorizedDocuments(documents).map((document) => document.id));
+          const previousDocuments = current[saved.id] ? flattenCategorizedDocuments(current[saved.id]) : [];
+          revokeDocumentUrls(previousDocuments.filter((document) => !retainedIds.has(document.id)));
+          return { ...current, [saved.id]: documents };
+        });
+      }
+      setForm(null); setEditingProperty(null);
+      notify(editing ? "Imóvel atualizado com sucesso." : "Imóvel criado com sucesso.", saved.id);
+      return;
     }
     setForm(null);
     setEditingPortfolio(null);
@@ -1222,13 +984,12 @@ export default function Home() {
     setEditingUnit(null);
     setEditingTenant(null);
     setChargeSourceContract(null);
-    notify(message, savedReference);
   };
-  const saveAgency = (agency: Omit<RealEstateAgency, "id">) => {
-    const savedReference = nextRecordId("IMB", agencyRecords);
-    setAgencyRecords((records) => [...records, { id: savedReference, ...agency }]);
+  const saveAgency = async (agency: Omit<RealEstateAgency, "id" | "databaseId">) => {
+    const saved = await registryService.createAgency(agency);
+    setAgencyRecords((records) => [...records, saved]);
     setAgencyModalOpen(false);
-    notify("Imobiliária cadastrada e disponível para vinculação.", savedReference);
+    notify("Imobiliária cadastrada e disponível para vinculação.", saved.id);
   };
   const editRegistryDetail = () => {
     if (!registryDetail) return;
@@ -1254,10 +1015,8 @@ export default function Home() {
     notify("Anexos do cadastro atualizados.", ownerId);
   };
 
-  if (!authenticated) return <Login loading={loading} onSubmit={login} />;
-
   return <main className={`app-shell ${sidebarCollapsed ? "app-shell-sidebar-collapsed" : ""}`}>
-    <Sidebar module={activeModule} page={page} attentionCount={chargeAttentionCount} onModuleChange={changeModule} onNavigate={changePage} onLogout={() => setAuthenticated(false)} open={menuOpen} overlay={overlayNavigation} onClose={() => setMenuOpen(false)} collapsed={sidebarCollapsed} onExpand={() => setSidebarCollapsed(false)} onToggleCollapsed={() => setSidebarCollapsed((current) => !current)} />
+    <Sidebar session={session} module={activeModule} page={page} attentionCount={chargeAttentionCount} pendingUserCount={accessUsers.filter(user => user.status === "pendente").length} canViewAdministration={canViewAccessManagement || canViewLogs} canUseModuleOne={canUseModuleOne} canUseModuleTwo={canUseModuleTwo} canViewPage={canViewPage} onModuleChange={changeModule} onNavigate={changePage} onLogout={onLogout} open={menuOpen} overlay={overlayNavigation} onClose={() => setMenuOpen(false)} collapsed={sidebarCollapsed} onExpand={() => setSidebarCollapsed(false)} onToggleCollapsed={() => setSidebarCollapsed((current) => !current)} />
     <section className="workspace" inert={overlayNavigation && menuOpen ? true : undefined}>
       <header className="topbar">
         <button type="button" ref={menuButtonRef} className="menu-button" onClick={() => setMenuOpen(true)} aria-label="Abrir navegação" aria-expanded={menuOpen} aria-controls="app-sidebar"><Menu aria-hidden="true" /></button>
@@ -1265,18 +1024,37 @@ export default function Home() {
           <span className="topbar-brand-mark" aria-hidden="true"><span>L</span><i /><span>R</span></span>
           <nav className="breadcrumb" aria-label="Trilha de navegação">{breadcrumbTrail(activeModule, page).map((segment, index, list) => <span key={segment} className={index === list.length - 1 ? "breadcrumb-current" : undefined} aria-current={index === list.length - 1 ? "page" : undefined}>{segment}</span>)}</nav>
         </div>
-        <div className="topbar-context"><span className="context-dot" /> Dados fictícios</div>
+        <div className="topbar-context" title="Integração progressiva com API e banco; consulte o relatório para as pendências."><span className="context-dot" /> Integração em andamento</div>
       </header>
       <div className="content">
+        <p className="integration-notice" role="note">{page === "Usuários e acessos" ? 'Usuários, aprovações e permissões são protegidos e persistidos pela API.' : page === 'Logs e auditoria' ? 'Auditoria persistida no banco; logs técnicos recentes permanecem separados do banco operacional.' : activeModule === 'Módulo 2' ? 'Obras, equipe, fornecedores, sócios, aportes, financeiro e diário usam API e banco.' : 'Sessão real; a integração de cada tela está documentada no relatório do projeto.'}</p>
         {!online && <ConnectionBanner onRetry={retryContent} />}
         {contentState === "loading" && <AuthenticatedPageSkeleton variant={page === "Visão geral" ? "dashboard" : page === "Detalhe da obra" ? "detail" : page === "Cobranças" || page === "Despesas" ? "ledger" : "list"} />}
         {contentState === "error" && online && <SystemError onRetry={retryContent} />}
-        {(contentState === "ready" || !online) && <FilterStateContext.Provider value={Boolean(search || portfolioFilter !== "Todas as carteiras" || statusFilter !== "Todas" || categoryFilter !== "Todas as categorias")}><div className="page-enter" key={`${activeModule}-${page}`}>
+        {(contentState === "ready" || !online) && <FilterStateContext.Provider value={Boolean(search || portfolioFilter !== "Todas as carteiras" || statusFilter !== "Todas" || categoryFilter !== "Todas as categorias")}><PortfolioOptionsContext.Provider value={portfolioRecords}><div className="page-enter" key={`${activeModule}-${page}`}>
+          {page === "Usuários e acessos" && canViewAccessManagement && <AccessManagementPage users={accessUsers} loading={accessUsersLoading} error={accessUsersError} currentUserId={session.usuario.id} actorPermissions={session.permissoes} onRetry={() => { void loadAccessUsers(); }} onUserChanged={(updated) => setAccessUsers(current => current.map(user => user.id === updated.id ? updated : user))} />}
+          {page === "Logs e auditoria" && canViewLogs && <LogsPage canViewTechnical={canViewTechnicalLogs} />}
           {activeModule === "Módulo 1" && page === "Visão geral" && <DashboardPage charges={chargeRecords} negotiations={negotiationsByCharge} expenses={expenseRecords} properties={propertyRecords} units={unitRecords} contracts={contractRecords} onNavigate={(next, status) => { changePage(next); if (status) setStatusFilter(status); }} />}
-          {activeModule === "Módulo 2" && page === "Visão geral" && <WorksDashboardPage works={workRecordState} costsByWorkId={workCostsById} onNewWork={beginNewWork} onOpenWork={openWorkDetail} onNavigate={changePage} />}
+          {activeModule === "Módulo 2" && page === "Visão geral" && <WorksDashboardPage works={workRecordState} costsByWorkId={workCostsById} panel={workPanel} onNewWork={beginNewWork} onOpenWork={openWorkDetail} onNavigate={changePage} />}
           {activeModule === "Módulo 2" && page === "Obras" && <WorksListPage works={workRecordState} costsByWorkId={workCostsById} onNewWork={beginNewWork} onEditWork={beginEditWork} onOpenWork={openWorkDetail} />}
           {activeModule === "Módulo 2" && page === "Nova obra" && <WorkFormPage work={editingWork} works={workRecordState} properties={propertyRecords} units={unitRecords} onCancel={leaveWorkForm} onSave={saveWork} />}
-          {activeModule === "Módulo 2" && page === "Detalhe da obra" && selectedWork && <WorkDetailPage key={selectedWork.id} work={selectedWork} initialTab={selectedWorkTab} initialTeam={workTeamsById[selectedWork.id] ?? createWorkDetailMock(selectedWork).team} onTeamChange={(team) => setWorkTeamsById((current) => ({ ...current, [selectedWork.id]: team }))} suppliers={workSuppliersById[selectedWork.id] ?? createWorkDetailMock(selectedWork).suppliers} onSuppliersChange={(suppliers) => setWorkSuppliersById((current) => ({ ...current, [selectedWork.id]: suppliers }))} partners={workPartnersById[selectedWork.id] ?? createWorkDetailMock(selectedWork).partners} onPartnersChange={(partners) => setWorkPartnersById((current) => ({ ...current, [selectedWork.id]: partners }))} contributions={workContributionsById[selectedWork.id] ?? createWorkDetailMock(selectedWork).contributions} onContributionsChange={(contributions) => setWorkContributionsById((current) => ({ ...current, [selectedWork.id]: contributions }))} financialEntries={workFinancialEntriesById[selectedWork.id] ?? createWorkDetailMock(selectedWork).financialEntries} onFinancialEntriesChange={(entries) => setWorkFinancialEntriesById((current) => ({ ...current, [selectedWork.id]: entries }))} initialJournal={workJournalById[selectedWork.id] ?? createWorkDetailMock(selectedWork).journal} onJournalChange={(entries) => setWorkJournalById((current) => ({ ...current, [selectedWork.id]: entries }))} initialPendingItems={workPendingItemsById[selectedWork.id] ?? createWorkDetailMock(selectedWork).pendingItems} onPendingItemsChange={(items) => setWorkPendingItemsById((current) => ({ ...current, [selectedWork.id]: items }))} onBack={() => { setSelectedWork(null); changePage("Obras"); }} onEdit={() => beginEditWork(selectedWork)} onUpdateWork={updateWorkFromDetail} onNotify={notify} />}
+          {activeModule === "Módulo 2" && page === "Detalhe da obra" && selectedWork && <WorkDetailPage
+            key={selectedWork.id} work={selectedWork} initialTab={selectedWorkTab}
+            initialTeam={workTeamsById[selectedWork.id] ?? []}
+            onTeamChange={(team) => setWorkTeamsById((current) => ({ ...current, [selectedWork.id]: team }))}
+            suppliers={workSuppliersById[selectedWork.id] ?? []}
+            onSuppliersChange={(suppliers) => setWorkSuppliersById((current) => ({ ...current, [selectedWork.id]: suppliers }))}
+            finance={selectedWork.databaseId ? workFinanceById[selectedWork.databaseId] : undefined}
+            onFinanceChange={(finance) => setWorkFinanceById((current) => ({ ...current, [finance.workDatabaseId]: finance }))}
+            financialEntries={workFinancialEntriesById[selectedWork.id] ?? []}
+            onFinancialEntriesChange={(entries) => setWorkFinancialEntriesById((current) => ({ ...current, [selectedWork.id]: entries }))}
+            initialJournal={workJournalById[selectedWork.id] ?? []}
+            onJournalChange={(entries) => setWorkJournalById((current) => ({ ...current, [selectedWork.id]: entries }))}
+            initialPendingItems={workPendingItemsById[selectedWork.id] ?? []}
+            onPendingItemsChange={(items) => setWorkPendingItemsById((current) => ({ ...current, [selectedWork.id]: items }))}
+            onBack={() => { setSelectedWork(null); changePage("Obras"); }} onEdit={() => beginEditWork(selectedWork)}
+            onUpdateWork={updateWorkFromDetail} onTransition={transitionWork} professionals={professionalRecords} onNotify={notify}
+          />}
           {activeModule === "Módulo 1" && page === "Cobranças" && <ChargesPage charges={filteredCharges} summaryCharges={chargesInScope} negotiations={negotiationsByCharge} total={chargeRecords.length} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} statusFilter={statusFilter} setStatusFilter={setStatusFilter} onOpen={setSelectedCharge} onNew={() => { setChargeSourceContract(null); setForm("charge"); }} onReport={() => setReportOpen(true)} />}
           {activeModule === "Módulo 1" && page === "Carteiras" && <PortfoliosPage portfolios={portfolioRecords} properties={propertyRecords} units={unitRecords} search={search} setSearch={setSearch} onNew={() => { setEditingPortfolio(null); setForm("portfolio"); }} onEdit={(portfolio) => { setEditingPortfolio(portfolio); setForm("portfolio"); }} onViewProperties={(portfolio) => { changePage("Imóveis"); setPortfolioFilter(portfolio.name); }} />}
           {activeModule === "Módulo 1" && page === "Imóveis" && <PropertiesPage properties={propertyRecords} units={unitRecords} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} onNew={() => { setEditingProperty(null); setForm("property"); }} onOpen={(property) => setRegistryDetail({ kind: "property", record: property })} />}
@@ -1284,67 +1062,31 @@ export default function Home() {
           {activeModule === "Módulo 1" && page === "Locatários" && <TenantsPage tenants={tenantRecords} agencies={agencyRecords} contracts={contractRecords} charges={chargeRecords} search={search} setSearch={setSearch} onNew={() => { setEditingTenant(null); setForm("tenant"); }} onNewAgency={() => setAgencyModalOpen(true)} onOpen={(tenant) => setRegistryDetail({ kind: "tenant", record: tenant })} onEdit={(tenant) => { setEditingTenant(tenant); setForm("tenant"); }} />}
           {activeModule === "Módulo 1" && page === "Contratos" && <ContractsPage contracts={contractRecords} charges={chargeRecords} search={search} setSearch={setSearch} portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter} onNew={() => setForm("contract")} onOpen={setSelectedContract} />}
           {activeModule === "Módulo 1" && page === "Despesas" && <ExpensesPage rows={filteredExpenses} total={expenseRecords.length} categories={Array.from(new Set(expenseRecords.map((expense) => expense.category)))} search={search} setSearch={setSearch} statusFilter={statusFilter} setStatusFilter={setStatusFilter} categoryFilter={categoryFilter} setCategoryFilter={setCategoryFilter} onOpen={setSelectedExpense} onNew={() => setForm("expense")} />}
-        </div></FilterStateContext.Provider>}
+        </div></PortfolioOptionsContext.Provider></FilterStateContext.Provider>}
       </div>
     </section>
     {selectedCharge && <ChargeDrawer charge={selectedCharge} negotiation={negotiationsByCharge[selectedCharge.id]} receipts={receiptsByCharge[selectedCharge.id] ?? []} onClose={() => { setSelectedCharge(null); setNegotiationOpen(false); }} onReceipt={() => setReceiptOpen(true)} onNegotiate={() => setNegotiationOpen(true)} />}
     {selectedContract && <ContractDrawer contract={selectedContract} charges={chargeRecords} onClose={() => setSelectedContract(null)} onCharge={() => { setChargeSourceContract(selectedContract); setSelectedContract(null); setForm("charge"); }} />}
     {registryDetail && <RegistryDetailDrawer detail={registryDetail} properties={propertyRecords} units={unitRecords} contracts={contractRecords} charges={chargeRecords} documents={registryDetail.kind === "tenant" || registryDetail.kind === "unit" ? documentsByOwner[registryDetail.record.id] ?? [] : []} categorizedDocuments={registryDetail.kind === "property" ? categorizedDocumentsByOwner[registryDetail.record.id] ?? createEmptyCategorizedDocuments() : undefined} onCategorizedDocumentsChange={(nextDocuments) => updateRegistryDocuments(registryDetail.record.id, nextDocuments)} onClose={() => setRegistryDetail(null)} onEdit={editRegistryDetail} />}
-    {selectedExpense && <ExpenseDrawer expense={selectedExpense} onClose={() => setSelectedExpense(null)} onStatusChange={(status, paidIso) => {
-      const paidDate = status === "Pago" && paidIso ? formatExpenseDate(paidIso) : null;
-      setExpenseRecords((records) => records.map((record) => record.id === selectedExpense.id ? { ...record, status, paidDate } : record));
-      setSelectedExpense((record) => record ? { ...record, status, paidDate } : null);
-      notify("Status da despesa atualizado.", selectedExpense.id);
+    {selectedExpense && <ExpenseDrawer expense={selectedExpense} onClose={() => setSelectedExpense(null)} onStatusChange={async (status, paidIso) => {
+      try {
+        let saved: Expense;
+        if (status === "Pago" && selectedExpense.status !== "Pago") saved = await registryService.payExpense(selectedExpense, paidIso);
+        else if (status !== "Pago" && selectedExpense.status === "Pago") saved = await registryService.reopenExpense(selectedExpense, "Reabertura pela gestão");
+        else { notify("Pendente e vencido são derivados do vencimento; nada a alterar.", selectedExpense.id); return; }
+        setExpenseRecords((records) => records.map((record) => record.databaseId === saved.databaseId ? saved : record));
+        setSelectedExpense(saved);
+        notify("Situação da despesa atualizada.", saved.id);
+      } catch (error) {
+        notify(error instanceof Error ? error.message : "Não foi possível atualizar a despesa.", "erro");
+      }
     }} />}
     {receiptOpen && selectedCharge && <ReceiptModal charge={selectedCharge} onClose={() => setReceiptOpen(false)} onSave={saveReceipt} />}
     {negotiationOpen && selectedCharge && <NegotiationModal charge={selectedCharge} negotiation={negotiationsByCharge[selectedCharge.id]} onClose={() => setNegotiationOpen(false)} onSave={saveNegotiation} />}
     {reportOpen && <ReportExportModal initialPortfolio={portfolioFilter} portfolioOptions={portfolioRecords} propertyOptions={propertyRecords} tenantOptions={tenantRecords} chargeOptions={chargeRecords} onClose={() => setReportOpen(false)} onExported={(filename) => notify("Relatório contábil gerado e pronto para download.", filename)} />}
     {agencyModalOpen && <AgencyModal agencies={agencyRecords} onClose={() => setAgencyModalOpen(false)} onSave={saveAgency} />}
-    {form && <EntityForm kind={form} portfolio={form === "portfolio" ? editingPortfolio : null} property={form === "property" ? editingProperty : null} unit={form === "unit" ? editingUnit : null} tenant={form === "tenant" ? editingTenant : null} documents={(form === "tenant" && editingTenant) || (form === "unit" && editingUnit) ? documentsByOwner[(editingTenant ?? editingUnit)!.id] ?? [] : []} categorizedDocuments={form === "property" && editingProperty ? categorizedDocumentsByOwner[editingProperty.id] ?? createEmptyCategorizedDocuments() : undefined} chargeSourceContract={form === "charge" ? chargeSourceContract : null} portfolioOptions={portfolioRecords} propertyOptions={propertyRecords} unitOptions={unitRecords} tenantOptions={tenantRecords} agencyOptions={agencyRecords} contractOptions={contractRecords} chargeOptions={chargeRecords} onClose={() => { setForm(null); setEditingPortfolio(null); setEditingProperty(null); setEditingUnit(null); setEditingTenant(null); setChargeSourceContract(null); }} onSave={saveForm} />}
+    {form && <EntityForm kind={form} portfolio={form === "portfolio" ? editingPortfolio : null} property={form === "property" ? editingProperty : null} unit={form === "unit" ? editingUnit : null} tenant={form === "tenant" ? editingTenant : null} documents={(form === "tenant" && editingTenant) || (form === "unit" && editingUnit) ? documentsByOwner[(editingTenant ?? editingUnit)!.id] ?? [] : []} categorizedDocuments={form === "property" && editingProperty ? categorizedDocumentsByOwner[editingProperty.id] ?? createEmptyCategorizedDocuments() : undefined} chargeSourceContract={form === "charge" ? chargeSourceContract : null} portfolioOptions={portfolioRecords} propertyOptions={propertyRecords} unitOptions={unitRecords} tenantOptions={tenantRecords} agencyOptions={agencyRecords} contractOptions={contractRecords} chargeOptions={chargeRecords} supplierOptions={supplierRecords.map((supplier) => supplier.name)} onClose={() => { setForm(null); setEditingPortfolio(null); setEditingProperty(null); setEditingUnit(null); setEditingTenant(null); setChargeSourceContract(null); }} onSave={saveForm} />}
     {toast && <SuccessToast message={toast} onClose={dismissToast} />}
-  </main>;
-}
-
-function Login({ loading, onSubmit }: { loading: boolean; onSubmit: (event: FormEvent) => void }) {
-  return <main className="login-page">
-    <section className="login-brand" aria-label="Apresentação do sistema">
-      <div className="login-brand-header">
-        <div className="login-brand-lockup">
-          <div className="brand-mark brand-mark-light" aria-hidden="true"><span>L</span><i /><span>R</span></div>
-          <div><strong>Locações &amp; Recebíveis</strong><span>Gestão patrimonial</span></div>
-        </div>
-        <span className="login-module-badge">Módulo 1</span>
-      </div>
-
-      <div className="login-copy">
-        <p className="eyebrow eyebrow-light">Gestão imobiliária integrada</p>
-        <h1>Patrimônio sob controle.<span>Recebíveis em movimento.</span></h1>
-        <p>Uma visão única para acompanhar estruturas, contratos e a saúde financeira da operação.</p>
-        <ul className="login-capabilities" aria-label="Áreas do sistema">
-          <li><span>01</span><strong>Patrimônio</strong><small>Carteiras, imóveis e unidades</small></li>
-          <li><span>02</span><strong>Contratos</strong><small>Locatários e vínculos ativos</small></li>
-          <li><span>03</span><strong>Financeiro</strong><small>Cobranças e despesas</small></li>
-        </ul>
-      </div>
-
-      <div className="login-brand-footer">
-        <div className="login-footer"><span /> Operação integrada</div>
-        <div className="login-property-caption"><strong>Centro Empresarial Nexo</strong><span>Patrimônio em destaque</span></div>
-      </div>
-    </section>
-    <section className="login-panel" aria-label="Acesso administrativo">
-      <div className="login-panel-inner">
-        <div className="login-panel-context"><span>LR</span><p><strong>Módulo administrativo</strong><small>Patrimônio, contratos e financeiro</small></p></div>
-        <form className="login-form" onSubmit={onSubmit}>
-          <div className="login-heading"><p className="eyebrow">Acesso administrativo</p><h2>Boas-vindas</h2><p>Entre para visualizar a operação patrimonial e financeira em um único painel.</p></div>
-          <label>E-mail<input type="email" defaultValue="administrativo@exemplo.com.br" autoComplete="email" required /></label>
-          <label>Senha<input type="password" defaultValue="demonstracao" autoComplete="current-password" required /></label>
-          <button className="primary-button login-button" disabled={loading} aria-busy={loading}>{loading ? <><span className="spinner" /> Preparando ambiente</> : <><span>Acessar painel</span><span className="login-button-arrow" aria-hidden="true"><ArrowRight /></span></>}</button>
-          <div className="login-trust-note"><span aria-hidden="true"><Check /></span><p><strong>Dados exclusivamente demonstrativos</strong><small>Nenhuma informação real do cliente é exibida nesta versão.</small></p></div>
-        </form>
-        <p className="login-panel-version">Locações &amp; Recebíveis · Gestão operacional</p>
-      </div>
-    </section>
   </main>;
 }
 
@@ -1353,16 +1095,16 @@ function SidebarGlyph({ name }: { name: string }) {
     "Operação": ClipboardList, "Estrutura": Landmark, "Locação": KeyRound, "Financeiro": WalletCards,
     "Visão geral": LayoutDashboard, "Carteiras": BriefcaseBusiness, "Imóveis": Building2, "Unidades": DoorOpen,
     "Locatários": UsersRound, "Contratos": FileSignature, "Cobranças": BadgeDollarSign, "Despesas": ReceiptText,
-    "Obras": ClipboardList, "Cronograma": CalendarClock, "Equipe": UsersRound,
+    "Obras": ClipboardList, "Cronograma": CalendarClock, "Equipe": UsersRound, "Usuários e acessos": ShieldCheck, "Logs e auditoria": Bug,
   };
   const Glyph = glyphs[name] ?? FileSignature;
   return <span className="sidebar-glyph sidebar-glyph-lucide" aria-hidden="true"><Glyph strokeWidth={1.8} /></span>;
 }
 
-function ModuleSwitcher({ module, onChange }: { module: AppModule; onChange: (module: AppModule) => void }) {
+function ModuleSwitcher({ module, onChange, canUseModuleOne, canUseModuleTwo }: { module: AppModule; onChange: (module: AppModule) => void; canUseModuleOne: boolean; canUseModuleTwo: boolean }) {
   const options: Array<{ value: AppModule; label: string; description: string }> = [
-    { value: "Módulo 1", label: "Locações", description: "Patrimônio e recebíveis" },
-    { value: "Módulo 2", label: "Obras", description: "Planejamento e execução" },
+    ...(canUseModuleOne ? [{ value: "Módulo 1" as AppModule, label: "Locações", description: "Patrimônio e recebíveis" }] : []),
+    ...(canUseModuleTwo ? [{ value: "Módulo 2" as AppModule, label: "Obras", description: "Planejamento e execução" }] : []),
   ];
   const activeIndex = options.findIndex((option) => option.value === module);
   const [open, setOpen] = useState(false);
@@ -1442,18 +1184,20 @@ function ModuleSwitcher({ module, onChange }: { module: AppModule; onChange: (mo
   </div>;
 }
 
-function Sidebar({ module, page, attentionCount, onModuleChange, onNavigate, onLogout, open, overlay, onClose, collapsed, onExpand, onToggleCollapsed }: { module: AppModule; page: Page; attentionCount: number; onModuleChange: (module: AppModule) => void; onNavigate: (page: Page) => void; onLogout: () => void; open: boolean; overlay: boolean; onClose: () => void; collapsed: boolean; onExpand: () => void; onToggleCollapsed: () => void }) {
+function Sidebar({ session, module, page, attentionCount, pendingUserCount, canViewAdministration, canUseModuleOne, canUseModuleTwo, canViewPage, onModuleChange, onNavigate, onLogout, open, overlay, onClose, collapsed, onExpand, onToggleCollapsed }: { session: SessionInfo; module: AppModule; page: Page; attentionCount: number; pendingUserCount: number; canViewAdministration: boolean; canUseModuleOne: boolean; canUseModuleTwo: boolean; canViewPage: (page: Page, module?: AppModule) => boolean; onModuleChange: (module: AppModule) => void; onNavigate: (page: Page) => void; onLogout: () => void; open: boolean; overlay: boolean; onClose: () => void; collapsed: boolean; onExpand: () => void; onToggleCollapsed: () => void }) {
   const [openTheme, setOpenTheme] = useState<string | null>("Operação");
-  const groups: Array<{ name: string; description: string; pages: Array<{ name: Page; count?: number }> }> = [
+  const allGroups: Array<{ name: string; description: string; pages: Array<{ name: Page; count?: number }> }> = [
     { name: "Operação", description: "Acompanhamento diário", pages: [{ name: "Visão geral" }] },
     { name: "Estrutura", description: "Cadastros e patrimônio", pages: [{ name: "Carteiras" }, { name: "Imóveis" }, { name: "Unidades" }, { name: "Locatários" }] },
     { name: "Locação", description: "Contratos e recebíveis", pages: [{ name: "Contratos" }, { name: "Cobranças", count: attentionCount }] },
     { name: "Financeiro", description: "Obrigações financeiras", pages: [{ name: "Despesas" }] },
   ];
-  const worksItems: Array<{ name: string; description: string; page?: Page }> = [
+  const groups = allGroups.map(group => ({ ...group, pages: group.pages.filter(entry => canViewPage(entry.name, 'Módulo 1')) })).filter(group => group.pages.length);
+  const allWorksItems: Array<{ name: string; description: string; page?: Page }> = [
     { name: "Visão geral", description: "Prioridades, agenda, equipe e financeiro", page: "Visão geral" },
     { name: "Obras", description: "Localizar e abrir cada obra", page: "Obras" },
   ];
+  const worksItems = allWorksItems.filter(entry => !entry.page || canViewPage(entry.page, 'Módulo 2'));
   const compact = collapsed && !open;
   const item = (name: Page, count?: number) => <button type="button" onClick={() => onNavigate(name)} className={`nav-item ${page === name ? "active" : ""}`} aria-current={page === name ? "page" : undefined} title={compact ? name : undefined}><SidebarGlyph name={name} /><span className="nav-item-label">{name}</span>{count !== undefined && <b>{count}</b>}</button>;
   return <>
@@ -1466,7 +1210,7 @@ function Sidebar({ module, page, attentionCount, onModuleChange, onNavigate, onL
           <button type="button" className="sidebar-collapse-button" onClick={onToggleCollapsed} aria-label={compact ? "Expandir navegação" : "Recolher navegação"} title={compact ? "Expandir navegação" : "Recolher navegação"}>{compact ? <PanelLeftOpen aria-hidden="true" /> : <PanelLeftClose aria-hidden="true" />}</button>
           <button type="button" className="sidebar-mobile-close" onClick={onClose} aria-label="Fechar navegação"><X aria-hidden="true" /></button>
         </div>
-        <ModuleSwitcher module={module} onChange={onModuleChange} />
+        {(canUseModuleOne || canUseModuleTwo) && <ModuleSwitcher module={module} onChange={onModuleChange} canUseModuleOne={canUseModuleOne} canUseModuleTwo={canUseModuleTwo} />}
         <nav aria-label={`Navegação principal do ${module}`}>
           <p className="sidebar-nav-label">Navegação</p>
           {module === "Módulo 1" ? <div className="theme-list">{groups.map((group, index) => {
@@ -1484,12 +1228,13 @@ function Sidebar({ module, page, attentionCount, onModuleChange, onNavigate, onL
             const active = entry.page === page || (entry.page === "Obras" && (page === "Nova obra" || page === "Detalhe da obra"));
             return <button type="button" key={entry.name} className={active ? "active" : ""} disabled={!entry.page} aria-current={active ? "page" : undefined} onClick={() => entry.page && onNavigate(entry.page)}><SidebarGlyph name={entry.name} /><span><strong>{entry.name}</strong><small>{entry.description}</small></span>{!entry.page && <b>Em breve</b>}</button>;
           })}</div>}
+          {canViewAdministration && <div className="sidebar-administration"><p className="sidebar-nav-label">Administração</p>{canViewPage('Usuários e acessos') && item("Usuários e acessos", pendingUserCount || undefined)}{canViewPage('Logs e auditoria') && item("Logs e auditoria")}</div>}
         </nav>
       </div>
       <footer className="sidebar-footer">
         <div className="sidebar-account">
-          <div className="avatar-shell"><div className="avatar">AD</div><span /></div>
-          <div className="account-copy"><strong>Administrativo</strong><span>Acesso principal</span></div>
+          <div className="avatar-shell"><div className="avatar">{session.usuario.nome.split(/\s+/).map(part => part[0]).join('').slice(0, 2).toUpperCase()}</div><span /></div>
+          <div className="account-copy" title={session.usuario.email}><strong>{session.usuario.nome}</strong><span>{session.usuario.perfilCodigo === 'master' ? 'Master' : 'Usuário autenticado'}</span></div>
           <button type="button" className="logout-button" onClick={onLogout} aria-label="Sair do sistema" title="Sair"><LogOut className="logout-icon" aria-hidden="true" /><em>Sair</em></button>
         </div>
       </footer>
@@ -1515,6 +1260,7 @@ function FilterSelect({ label, value, onChange, children, active = false, varian
 }
 
 function PortfolioFilter({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const portfolios = useContext(PortfolioOptionsContext);
   return <FilterSelect label="Filtrar por carteira" value={value} onChange={onChange} active={value !== "Todas as carteiras"}><option>Todas as carteiras</option>{portfolios.map((portfolio) => <option key={portfolio.id}>{portfolio.name}</option>)}</FilterSelect>;
 }
 
@@ -1618,32 +1364,35 @@ function WorkAttentionIcon({ kind }: { kind: WorkAttention["kind"] }) {
 
 function workAttentionDestination(kind: WorkAttention["kind"]): { tab: WorkDetailTab; label: string } {
   if (kind === "schedule") return { tab: "Planejamento", label: "Abrir planejamento" };
-  if (kind === "update") return { tab: "Diário e arquivos", label: "Ver atualizações" };
-  if (kind === "supplier" || kind === "payment") return { tab: "Fornecedores", label: "Ver fornecedores" };
+  if (kind === "update") return { tab: "Resumo", label: "Ver pendências" };
+  if (kind === "supplier") return { tab: "Fornecedores", label: "Ver fornecedores" };
   return { tab: "Financeiro", label: "Abrir financeiro" };
 }
 
-function WorksDashboardPage({ works, costsByWorkId, onNewWork, onOpenWork, onNavigate }: { works: WorkRecord[]; costsByWorkId: Record<string, WorkCostSummary>; onNewWork: () => void; onOpenWork: (work: WorkRecord, initialTab?: WorkDetailTab) => void; onNavigate: (page: Page) => void }) {
+function WorksDashboardPage({ works, costsByWorkId, panel, onNewWork, onOpenWork, onNavigate }: { works: WorkRecord[]; costsByWorkId: Record<string, WorkCostSummary>; panel: WorkPanelRecord; onNewWork: () => void; onOpenWork: (work: WorkRecord, initialTab?: WorkDetailTab) => void; onNavigate: (page: Page) => void }) {
   const [propertyFilter, setPropertyFilter] = useState("Todos os imóveis");
-  const [periodFilter, setPeriodFilter] = useState("Agosto de 2026");
+  const [periodFilter, setPeriodFilter] = useState("Próximos 30 dias");
+  const positionDateIso = panel.positionDateIso || new Date().toLocaleDateString('en-CA');
+  const future = new Date(`${positionDateIso}T12:00:00Z`);
+  future.setUTCDate(future.getUTCDate() + 30);
+  const futureDateIso = future.toISOString().slice(0, 10);
   const properties = Array.from(new Set(works.map((work) => work.property))).sort((left, right) => left.localeCompare(right, "pt-BR"));
-  const periodRange = periodFilter === "Agosto de 2026"
-    ? { start: "2026-08-01", end: "2026-08-31" }
-    : periodFilter === "Próximos 30 dias"
-      ? { start: "2026-08-24", end: "2026-09-23" }
-      : null;
+  const periodRange = periodFilter === 'Próximos 30 dias' ? { start: positionDateIso, end: futureDateIso }
+    : periodFilter === 'Este mês' ? { start: `${positionDateIso.slice(0, 7)}-01`, end: `${positionDateIso.slice(0, 7)}-31` } : null;
   const matchesProperty = (property: string) => propertyFilter === "Todos os imóveis" || property === propertyFilter;
   const matchesDate = (start: string, end: string) => !periodRange || (start <= periodRange.end && end >= periodRange.start);
   const scopedWorks = works.filter((work) => matchesProperty(work.property) && matchesDate(work.startDateIso, work.endDateIso));
   const scopedWorkIds = new Set(scopedWorks.map((work) => work.id));
-  const attentions = workAttentionRecords.filter((attention) => scopedWorkIds.has(attention.workId));
-  const commitments = workCommitments.filter((commitment) => scopedWorkIds.has(commitment.workId) && (!periodRange || (commitment.dateIso >= periodRange.start && commitment.dateIso <= periodRange.end)));
+  const attentions = panel.attentions.filter((attention) => scopedWorkIds.has(attention.workId));
+  const commitments = panel.commitments.filter((commitment) => scopedWorkIds.has(commitment.workId) && (!periodRange || (commitment.dateIso >= periodRange.start && commitment.dateIso <= periodRange.end)));
+  const dashboardRisk = (work: WorkRecord) => work.status !== 'Concluída' && work.status !== 'Cancelada' && work.endDateIso < positionDateIso
+    ? 'Em atraso' : work.risk;
   const activeWorks = scopedWorks.filter((work) => work.status === "Em andamento" || work.status === "Pausada").sort((left, right) => {
     const riskOrder = { "Em atraso": 0, Atenção: 1, "Dentro do prazo": 2, Concluída: 3 };
-    return riskOrder[left.risk] - riskOrder[right.risk] || left.endDateIso.localeCompare(right.endDateIso);
+    return riskOrder[dashboardRisk(left)] - riskOrder[dashboardRisk(right)] || left.endDateIso.localeCompare(right.endDateIso);
   });
   const inProgress = scopedWorks.filter((work) => work.status === "Em andamento").length;
-  const delayed = scopedWorks.filter((work) => work.risk === "Em atraso").length;
+  const delayed = scopedWorks.filter((work) => dashboardRisk(work) === "Em atraso").length;
   const activeCostSummaries = scopedWorks.filter((work) => work.status !== "Cancelada").map((work) => costsByWorkId[work.id]);
   const teamCosts = activeCostSummaries.reduce((sum, costs) => sum + (costs?.teamCost ?? 0), 0);
   const supplierCosts = activeCostSummaries.reduce((sum, costs) => sum + (costs?.supplierContracted ?? 0), 0);
@@ -1659,7 +1408,7 @@ function WorksDashboardPage({ works, costsByWorkId, onNewWork, onOpenWork, onNav
   const delayedRatio = scopedWorks.length > 0 ? Math.round((delayed / scopedWorks.length) * 100) : 0;
   const supplierShareRatio = totalOperationalCosts > 0 ? Math.round((supplierCosts / totalOperationalCosts) * 100) : 0;
   const supplierPendingRatio = supplierCosts > 0 ? Math.round((supplierPending / supplierCosts) * 100) : 0;
-  const filtersActive = propertyFilter !== "Todos os imóveis" || periodFilter !== "Agosto de 2026";
+  const filtersActive = propertyFilter !== "Todos os imóveis" || periodFilter !== "Próximos 30 dias";
   const openAttention = (attention: WorkAttention) => {
     const work = works.find((record) => record.id === attention.workId);
     if (work) onOpenWork(work, workAttentionDestination(attention.kind).tab);
@@ -1672,11 +1421,11 @@ function WorksDashboardPage({ works, costsByWorkId, onNewWork, onOpenWork, onNav
     </section>
 
     <section className="works-dashboard-toolbar" aria-label="Filtros da visão geral">
-      <div className="works-dashboard-date"><span><CalendarClock aria-hidden="true" /></span><div><strong>Posição da operação</strong><small>24 de agosto de 2026 · dados demonstrativos</small></div></div>
+      <div className="works-dashboard-date"><span><CalendarClock aria-hidden="true" /></span><div><strong>Posição da operação</strong><small>{formatExpenseDate(positionDateIso)} · dados persistidos</small></div></div>
       <div className="works-dashboard-filters">
         <label><span>Imóvel</span><select value={propertyFilter} onChange={(event) => setPropertyFilter(event.target.value)} aria-label="Filtrar visão geral por imóvel"><option>Todos os imóveis</option>{properties.map((property) => <option key={property}>{property}</option>)}</select></label>
-        <label><span>Período</span><select value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value)} aria-label="Filtrar visão geral por período"><option>Agosto de 2026</option><option>Próximos 30 dias</option><option>Todo o período</option></select></label>
-        <button type="button" className="secondary-button button-with-icon works-clear-filters" disabled={!filtersActive} onClick={() => { setPropertyFilter("Todos os imóveis"); setPeriodFilter("Agosto de 2026"); }}><RotateCcw aria-hidden="true" />Limpar</button>
+        <label><span>Período</span><select value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value)} aria-label="Filtrar visão geral por período"><option>Próximos 30 dias</option><option>Este mês</option><option>Todo o período</option></select></label>
+        <button type="button" className="secondary-button button-with-icon works-clear-filters" disabled={!filtersActive} onClick={() => { setPropertyFilter("Todos os imóveis"); setPeriodFilter("Próximos 30 dias"); }}><RotateCcw aria-hidden="true" />Limpar</button>
       </div>
     </section>
 
@@ -1684,7 +1433,7 @@ function WorksDashboardPage({ works, costsByWorkId, onNewWork, onOpenWork, onNav
       {featuredWork ? <button type="button" className="works-featured-work" onClick={() => onOpenWork(featuredWork)}>
         <img src={propertyCoverImagesByName[featuredWork.property] ?? fallbackPropertyCover} alt={`Fachada de ${featuredWork.property}`} width="960" height="620" />
         <span className="works-featured-shade" aria-hidden="true" />
-        <span className="works-featured-topline"><b>Obra em destaque</b><em className={`works-featured-risk works-featured-risk-${featuredWork.risk === "Em atraso" ? "danger" : featuredWork.risk === "Atenção" ? "warning" : "ok"}`}>{featuredWork.risk}</em></span>
+        <span className="works-featured-topline"><b>Obra em destaque</b><em className={`works-featured-risk works-featured-risk-${dashboardRisk(featuredWork) === "Em atraso" ? "danger" : dashboardRisk(featuredWork) === "Atenção" ? "warning" : "ok"}`}>{dashboardRisk(featuredWork)}</em></span>
         <span className="works-featured-content">
           <small>{featuredWork.id} · {featuredWork.property}{featuredWork.unit ? ` · ${featuredWork.unit}` : ""}</small>
           <strong>{featuredWork.title}</strong>
@@ -1926,38 +1675,57 @@ function formatWorkDetailDateTime(value: string) {
   return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(date).replace(".", "");
 }
 
-function summarizeWorkCosts(team: WorkTeamAllocation[], suppliers: WorkSupplier[], financialEntries: WorkFinancialEntry[]): WorkCostSummary {
-  const teamCost = team.reduce((sum, allocation) => sum + allocation.quantity * allocation.unitRate, 0);
-  const supplierContracted = suppliers.reduce((sum, supplier) => sum + supplier.contractedAmount, 0);
-  const supplierPaid = suppliers.reduce((sum, supplier) => sum + supplier.paidAmount, 0);
-  const contributionsReceived = financialEntries.filter((entry) => entry.kind === "Aporte").reduce((sum, entry) => sum + entry.amount, 0);
-  const cashAdjustments = financialEntries.filter((entry) => entry.kind === "Ajuste").reduce((sum, entry) => sum + entry.amount, 0);
-  const cashMovements = contributionsReceived + cashAdjustments;
-  return {
-    teamCost,
-    supplierContracted,
-    supplierPaid,
-    supplierPending: Math.max(0, supplierContracted - supplierPaid),
-    totalCommitted: teamCost + supplierContracted,
-    contributionsReceived,
-    cashAdjustments,
-    cashMovements,
-    availableCash: cashMovements - teamCost - supplierPaid,
-  };
-}
-
-function WorkDetailPage({ work, initialTab, initialTeam, onTeamChange, suppliers, onSuppliersChange, partners, onPartnersChange, contributions, onContributionsChange, financialEntries: initialFinancialEntries, onFinancialEntriesChange, initialJournal, onJournalChange, initialPendingItems, onPendingItemsChange, onBack, onEdit, onUpdateWork, onNotify }: { work: WorkRecord; initialTab: WorkDetailTab; initialTeam: WorkTeamAllocation[]; onTeamChange: (team: WorkTeamAllocation[]) => void; suppliers: WorkSupplier[]; onSuppliersChange: (suppliers: WorkSupplier[]) => void; partners: WorkPartner[]; onPartnersChange: (partners: WorkPartner[]) => void; contributions: WorkContribution[]; onContributionsChange: (contributions: WorkContribution[]) => void; financialEntries: WorkFinancialEntry[]; onFinancialEntriesChange: (entries: WorkFinancialEntry[]) => void; initialJournal: WorkJournalEntry[]; onJournalChange: (entries: WorkJournalEntry[]) => void; initialPendingItems: WorkPendingItem[]; onPendingItemsChange: (items: WorkPendingItem[]) => void; onBack: () => void; onEdit: () => void; onUpdateWork: (work: WorkRecord, message: string) => void; onNotify: (message: string, reference: string) => void }) {
+type WorkDetailProps = {
+  work: WorkRecord; initialTab: WorkDetailTab;
+  initialTeam: WorkTeamAllocation[]; onTeamChange: (team: WorkTeamAllocation[]) => void;
+  suppliers: WorkSupplier[]; onSuppliersChange: (suppliers: WorkSupplier[]) => void;
+  finance?: WorkFinanceRecord; onFinanceChange: (finance: WorkFinanceRecord) => void;
+  financialEntries: WorkFinancialEntry[]; onFinancialEntriesChange: (entries: WorkFinancialEntry[]) => void;
+  initialJournal: WorkJournalEntry[]; onJournalChange: (entries: WorkJournalEntry[]) => void;
+  initialPendingItems: WorkPendingItem[]; onPendingItemsChange: (items: WorkPendingItem[]) => void;
+  onBack: () => void; onEdit: () => void; onUpdateWork: (work: WorkRecord, message: string) => void;
+  onTransition: (status: WorkStatus, motivo?: string) => Promise<boolean>;
+  professionals: ProfessionalRecord[]; onNotify: (message: string, reference: string) => void;
+};
+function WorkDetailPage({ work, initialTab, initialTeam, onTeamChange, suppliers, onSuppliersChange,
+  finance: initialFinance,
+  onFinanceChange, financialEntries: initialFinancialEntries, onFinancialEntriesChange,
+  initialJournal, onJournalChange, initialPendingItems, onPendingItemsChange, onBack, onEdit,
+  onUpdateWork, onTransition, professionals, onNotify }: WorkDetailProps) {
   const [tab, setTab] = useState<WorkDetailTab>(initialTab);
   const [actionsOpen, setActionsOpen] = useState(false);
   const actionsMenuRef = useRef<HTMLDivElement>(null);
   const [action, setAction] = useState<WorkDetailAction>(null);
   const [confirmPrompt, setConfirmPrompt] = useState<ConfirmPrompt | null>(null);
-  const [activities, setActivities] = useState<WorkActivity[]>(() => createWorkDetailMock(work).activities);
+  // Abas do detalhe carregam da API por obraId (inclui sócios/aportes do Grupo 9).
+  const [activities, setActivities] = useState<WorkActivity[]>([]);
+  const [partners, setPartners] = useState<WorkPartner[]>([]);
+  const [contributions, setContributions] = useState<WorkContribution[]>([]);
   const [team, setTeam] = useState<WorkTeamAllocation[]>(initialTeam);
   const [financialEntries, setFinancialEntries] = useState<WorkFinancialEntry[]>(initialFinancialEntries);
+  const [finance, setFinance] = useState<WorkFinanceRecord | null>(initialFinance ?? null);
+  const [group10Error, setGroup10Error] = useState<string | null>(null);
+  const [financeLoading, setFinanceLoading] = useState(Boolean(work.databaseId && !initialFinance));
+  const [journalLoading, setJournalLoading] = useState(Boolean(work.databaseId));
+  const [pendingLoading, setPendingLoading] = useState(Boolean(work.databaseId));
   const [contributionRequest, setContributionRequest] = useState(0);
   const [journal, setJournal] = useState<WorkJournalEntry[]>(initialJournal);
   const [pendingItems, setPendingItems] = useState<WorkPendingItem[]>(initialPendingItems);
+  useEffect(() => {
+    if (!work.databaseId) return;
+    let alive = true;
+    const obraId = work.databaseId;
+    void registryService.listActivities(obraId).then((rows) => { if (alive) setActivities(rows); }).catch((error) => { reportClientError(error, 'FRONTEND_WORK_RESOURCE_LOAD_FAILED', { resource: 'activities', obraId }); if (alive) setActivities([]); });
+    void registryService.listTeam(obraId).then((rows) => { if (alive) { setTeam(rows); onTeamChange(rows); } }).catch((error) => reportClientError(error, 'FRONTEND_WORK_RESOURCE_LOAD_FAILED', { resource: 'team', obraId }));
+    void registryService.listWorkContracts(obraId).then((rows) => { if (alive) onSuppliersChange(rows); }).catch((error) => reportClientError(error, 'FRONTEND_WORK_RESOURCE_LOAD_FAILED', { resource: 'contracts', obraId }));
+    void registryService.listWorkPartners(obraId).then((rows) => { if (alive) setPartners(rows); }).catch((error) => reportClientError(error, 'FRONTEND_WORK_RESOURCE_LOAD_FAILED', { resource: 'partners', obraId }));
+    void registryService.listWorkContributions(obraId).then((rows) => { if (alive) setContributions(rows); }).catch((error) => reportClientError(error, 'FRONTEND_WORK_RESOURCE_LOAD_FAILED', { resource: 'contributions', obraId }));
+    void registryService.getWorkFinance(obraId).then((result) => { if (alive) { setFinance(result); setFinancialEntries(result.entries); onFinanceChange(result); onFinancialEntriesChange(result.entries); } }).catch((error) => { if (alive) setGroup10Error(error instanceof Error ? error.message : 'Não foi possível carregar o financeiro.'); }).finally(() => { if (alive) setFinanceLoading(false); });
+    void registryService.listWorkJournal(obraId).then((rows) => { if (alive) { setJournal(rows); onJournalChange(rows); } }).catch((error) => { if (alive) setGroup10Error(error instanceof Error ? error.message : 'Não foi possível carregar o diário.'); }).finally(() => { if (alive) setJournalLoading(false); });
+    void registryService.listWorkPending(obraId).then((rows) => { if (alive) { setPendingItems(rows); onPendingItemsChange(rows); } }).catch((error) => { if (alive) setGroup10Error(error instanceof Error ? error.message : 'Não foi possível carregar as pendências.'); }).finally(() => { if (alive) setPendingLoading(false); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [work.databaseId]);
   const tabs: Array<{ name: WorkDetailTab; icon: LucideIcon }> = [
     { name: "Resumo", icon: LayoutDashboard },
     { name: "Planejamento", icon: ClipboardList },
@@ -1982,20 +1750,17 @@ function WorkDetailPage({ work, initialTab, initialTeam, onTeamChange, suppliers
   const completedActivities = activities.filter((activity) => activity.status === "Concluída").length;
   const activityProgress = activities.length ? Math.round((completedActivities / activities.length) * 100) : work.progress;
   const blockedActivities = activities.filter((activity) => activity.status === "Bloqueada");
-  const { teamCost, supplierContracted, supplierPaid, supplierPending, totalCommitted, contributionsReceived, cashAdjustments, availableCash } = summarizeWorkCosts(team, suppliers, financialEntries);
-  const contributionPending = contributions.reduce((sum, contribution) => sum + contributionRemaining(contribution), 0);
+  const { teamCost, supplierContracted, supplierPaid, supplierPending, totalCommitted, contributionsReceived, cashAdjustments, availableCash } = finance ?? EMPTY_WORK_COSTS;
   const partnerDistribution = participationTotal(partners);
-  const totalPaidCosts = teamCost + supplierPaid;
+  const totalPaidCosts = supplierPaid;
   const supplierPaidRatio = supplierContracted > 0 ? Math.round((supplierPaid / supplierContracted) * 100) : 0;
   const openSupplierContracts = suppliers.filter((supplier) => supplier.status !== "Quitado");
   const nextSupplierDue = [...openSupplierContracts].sort((a, b) => a.dueDateIso.localeCompare(b.dueDateIso))[0];
-  const pendingContributionCount = contributions.filter((contribution) => contributionRemaining(contribution) > 0).length;
-  const financeHasOutlook = supplierPending > 0 || contributionPending > 0;
+  const financeHasOutlook = supplierPending > 0;
   const nextActivity = activities.find((activity) => activity.status === "Em andamento") ?? activities.find((activity) => activity.status === "Não iniciada" || activity.status === "Bloqueada");
   const displayPendingItems = [
-    ...pendingItems.filter((item) => item.id !== "PEN-005"),
-    ...(contributionPending > 0 ? [{ id: "PARTNER-APORTE-PENDING", title: "Aporte com saldo pendente", description: `Ainda faltam ${brl.format(contributionPending)} nos aportes solicitados aos sócios.`, tone: "warning" as const }] : []),
-    ...blockedActivities.filter((activity) => !pendingItems.some((item) => item.id === `BLOCK-${activity.id}`)).map((activity) => ({ id: `BLOCK-${activity.id}`, title: "Atividade bloqueada", description: `${activity.title}${activity.blockedReason ? ` · ${activity.blockedReason}` : ""}`, tone: "danger" as const })),
+    ...pendingItems,
+    ...blockedActivities.filter((activity) => !pendingItems.some((item) => item.id === `BLOCK-${activity.id}`)).map((activity) => ({ id: `BLOCK-${activity.id}`, databaseId: undefined, title: "Atividade bloqueada", description: `${activity.title}${activity.blockedReason ? ` · ${activity.blockedReason}` : ""}`, tone: "danger" as const })),
   ];
 
   useEffect(() => {
@@ -2040,17 +1805,23 @@ function WorkDetailPage({ work, initialTab, initialTeam, onTeamChange, suppliers
   }, [actionsOpen]);
 
   const journalFileCount = journal.reduce((total, entry) => total + entry.files.length, 0);
-  const appendJournal = (entry: Omit<WorkJournalEntry, "id" | "dateIso">) => {
-    const nextEntry = { ...entry, id: nextRecordId("DIA", journal), dateIso: `${WORKS_DEMO_DATE_ISO}T12:00:00` };
-    const nextJournal = [nextEntry, ...journal];
-    setJournal(nextJournal);
-    onJournalChange(nextJournal);
+  const refreshJournal = async () => {
+    if (!work.databaseId) return;
+    const rows = await registryService.listWorkJournal(work.databaseId);
+    setJournal(rows); onJournalChange(rows);
   };
-  const applyWorkStatus = (status: WorkStatus) => {
-    const progress = status === "Concluída" ? 100 : work.progress;
-    const risk = status === "Concluída" ? "Concluída" : work.risk === "Concluída" ? "Dentro do prazo" : work.risk;
-    onUpdateWork({ ...work, status, progress, risk, updatedAtIso: `${WORKS_DEMO_DATE_ISO}T12:00:00`, lastUpdateLabel: "Atualizada agora nesta sessão" }, `Situação alterada para ${status}.`);
-    appendJournal({ kind: "Atualização", title: `Situação alterada para ${status}`, description: "Alteração manual registrada no detalhe da obra.", author: "Administrativo", progress, files: [] });
+  const refreshFinance = async () => {
+    if (!work.databaseId) return;
+    const result = await registryService.getWorkFinance(work.databaseId);
+    setFinance(result); setFinancialEntries(result.entries);
+    onFinanceChange(result); onFinancialEntriesChange(result.entries);
+  };
+  const applyWorkStatus = async (status: WorkStatus) => {
+    if (!(await onTransition(status))) {
+      setGroup10Error('A situação não foi alterada. Consulte o aviso de erro e tente novamente.');
+      return;
+    }
+    await refreshJournal().catch(() => setGroup10Error('Situação alterada, mas não foi possível recarregar o diário.'));
     setActionsOpen(false);
   };
   const updateWorkStatus = (status: WorkStatus) => {
@@ -2070,12 +1841,16 @@ function WorkDetailPage({ work, initialTab, initialTeam, onTeamChange, suppliers
     }
     applyWorkStatus(status);
   };
-  const completeActivity = (activity: WorkActivity) => {
-    const nextActivities = activities.map((item) => item.id === activity.id ? { ...item, status: "Concluída" as const, blockedReason: undefined } : item);
-    setActivities(nextActivities);
-    const nextProgress = Math.round((nextActivities.filter((item) => item.status === "Concluída").length / Math.max(nextActivities.length, 1)) * 100);
-    onUpdateWork({ ...work, progress: nextProgress, nextActivity: nextActivities.find((item) => item.status !== "Concluída")?.title ?? "Entrega concluída", lastUpdateLabel: "Atualizada agora nesta sessão" }, "Atividade concluída e progresso recalculado.");
-    appendJournal({ kind: "Atualização", title: "Atividade concluída", description: activity.title, author: "Administrativo", progress: nextProgress, files: [] });
+  const completeActivity = async (activity: WorkActivity) => {
+    if (!work.databaseId || !activity.databaseId) return;
+    try {
+      const bundle = await registryService.completeActivity(work.databaseId, activity.databaseId);
+      setActivities(bundle.activities);
+      onUpdateWork(bundle.work, "Atividade concluída e progresso recalculado.");
+      await refreshJournal().catch(() => setGroup10Error('Atividade concluída, mas não foi possível recarregar o diário.'));
+    } catch (error) {
+      onNotify(error instanceof Error ? error.message : "Não foi possível concluir a atividade.", activity.id);
+    }
   };
   const removeTeamMember = (allocation: WorkTeamAllocation) => {
     setConfirmPrompt({
@@ -2084,76 +1859,127 @@ function WorkDetailPage({ work, initialTab, initialTeam, onTeamChange, suppliers
       confirmLabel: "Remover pessoa",
       cancelLabel: "Voltar",
       tone: "danger",
-      onConfirm: () => {
-        const nextTeam = team.filter((item) => item.id !== allocation.id);
-        setTeam(nextTeam);
-        onTeamChange(nextTeam);
-        onNotify("Pessoa removida da equipe nesta sessão.", allocation.id);
+      onConfirm: async () => {
+        if (!work.databaseId || !allocation.databaseId) return;
+        try {
+          const nextTeam = await registryService.removeAllocation(work.databaseId, allocation.databaseId);
+          setTeam(nextTeam);
+          onTeamChange(nextTeam);
+          onNotify("Pessoa removida da equipe da obra.", allocation.id);
+        } catch (error) { onNotify(error instanceof Error ? error.message : "Não foi possível remover a alocação.", allocation.id); }
       },
     });
   };
-  const registerPartnerPayment = (payment: PartnerPaymentEvent) => {
-    const entry: WorkFinancialEntry = {
-      id: nextRecordId("FIN", financialEntries),
-      kind: "Aporte",
-      description: `${payment.contributionDescription} · pagamento recebido`,
-      party: payment.partnerName,
-      amount: payment.amount,
-      dateIso: payment.dateIso,
-      status: "Registrado",
-      sourceId: payment.contributionId,
-    };
-    const nextEntries = [entry, ...financialEntries];
-    setFinancialEntries(nextEntries);
-    onFinancialEntriesChange(nextEntries);
-    appendJournal({ kind: "Atualização", title: "Aporte de sócio recebido", description: `${payment.partnerName} · ${brl.format(payment.amount)} · ${payment.contributionId}`, author: "Administrativo", files: [] });
-    onNotify("Pagamento de sócio recebido no caixa da obra.", payment.paymentId);
+  const addPartnerToWork = async (name: string, participationPercent: number) => { if (work.databaseId) setPartners(await registryService.addWorkPartner(work.databaseId, name, participationPercent)); };
+  const editPartnerParticipation = async (socioId: string, participationPercent: number) => { if (work.databaseId) setPartners(await registryService.editWorkParticipation(work.databaseId, socioId, participationPercent)); };
+  const removePartnerFromWork = async (socioId: string) => { if (work.databaseId) setPartners(await registryService.removeWorkPartner(work.databaseId, socioId)); };
+  const createWorkContribution = async (data: { description: string; amount: number; dateIso: string }) => { if (work.databaseId) setContributions(await registryService.createWorkContribution(work.databaseId, data)); };
+  const registerContributionPayment = async (data: { aporteId: string; cotaId: string; amount: number; dateIso: string; note?: string }) => {
+    if (!work.databaseId) return;
+    setContributions(await registryService.registerContributionPayment(work.databaseId, data.aporteId, data.cotaId, { amount: data.amount, dateIso: data.dateIso, note: data.note }));
+    await refreshFinance().catch((error) => reportClientError(error, 'FRONTEND_BACKGROUND_REFRESH_FAILED', { resource: 'work-finance', obraId: work.databaseId }));
   };
-  const handleActionSubmit = (submittedAction: NonNullable<WorkDetailAction>, formData: FormData) => {
+  const resolveWorkPendingItem = async (item: WorkPendingItem) => {
+    if (!work.databaseId || !item.databaseId) return;
+    try {
+      const rows = await registryService.resolveWorkPending(work.databaseId, item.databaseId);
+      setPendingItems(rows); onPendingItemsChange(rows);
+      await refreshJournal().catch(() => setGroup10Error('Pendência resolvida, mas não foi possível recarregar o diário.'));
+      onNotify('Pendência resolvida e registrada no diário.', item.id);
+    } catch (error) { setGroup10Error(error instanceof Error ? error.message : 'Não foi possível resolver a pendência.'); }
+  };
+  const attachJournalFile = async (entry: WorkJournalEntry, file: File) => {
+    if (!work.databaseId || !entry.databaseId) return;
+    try {
+      await registryService.uploadWorkJournalFile(work.databaseId, entry.databaseId, file);
+      await refreshJournal().catch(() => setGroup10Error('Arquivo anexado, mas não foi possível recarregar o diário.'));
+      onNotify('Arquivo anexado ao registro do diário.', entry.id);
+    } catch (error) { setGroup10Error(error instanceof Error ? error.message : 'Não foi possível anexar o arquivo.'); }
+  };
+  const requestAdjustmentReversal = (entry: WorkFinancialEntry) => {
+    if (!work.databaseId || !entry.databaseId || !entry.canReverse) return;
+    setConfirmPrompt({
+      title: 'Estornar este ajuste de caixa?',
+      message: `${entry.description} · ${brl.format(entry.amount)}. O estorno cria um lançamento oposto e preserva o histórico.`,
+      confirmLabel: 'Estornar ajuste', cancelLabel: 'Voltar', tone: 'danger',
+      onConfirm: async () => {
+        try {
+          const result = await registryService.reverseCashAdjustment(work.databaseId!, entry.databaseId!, 'Estorno confirmado no financeiro da obra.');
+          setFinance(result); setFinancialEntries(result.entries); onFinanceChange(result); onFinancialEntriesChange(result.entries);
+          await refreshJournal().catch(() => setGroup10Error('Estorno salvo, mas não foi possível recarregar o diário.'));
+          onNotify('Ajuste estornado.', entry.id);
+        } catch (error) { setGroup10Error(error instanceof Error ? error.message : 'Não foi possível estornar o ajuste.'); }
+      },
+    });
+  };
+  const handleActionSubmit = async (submittedAction: NonNullable<WorkDetailAction>, formData: FormData) => {
+    setGroup10Error(null);
     const value = (name: string) => String(formData.get(name) ?? "").trim();
     const amount = (name: string) => Number(formData.get(name) ?? 0);
     if (submittedAction.type === "update") {
-      const progress = Math.min(100, Math.max(0, amount("progress")));
-      const kind = value("kind") as WorkJournalEntry["kind"];
-      const files = formData.getAll("fileNames").map(String).filter(Boolean);
-      const entry = { kind, title: value("title"), description: value("description"), author: "Administrativo", progress, files };
-      appendJournal(entry);
-      if (kind === "Pendência") {
-        const nextPendingItems = [{ id: nextRecordId("PEN", pendingItems), title: entry.title, description: entry.description, tone: "warning" as const }, ...pendingItems];
-        setPendingItems(nextPendingItems);
-        onPendingItemsChange(nextPendingItems);
+      if (!work.databaseId) { setGroup10Error('Salve a obra antes de registrar o diário.'); return; }
+      try {
+        await registryService.createWorkJournal(work.databaseId, {
+          kind: value('kind') as WorkJournalEntry['kind'], title: value('title'), description: value('description'),
+          progress: amount('progress'), nextActivity: value('nextActivity'),
+          files: formData.getAll('uploadFiles').filter((item): item is File => item instanceof File),
+        });
+      } catch (error) {
+        if (error instanceof PartialJournalUploadError) {
+          await refreshJournal().catch((refreshError) => reportClientError(refreshError, 'FRONTEND_BACKGROUND_REFRESH_FAILED', { resource: 'journal', obraId: work.databaseId }));
+          const nextPending = await registryService.listWorkPending(work.databaseId).catch((refreshError) => { reportClientError(refreshError, 'FRONTEND_BACKGROUND_REFRESH_FAILED', { resource: 'pending', obraId: work.databaseId }); return pendingItems; });
+          setPendingItems(nextPending); onPendingItemsChange(nextPending);
+          const saved = await registryService.getWork(work.databaseId).catch((refreshError) => { reportClientError(refreshError, 'FRONTEND_BACKGROUND_REFRESH_FAILED', { resource: 'work', obraId: work.databaseId }); return work; });
+          onUpdateWork(saved, error.message);
+          setGroup10Error(error.message); setAction(null); return;
+        }
+        setGroup10Error(error instanceof Error ? error.message : 'Não foi possível salvar o diário.'); return;
       }
-      onUpdateWork({ ...work, progress, nextActivity: value("nextActivity") || work.nextActivity, updatedAtIso: `${WORKS_DEMO_DATE_ISO}T12:00:00`, lastUpdateLabel: "Atualizada agora nesta sessão" }, "Atualização registrada no diário.");
+      await refreshJournal().catch(() => setGroup10Error('Registro salvo, mas não foi possível recarregar o diário.'));
+      const nextPending = await registryService.listWorkPending(work.databaseId).catch((refreshError) => { reportClientError(refreshError, 'FRONTEND_BACKGROUND_REFRESH_FAILED', { resource: 'pending', obraId: work.databaseId }); return pendingItems; });
+      setPendingItems(nextPending); onPendingItemsChange(nextPending);
+      const saved = await registryService.getWork(work.databaseId).catch((refreshError) => { reportClientError(refreshError, 'FRONTEND_BACKGROUND_REFRESH_FAILED', { resource: 'work', obraId: work.databaseId }); return work; });
+      onUpdateWork(saved, 'Registro salvo no diário da obra.');
     }
-    if (submittedAction.type === "activity") {
-      const newActivity: WorkActivity = { id: nextRecordId("ATV", activities), stage: value("stage") as WorkActivity["stage"], title: value("title"), manager: value("manager"), startDateIso: value("startDateIso"), endDateIso: value("endDateIso"), status: "Não iniciada" };
-      setActivities((current) => [...current, newActivity]);
-      onNotify("Atividade adicionada ao planejamento.", newActivity.id);
+    if (submittedAction.type === "activity" && work.databaseId) {
+      try {
+        const bundle = await registryService.createActivity(work.databaseId, { stage: value("stage"), manager: value("manager"), title: value("title"), startDateIso: value("startDateIso"), endDateIso: value("endDateIso") }, professionals);
+        setActivities(bundle.activities);
+        onUpdateWork(bundle.work, "Atividade adicionada ao planejamento.");
+      } catch (error) { setGroup10Error(error instanceof Error ? error.message : 'Não foi possível adicionar a atividade.'); return; }
     }
-    if (submittedAction.type === "team") {
-      const allocation: WorkTeamAllocation = { id: nextRecordId("EQP", team), name: value("name"), role: value("role"), startDateIso: value("startDateIso"), endDateIso: value("endDateIso"), workMode: value("workMode") as WorkTeamAllocation["workMode"], quantity: amount("quantity"), unitRate: amount("unitRate"), activityIds: [] };
-      const nextTeam = [...team, allocation];
-      setTeam(nextTeam);
-      onTeamChange(nextTeam);
-      onNotify("Pessoa adicionada à equipe da obra.", allocation.id);
+    if (submittedAction.type === "team" && work.databaseId) {
+      try {
+        const nextTeam = await registryService.createAllocation(work.databaseId, { name: value("name"), role: value("role"), startDateIso: value("startDateIso"), endDateIso: value("endDateIso"), workMode: value("workMode"), quantity: amount("quantity"), unitRate: amount("unitRate") }, professionals);
+        setTeam(nextTeam);
+        onTeamChange(nextTeam);
+        onNotify("Pessoa adicionada à equipe da obra.", nextTeam[0]?.id ?? "");
+      } catch (error) { setGroup10Error(error instanceof Error ? error.message : 'Não foi possível alocar o profissional.'); return; }
     }
     if (submittedAction.type === "cash") {
-      const entry: WorkFinancialEntry = { id: nextRecordId("FIN", financialEntries), kind: "Ajuste", description: value("description"), party: "Caixa administrativo", amount: amount("amount"), dateIso: value("dateIso"), status: "Registrado" };
-      const nextEntries = [entry, ...financialEntries];
-      setFinancialEntries(nextEntries);
-      onFinancialEntriesChange(nextEntries);
-      appendJournal({ kind: "Atualização", title: `${entry.kind} de caixa registrado`, description: `${entry.description} · ${brl.format(entry.amount)}`, author: "Administrativo", files: [] });
-      onNotify("Movimento manual registrado no caixa da obra.", entry.id);
+      if (!work.databaseId) { setGroup10Error('Salve a obra antes de ajustar o caixa.'); return; }
+      try {
+        const result = await registryService.createCashAdjustment(work.databaseId, value('dateIso'), value('description'), amount('amount'));
+        setFinance(result); setFinancialEntries(result.entries); onFinanceChange(result); onFinancialEntriesChange(result.entries);
+        onNotify('Ajuste de caixa registrado.', result.entries[0]?.id ?? work.id);
+      } catch (error) { setGroup10Error(error instanceof Error ? error.message : 'Não foi possível registrar o ajuste.'); return; }
+      await refreshJournal().catch(() => setGroup10Error('Ajuste salvo, mas não foi possível recarregar o diário.'));
     }
-    if (submittedAction.type === "block") {
-      setActivities((current) => current.map((item) => item.id === submittedAction.activity.id ? { ...item, status: "Bloqueada", blockedReason: value("reason") } : item));
-      appendJournal({ kind: "Pendência", title: "Atividade bloqueada", description: `${submittedAction.activity.title} · ${value("reason")}`, author: "Administrativo", files: [] });
-      onNotify("Bloqueio registrado no planejamento.", submittedAction.activity.id);
+    if (submittedAction.type === "block" && work.databaseId && submittedAction.activity.databaseId) {
+      try {
+        const bundle = await registryService.blockActivity(work.databaseId, submittedAction.activity.databaseId, value("reason"));
+        setActivities(bundle.activities);
+        await refreshJournal().catch(() => setGroup10Error('Bloqueio salvo, mas não foi possível recarregar o diário.'));
+        onNotify("Bloqueio registrado no planejamento.", submittedAction.activity.id);
+      } catch (error) { setGroup10Error(error instanceof Error ? error.message : 'Não foi possível bloquear a atividade.'); return; }
     }
-    if (submittedAction.type === "reprogram") {
-      setActivities((current) => current.map((item) => item.id === submittedAction.activity.id ? { ...item, endDateIso: value("endDateIso") } : item));
-      appendJournal({ kind: "Atualização", title: "Atividade reprogramada", description: `${submittedAction.activity.title} · novo prazo ${formatExpenseDate(value("endDateIso"))}. Motivo: ${value("reason")}`, author: "Administrativo", files: [] });
-      onNotify("Nova data registrada no planejamento.", submittedAction.activity.id);
+    if (submittedAction.type === "reprogram" && work.databaseId && submittedAction.activity.databaseId) {
+      try {
+        const bundle = await registryService.reprogramActivity(work.databaseId, submittedAction.activity.databaseId, value("endDateIso"), value("reason"));
+        setActivities(bundle.activities);
+        await refreshJournal().catch(() => setGroup10Error('Reprogramação salva, mas não foi possível recarregar o diário.'));
+        onNotify("Nova data registrada no planejamento.", submittedAction.activity.id);
+      } catch (error) { setGroup10Error(error instanceof Error ? error.message : 'Não foi possível reprogramar a atividade.'); return; }
     }
     setAction(null);
   };
@@ -2177,12 +2003,14 @@ function WorkDetailPage({ work, initialTab, initialTeam, onTeamChange, suppliers
         </dl>
       </section>
 
-      <nav className="work-detail-tabs" aria-label="Áreas da obra"><div>{tabs.map(({ name, icon: Icon }) => <button type="button" key={name} className={tab === name ? "active" : ""} aria-current={tab === name ? "page" : undefined} onClick={() => changeTab(name)}><Icon aria-hidden="true" /><span>{name}</span>{name === "Planejamento" && blockedActivities.length > 0 ? <b>{blockedActivities.length}</b> : name === "Resumo" && displayPendingItems.length > 0 ? <b>{displayPendingItems.length}</b> : name === "Sócios" && (partnerDistribution !== 100 || contributionPending > 0) ? <b>{partnerDistribution !== 100 ? "!" : contributions.filter((contribution) => contributionRemaining(contribution) > 0).length}</b> : null}</button>)}</div></nav>
+      <nav className="work-detail-tabs" aria-label="Áreas da obra"><div>{tabs.map(({ name, icon: Icon }) => <button type="button" key={name} className={tab === name ? "active" : ""} aria-current={tab === name ? "page" : undefined} onClick={() => changeTab(name)}><Icon aria-hidden="true" /><span>{name}</span>{name === "Planejamento" && blockedActivities.length > 0 ? <b>{blockedActivities.length}</b> : name === "Resumo" && displayPendingItems.length > 0 ? <b>{displayPendingItems.length}</b> : name === "Sócios" && partnerDistribution !== 100 ? <b>!</b> : null}</button>)}</div></nav>
+      {group10Error && <p className="work-group10-error" role="alert">{group10Error}<button type="button" onClick={() => setGroup10Error(null)} aria-label="Fechar aviso"><X aria-hidden="true" /></button></p>}
+      {(financeLoading || journalLoading || pendingLoading) && <p className="work-group10-loading" role="status">Carregando financeiro, diário e pendências da obra…</p>}
 
       {tab === "Resumo" && <div className="work-detail-summary">
         <div className="work-detail-summary-col">
           <section className="work-detail-decision-card" aria-labelledby="work-next-decision-title"><header><div><p className="eyebrow">Próxima atividade</p><h2 id="work-next-decision-title">{nextActivity?.title ?? "Planejamento concluído"}</h2></div><CalendarClock aria-hidden="true" /></header><div className="work-detail-decision-progress"><span className="work-detail-progress-ring" style={{ "--work-progress": `${work.progress * 3.6}deg` } as CSSProperties}><strong>{work.progress}%</strong><small>concluído</small></span><div><span>Prazo da atividade</span><strong>{nextActivity ? `${formatExpenseDate(nextActivity.startDateIso)} — ${formatExpenseDate(nextActivity.endDateIso)}` : "Sem próxima atividade"}</strong><small>{nextActivity?.manager ?? work.manager}</small>{nextActivity && <WorkDetailStatusBadge status={nextActivity.status} />}</div></div><footer><button type="button" onClick={() => changeTab("Planejamento")}><ClipboardList aria-hidden="true" />Abrir planejamento</button><button type="button" onClick={() => changeTab("Fornecedores")}><Handshake aria-hidden="true" />Ver fornecedores</button><button type="button" onClick={requestContribution}><WalletCards aria-hidden="true" />Solicitar aporte</button></footer></section>
-          <section className="work-detail-pending-card" aria-labelledby="work-pending-title"><header><div><p className="eyebrow">Atenção</p><h2 id="work-pending-title">Pendências e decisões</h2></div><b>{displayPendingItems.length}</b></header>{displayPendingItems.length ? <div>{displayPendingItems.map((item) => <article key={item.id} className={`work-detail-pending-${item.tone}`}><TriangleAlert aria-hidden="true" /><span><strong>{item.title}</strong><small>{item.description}</small></span>{pendingItems.some((pending) => pending.id === item.id) && <button type="button" onClick={() => setPendingItems((current) => current.filter((pending) => pending.id !== item.id))} aria-label={`Resolver ${item.title}`}><Check aria-hidden="true" /><span>Resolver</span></button>}</article>)}</div> : <CompactEmptyState mark="✓" tone="success" title="Nenhuma pendência aberta" description="A obra não possui bloqueios ou decisões aguardando ação." />}</section>
+          <section className="work-detail-pending-card" aria-labelledby="work-pending-title"><header><div><p className="eyebrow">Atenção</p><h2 id="work-pending-title">Pendências e decisões</h2></div><b>{displayPendingItems.length}</b></header>{displayPendingItems.length ? <div>{displayPendingItems.map((item) => <article key={item.id} className={`work-detail-pending-${item.tone}`}><TriangleAlert aria-hidden="true" /><span><strong>{item.title}</strong><small>{item.description}</small></span>{pendingItems.some((pending) => pending.databaseId === item.databaseId && Boolean(item.databaseId)) && <button type="button" onClick={() => void resolveWorkPendingItem(item)} aria-label={`Resolver ${item.title}`}><Check aria-hidden="true" /><span>Resolver</span></button>}</article>)}</div> : <CompactEmptyState mark="✓" tone="success" title="Nenhuma pendência aberta" description="A obra não possui bloqueios ou decisões aguardando ação." />}</section>
         </div>
         <div className="work-detail-summary-col">
           <section className="work-detail-finance-card" aria-labelledby="work-summary-finance-title"><header><div><p className="eyebrow">Financeiro</p><h2 id="work-summary-finance-title">Posição da obra</h2></div><WalletCards aria-hidden="true" /></header><dl><div><dt>Custo com equipe</dt><dd>{brl.format(teamCost)}</dd></div><div><dt>Custo com fornecedores</dt><dd>{brl.format(supplierContracted)}</dd></div><div><dt>Custos pagos</dt><dd>{brl.format(totalPaidCosts)}</dd></div><div><dt>Caixa disponível</dt><dd className={availableCash < 0 ? "negative" : ""}>{brl.format(availableCash)}</dd></div></dl><div className="work-detail-finance-usage"><span><small>Fornecedores pagos</small><strong>{supplierPaidRatio}%</strong></span><i role="progressbar" aria-valuenow={supplierPaidRatio} aria-valuemin={0} aria-valuemax={100} aria-label={`${supplierPaidRatio}% dos valores de fornecedores foram pagos`}><b style={{ width: `${supplierPaidRatio}%` }} /></i></div><button type="button" onClick={() => changeTab("Financeiro")}>Ver financeiro completo<ArrowRight aria-hidden="true" /></button></section>
@@ -2198,21 +2026,44 @@ function WorkDetailPage({ work, initialTab, initialTeam, onTeamChange, suppliers
         return <article key={member.id} className={hasMultipleRoles ? "work-team-multi-role" : undefined}><span className="work-team-avatar">{member.name.split(" ").slice(0, 2).map((name) => name[0]).join("")}</span><div className="work-team-identity"><small>{member.id}</small><strong>{member.name}</strong><em className={hasMultipleRoles ? "work-team-role-strong" : undefined}>{member.role}</em></div><div><small>Participação</small><strong>{formatExpenseDate(member.startDateIso)} — {formatExpenseDate(member.endDateIso)}</strong></div><div><small>Apontamento</small><strong>{member.quantity} {member.workMode.toLocaleLowerCase("pt-BR")}</strong><em>{brl.format(member.unitRate)} por unidade</em></div><div><small>Custo estimado</small><strong>{brl.format(member.quantity * member.unitRate)}</strong><em>{member.activityIds.length} atividades relacionadas</em></div><button type="button" className="work-team-remove" onClick={() => removeTeamMember(member)} aria-label={`Remover ${member.name}`} title={`Remover ${member.name}`}><Trash2 aria-hidden="true" /></button></article>;
       })}</div></section>}
 
-      {tab === "Fornecedores" && <WorkSuppliersPanel suppliers={suppliers} onChange={onSuppliersChange} onNotify={onNotify} onEvent={(event) => appendJournal({ kind: "Atualização", title: event.title, description: event.description, author: "Administrativo", files: event.files })} />}
+      {tab === "Fornecedores" && <WorkSuppliersPanel suppliers={suppliers} onChange={onSuppliersChange} onNotify={onNotify} onEvent={() => { void refreshJournal().catch(() => setGroup10Error('Não foi possível recarregar o diário.')); void refreshFinance().catch(() => setGroup10Error('Não foi possível recarregar o financeiro.')); }}
+        onCreateContract={work.databaseId ? (data) => registryService.createWorkContract(work.databaseId!, { name: String(data.get("name") ?? "").trim(), supplyType: String(data.get("supplyType") ?? "Serviço"), description: String(data.get("description") ?? "").trim(), contractedAmount: Number(data.get("contractedAmount") ?? 0), contractDateIso: String(data.get("contractDateIso") ?? ""), dueDateIso: String(data.get("dueDateIso") ?? ""), notes: String(data.get("notes") ?? "").trim() || undefined }) : undefined}
+        onRegisterPayment={work.databaseId ? (supplier, data) => registryService.payWorkContract(work.databaseId!, supplier.databaseId!, { amount: Number(data.get("amount") ?? 0), dateIso: String(data.get("dateIso") ?? ""), note: String(data.get("note") ?? "").trim() || undefined }) : undefined} />}
 
-      {tab === "Sócios" && <WorkPartnersPanel partners={partners} contributions={contributions} openContributionRequest={contributionRequest} onContributionRequestConsumed={() => setContributionRequest(0)} onPartnersChange={onPartnersChange} onContributionsChange={onContributionsChange} onPayment={registerPartnerPayment} onNotify={onNotify} onEvent={(event) => appendJournal({ kind: "Atualização", title: event.title, description: event.description, author: "Administrativo", files: [] })} />}
+      {tab === "Sócios" && <WorkPartnersPanel partners={partners} contributions={contributions} openContributionRequest={contributionRequest} onContributionRequestConsumed={() => setContributionRequest(0)} onAddPartner={addPartnerToWork} onEditParticipation={editPartnerParticipation} onRemovePartner={removePartnerFromWork} onCreateContribution={createWorkContribution} onRegisterPayment={registerContributionPayment} onNotify={onNotify} />}
 
-      {tab === "Financeiro" && <section className="work-detail-tab-panel work-finance-panel" aria-labelledby="work-finance-title"><header><div><p className="eyebrow">Custos e caixa da obra</p><h2 id="work-finance-title">Financeiro da obra</h2><span>Custos consolidados entre equipe e fornecedores, com aportes dos sócios e ajustes manuais de caixa.</span></div><div><button type="button" className="secondary-button" onClick={() => setAction({ type: "cash" })}>Realizar ajuste de caixa</button><button type="button" className="primary-button button-with-icon" onClick={requestContribution}><Plus aria-hidden="true" />Solicitar aporte</button></div></header><div className="work-finance-metrics"><article><span>Custo com equipe</span><strong>{brl.format(teamCost)}</strong><small>{team.length} pessoas alocadas</small></article><article><span>Custo com fornecedores</span><strong>{brl.format(supplierContracted)}</strong><small>{brl.format(supplierPaid)} pagos · {brl.format(supplierPending)} pendentes</small></article><article><span>Aportes recebidos</span><strong>{brl.format(contributionsReceived)}</strong><small>{brl.format(contributionPending)} aguardando os sócios</small></article><article className={availableCash < 0 ? "work-finance-cash-negative" : ""}><span>Caixa disponível</span><strong className={availableCash < 0 ? "negative" : ""}>{brl.format(availableCash)}</strong><small>{brl.format(cashAdjustments)} em ajustes de caixa</small></article></div>{availableCash < 0 && <div className="work-finance-cash-alert" role="alert"><span className="work-finance-cash-alert-mark" aria-hidden="true"><TriangleAlert /></span><div><strong>Caixa negativo</strong><p>Os custos pagos superam as entradas em {brl.format(Math.abs(availableCash))}. Registre uma entrada para reequilibrar o caixa desta obra.</p></div><div className="work-finance-cash-alert-actions"><button type="button" className="primary-button button-with-icon" onClick={requestContribution}><Plus aria-hidden="true" />Solicitar aporte</button><button type="button" className="secondary-button" onClick={() => setAction({ type: "cash" })}>Registrar ajuste de caixa</button></div></div>}{financeHasOutlook && <div className="work-finance-outlook"><div className="work-finance-outlook-head"><p className="eyebrow">Projeção de caixa</p><h3>Compromissos previstos</h3></div><div className="work-finance-outlook-grid">{supplierPending > 0 && <article><small>A pagar a fornecedores</small><strong className="negative">{brl.format(supplierPending)}</strong><em>{openSupplierContracts.length} {openSupplierContracts.length === 1 ? "contrato em aberto" : "contratos em aberto"}</em></article>}{contributionPending > 0 && <article><small>Aportes a receber</small><strong className="positive">{brl.format(contributionPending)}</strong><em>{pendingContributionCount} {pendingContributionCount === 1 ? "sócio pendente" : "sócios pendentes"}</em></article>}{nextSupplierDue && <article><small>Próximo vencimento de fornecedor</small><strong>{formatExpenseDate(nextSupplierDue.dueDateIso)}</strong><em>{nextSupplierDue.name}</em></article>}</div></div>}<div className="work-finance-section-heading"><div><p className="eyebrow">Entradas e correções</p><h3>Movimentações de caixa</h3></div><span>{financialEntries.length} registro(s)</span></div>{financialEntries.length ? <div className="work-finance-list">{financialEntries.map((entry) => <article key={entry.id}><span className={`work-finance-kind work-finance-kind-${entry.kind.toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[\u0300-\u036f]/g, "")}`}><WalletCards aria-hidden="true" /></span><div><small>{entry.id} · {formatExpenseDate(entry.dateIso)}{entry.sourceId ? ` · ${entry.sourceId}` : ""}</small><strong>{entry.description}</strong><em>{entry.party}</em></div><b className={entry.amount < 0 ? "negative" : ""}>{brl.format(entry.amount)}</b><WorkFinancialStatusBadge status={entry.status} /><span className="work-finance-row-action" /></article>)}</div> : <div className="work-finance-empty"><WalletCards aria-hidden="true" /><strong>Nenhuma movimentação de caixa</strong><p>Solicite um aporte aos sócios ou registre um ajuste quando houver correção manual do saldo.</p></div>}<aside className="work-finance-manual-note"><WifiOff aria-hidden="true" /><span><strong>Caixa por recebimento</strong>O aporte entra no caixa somente quando o pagamento do sócio é registrado. Ajustes e pagamentos de fornecedores permanecem manuais nesta demonstração.</span></aside></section>}
+      {tab === "Financeiro" && <section className="work-detail-tab-panel work-finance-panel" aria-labelledby="work-finance-title">
+        <header><div><p className="eyebrow">Custos e caixa da obra</p><h2 id="work-finance-title">Financeiro da obra</h2><span>Custos comprometidos e pagamentos efetivos consolidados no banco de dados.</span></div><div><button type="button" className="secondary-button" onClick={() => setAction({ type: "cash" })}>Realizar ajuste de caixa</button></div></header>
+        <div className="work-finance-metrics">
+          <article><span>Custo com equipe</span><strong>{brl.format(teamCost)}</strong><small>{team.length} pessoas alocadas · compromisso estimado</small></article>
+          <article><span>Custo com fornecedores</span><strong>{brl.format(supplierContracted)}</strong><small>{brl.format(supplierPaid)} pagos · {brl.format(supplierPending)} pendentes</small></article>
+          <article><span>Aportes recebidos</span><strong>{brl.format(contributionsReceived)}</strong><small>Somente pagamentos persistidos</small></article>
+          <article className={availableCash < 0 ? "work-finance-cash-negative" : ""}><span>Caixa disponível</span><strong className={availableCash < 0 ? "negative" : ""}>{brl.format(availableCash)}</strong><small>{brl.format(cashAdjustments)} em ajustes líquidos</small></article>
+        </div>
+        {availableCash < 0 && <div className="work-finance-cash-alert" role="alert"><span className="work-finance-cash-alert-mark" aria-hidden="true"><TriangleAlert /></span><div><strong>Caixa negativo</strong><p>Saídas pagas superam as entradas em {brl.format(Math.abs(availableCash))}.</p></div><div className="work-finance-cash-alert-actions"><button type="button" className="secondary-button" onClick={() => setAction({ type: "cash" })}>Registrar ajuste de caixa</button></div></div>}
+        {financeHasOutlook && <div className="work-finance-outlook"><div className="work-finance-outlook-head"><p className="eyebrow">Projeção de caixa</p><h3>Compromissos previstos</h3></div><div className="work-finance-outlook-grid">{supplierPending > 0 && <article><small>A pagar a fornecedores</small><strong className="negative">{brl.format(supplierPending)}</strong><em>{openSupplierContracts.length} contrato(s) em aberto</em></article>}{nextSupplierDue && <article><small>Próximo vencimento</small><strong>{formatExpenseDate(nextSupplierDue.dueDateIso)}</strong><em>{nextSupplierDue.name}</em></article>}</div></div>}
+        <div className="work-finance-section-heading"><div><p className="eyebrow">Entradas e correções</p><h3>Movimentações de caixa</h3></div><span>{financialEntries.length} registro(s)</span></div>
+        {financialEntries.length ? <div className="work-finance-list">{financialEntries.map((entry) => <article key={entry.databaseId ?? entry.id}><span className={`work-finance-kind work-finance-kind-${entry.kind.toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[\u0300-\u036f]/g, "")}`}><WalletCards aria-hidden="true" /></span><div><small>{entry.id} · {formatExpenseDate(entry.dateIso)}{entry.sourceId ? ` · ${entry.sourceId}` : ""}</small><strong>{entry.description}</strong><em>{entry.party}</em></div><b className={entry.amount < 0 ? "negative" : ""}>{brl.format(entry.amount)}</b><WorkFinancialStatusBadge status={entry.status} /><span className="work-finance-row-action">{entry.canReverse && <button type="button" onClick={() => requestAdjustmentReversal(entry)}>Estornar</button>}</span></article>)}</div> : <div className="work-finance-empty"><WalletCards aria-hidden="true" /><strong>Nenhuma movimentação de caixa</strong><p>Registre um ajuste quando houver uma correção manual do saldo.</p></div>}
+        <aside className="work-finance-manual-note"><Info aria-hidden="true" /><span><strong>Critério do caixa</strong>Equipe integra o custo comprometido, não as saídas pagas. Aportes demonstrativos do Grupo 9 não entram no caixa até serem persistidos.</span></aside>
+      </section>}
 
-      {tab === "Diário e arquivos" && <section className="work-detail-tab-panel work-journal-panel" aria-labelledby="work-journal-title"><header><div><p className="eyebrow">Histórico da execução</p><h2 id="work-journal-title">Diário e arquivos</h2><span>Registros anteriores são preservados e exibidos em ordem cronológica.</span></div><button type="button" className="primary-button button-with-icon" onClick={() => setAction({ type: "update" })}><Plus aria-hidden="true" />Nova atualização</button></header><div className="work-journal-layout"><div className="work-journal-timeline">{journal.map((entry) => <article key={entry.id}><time dateTime={entry.dateIso}><strong>{formatWorkDetailDateTime(entry.dateIso).split(" ").slice(0, 2).join(" ")}</strong><small>{formatWorkDetailDateTime(entry.dateIso).split(" ").slice(-1)}</small></time><i aria-hidden="true" className={`journal-${entry.kind.toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[\u0300-\u036f]/g, "")}`} /><div><header><span>{entry.kind}</span>{entry.progress !== undefined && <b>{entry.progress}%</b>}</header><h3>{entry.title}</h3><p>{entry.description}</p><small>{entry.author}</small>{entry.files.length > 0 && <ul>{entry.files.map((file) => <li key={file}><Paperclip aria-hidden="true" />{file}</li>)}</ul>}</div></article>)}</div><aside className="work-journal-files"><header><Paperclip aria-hidden="true" /><div><strong>Arquivos da obra{journalFileCount > 0 && <b aria-hidden="true">{journalFileCount}</b>}</strong><small>{journalFileCount === 1 ? "1 referência no diário" : `${journalFileCount} referências no diário`}</small></div></header>{journal.flatMap((entry) => entry.files.map((file) => ({ file, entry }))).map(({ file, entry }) => <article key={`${entry.id}-${file}`}><FileSignature aria-hidden="true" /><span><strong>{file}</strong><small>{entry.title}</small></span></article>)}</aside></div></section>}
+      {tab === "Diário e arquivos" && <section className="work-detail-tab-panel work-journal-panel" aria-labelledby="work-journal-title">
+        <header><div><p className="eyebrow">Histórico da execução</p><h2 id="work-journal-title">Diário e arquivos</h2><span>Registros persistidos em ordem cronológica; arquivos disponíveis para baixar.</span></div><button type="button" className="primary-button button-with-icon" onClick={() => setAction({ type: "update" })}><Plus aria-hidden="true" />Nova atualização</button></header>
+        <div className="work-journal-layout"><div className="work-journal-timeline">{journal.map((entry) => <article key={entry.databaseId ?? entry.id}>
+          <time dateTime={entry.dateIso}><strong>{formatWorkDetailDateTime(entry.dateIso).split(" ").slice(0, 2).join(" ")}</strong><small>{formatWorkDetailDateTime(entry.dateIso).split(" ").slice(-1)}</small></time>
+          <i aria-hidden="true" className={`journal-${entry.kind.toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[\u0300-\u036f]/g, "")}`} />
+          <div><header><span>{entry.kind}</span>{entry.progress !== undefined && <b>{entry.progress}%</b>}</header><h3>{entry.title}</h3><p>{entry.description}</p><small>{entry.author}</small>{entry.fileDocuments?.length ? <ul>{entry.fileDocuments.map((file) => <li key={file.id}><Paperclip aria-hidden="true" /><button type="button" onClick={() => void registryService.downloadDocument(file.id, file.name).catch((error) => setGroup10Error(error instanceof Error ? error.message : 'Não foi possível baixar o arquivo.'))}>{file.name}</button></li>)}</ul> : null}{entry.databaseId && <label className="work-journal-attach">Adicionar arquivo<input type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void attachJournalFile(entry, file); }} /></label>}</div>
+        </article>)}</div><aside className="work-journal-files"><header><Paperclip aria-hidden="true" /><div><strong>Arquivos da obra{journalFileCount > 0 && <b aria-hidden="true">{journalFileCount}</b>}</strong><small>{journalFileCount === 1 ? "1 arquivo no diário" : `${journalFileCount} arquivos no diário`}</small></div></header>{journal.flatMap((entry) => (entry.fileDocuments ?? []).map((file) => ({ file, entry }))).map(({ file, entry }) => <article key={file.id}><FileSignature aria-hidden="true" /><span><strong>{file.name}</strong><small>{entry.title}</small></span><button type="button" onClick={() => void registryService.downloadDocument(file.id, file.name).catch((error) => setGroup10Error(error instanceof Error ? error.message : 'Não foi possível baixar o arquivo.'))}>Baixar</button></article>)}</aside></div>
+      </section>}
     </div>
-    {action && <WorkDetailActionModal action={action} work={work} onClose={() => setAction(null)} onSubmit={handleActionSubmit} />}
+    {action && <WorkDetailActionModal action={action} work={work} error={group10Error} onClose={() => setAction(null)} onSubmit={handleActionSubmit} />}
     {confirmPrompt && <ConfirmDialog title={confirmPrompt.title} message={confirmPrompt.message} confirmLabel={confirmPrompt.confirmLabel} cancelLabel={confirmPrompt.cancelLabel ?? "Cancelar"} tone={confirmPrompt.tone ?? "default"} onConfirm={() => { confirmPrompt.onConfirm(); setConfirmPrompt(null); }} onCancel={() => setConfirmPrompt(null)} />}
   </>;
 }
 
-function WorkDetailActionModal({ action, work, onClose, onSubmit }: { action: NonNullable<WorkDetailAction>; work: WorkRecord; onClose: () => void; onSubmit: (action: NonNullable<WorkDetailAction>, data: FormData) => void }) {
+function WorkDetailActionModal({ action, work, error, onClose, onSubmit }: { action: NonNullable<WorkDetailAction>; work: WorkRecord; error: string | null; onClose: () => void; onSubmit: (action: NonNullable<WorkDetailAction>, data: FormData) => Promise<void> }) {
   const modalRef = useRef<HTMLFormElement>(null);
+  const [busy, setBusy] = useState(false);
   const targetActivity = "activity" in action ? action.activity : null;
   const presentation: Record<NonNullable<WorkDetailAction>["type"], { eyebrow: string; title: string; submit: string }> = {
     update: { eyebrow: "Diário da obra", title: "Registrar atualização", submit: "Salvar atualização" },
@@ -2234,6 +2085,7 @@ function WorkDetailActionModal({ action, work, onClose, onSubmit }: { action: No
   const [teamEndDate, setTeamEndDate] = useState(defaultTeamEndDate);
   const [reprogramEndDate, setReprogramEndDate] = useState(() => action.type === "reprogram" ? action.activity.endDateIso : WORKS_DEMO_DATE_ISO);
   const [updateFiles, setUpdateFiles] = useState<string[]>([]);
+  const [updateFilesActual, setUpdateFilesActual] = useState<File[]>([]);
 
   useEffect(() => {
     const panel = modalRef.current;
@@ -2274,14 +2126,15 @@ function WorkDetailActionModal({ action, work, onClose, onSubmit }: { action: No
       window.requestAnimationFrame(() => opener?.isConnected && opener.focus());
     };
   }, [requestClose]);
-  return <ModalPortal><div className="modal-layer" role="dialog" aria-modal="true" aria-label={copy.title}><button type="button" className="drawer-backdrop" onClick={requestClose} aria-label="Fechar formulário" /><form ref={modalRef} tabIndex={-1} className="receipt-modal work-detail-modal" onChange={onFormChange} onSubmit={(event) => { event.preventDefault(); onSubmit(action, new FormData(event.currentTarget)); }}><ModalHeader eyebrow={copy.eyebrow} title={copy.title} onClose={requestClose} /><div className="work-detail-modal-body">
-    {action.type === "update" && <div className="form-grid"><label>Tipo de registro<select name="kind" defaultValue="Atualização"><option>Atualização</option><option>Ocorrência</option><option>Pendência</option><option>Arquivo</option></select></label><label>Progresso atual (%)<input name="progress" type="number" min="0" max="100" defaultValue={work.progress} required /></label><label className="full-field">Título<input name="title" placeholder="Ex.: Setor B concluído" required /></label><label className="full-field">Descrição<textarea name="description" rows={4} placeholder="O que aconteceu e qual é o próximo passo?" required /></label><label className="full-field">Próxima atividade<input name="nextActivity" defaultValue={work.nextActivity} required /></label><FileField className="full-field" name="fileNames" multiple label="Fotos ou arquivos" hint="Somente os nomes dos arquivos são mantidos nesta demonstração." accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" value={updateFiles} onChange={setUpdateFiles} /></div>}
+  return <ModalPortal><div className="modal-layer" role="dialog" aria-modal="true" aria-label={copy.title}><button type="button" className="drawer-backdrop" onClick={requestClose} aria-label="Fechar formulário" /><form ref={modalRef} tabIndex={-1} className="receipt-modal work-detail-modal" onChange={onFormChange} onSubmit={(event) => { event.preventDefault(); if (busy) return; const data = new FormData(event.currentTarget); updateFilesActual.forEach((file) => data.append('uploadFiles', file)); setBusy(true); void onSubmit(action, data).finally(() => setBusy(false)); }}><ModalHeader eyebrow={copy.eyebrow} title={copy.title} onClose={requestClose} /><div className="work-detail-modal-body">
+    {error && <p className="work-group10-error full-field" role="alert">{error}</p>}
+    {action.type === "update" && <div className="form-grid"><label>Tipo de registro<select name="kind" defaultValue="Atualização"><option>Atualização</option><option>Ocorrência</option><option>Pendência</option><option>Arquivo</option></select></label><label>Progresso atual (%)<input name="progress" type="number" min="0" max="100" defaultValue={work.progress} required /></label><label className="full-field">Título<input name="title" placeholder="Ex.: Setor B concluído" required /></label><label className="full-field">Descrição<textarea name="description" rows={4} placeholder="O que aconteceu e qual é o próximo passo?" required /></label><label className="full-field">Próxima atividade<input name="nextActivity" defaultValue={work.nextActivity} required /></label><FileField className="full-field" multiple label="Fotos ou arquivos" hint="Arquivos enviados e preservados no diário da obra." accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" value={updateFiles} onChange={setUpdateFiles} onFilesChange={setUpdateFilesActual} /></div>}
     {action.type === "activity" && <div className="form-grid"><label>Etapa<select name="stage" defaultValue="Execução"><option>Preparação</option><option>Execução</option><option>Entrega</option></select></label><label>Responsável<select name="manager" defaultValue={work.manager}>{WORK_TEAM_OPTIONS.map((member) => <option key={member.name}>{member.name}</option>)}</select></label><label className="full-field">Atividade<input name="title" placeholder="Ex.: Teste e conferência final" required /></label><label>Início<input name="startDateIso" type="date" value={activityStartDate} onChange={(event) => setActivityStartDate(event.target.value)} required /></label><label>Conclusão<input name="endDateIso" type="date" value={activityEndDate} min={activityStartDate || undefined} onChange={(event) => setActivityEndDate(event.target.value)} required /></label></div>}
     {action.type === "team" && <div className="form-grid"><label>Pessoa<select name="name" defaultValue="Lucas Rocha">{WORK_TEAM_OPTIONS.map((member) => <option key={member.name}>{member.name}</option>)}</select></label><label>Função<input name="role" placeholder="Ex.: Técnico de manutenção" required /></label><label>Início<input name="startDateIso" type="date" value={teamStartDate} onChange={(event) => { const nextStart = event.target.value; setTeamStartDate(nextStart); if (teamEndDate && nextStart > teamEndDate) setTeamEndDate(nextStart); }} required /></label><label>Fim<input name="endDateIso" type="date" value={teamEndDate} min={teamStartDate || undefined} onChange={(event) => setTeamEndDate(event.target.value)} required /></label><label>Forma de apontamento<select name="workMode"><option>Horas</option><option>Diárias</option></select></label><label>Quantidade<input name="quantity" type="number" min="0.5" step="0.5" required /></label><label>Valor por unidade<input name="unitRate" type="number" min="0" step="0.01" required /></label></div>}
-    {action.type === "cash" && <div className="form-grid"><p className="work-detail-modal-context full-field"><strong>Ajuste manual</strong>Use um valor positivo ou negativo para corrigir o saldo após uma conferência. Aportes são registrados pelos pagamentos dos sócios.</p><label>Data<input name="dateIso" type="date" defaultValue={WORKS_DEMO_DATE_ISO} required /></label><label className="full-field">Descrição<input name="description" placeholder="Ex.: Correção do saldo após conferência" required /></label><label>Valor do ajuste<input name="amount" type="number" step="0.01" required /></label></div>}
+    {action.type === "cash" && <div className="form-grid"><p className="work-detail-modal-context full-field"><strong>Ajuste manual</strong>Use um valor positivo ou negativo para corrigir o saldo após uma conferência. Aportes são registrados pelos pagamentos dos sócios.</p><label>Data<input name="dateIso" type="date" defaultValue={new Date().toLocaleDateString('en-CA')} required /></label><label className="full-field">Descrição<input name="description" placeholder="Ex.: Correção do saldo após conferência" required /></label><label>Valor do ajuste<input name="amount" type="number" step="0.01" required /></label></div>}
     {action.type === "block" && <div className="form-grid"><p className="work-detail-modal-context full-field"><strong>{action.activity.title}</strong>O motivo ficará visível no planejamento e no diário.</p><label className="full-field">Motivo do bloqueio<textarea name="reason" rows={4} placeholder="Explique o que impede a continuidade." required /></label></div>}
     {action.type === "reprogram" && <div className="form-grid"><p className="work-detail-modal-context full-field"><strong>{action.activity.title}</strong>Prazo atual: {formatExpenseDate(action.activity.endDateIso)}</p><label>Nova conclusão<input name="endDateIso" type="date" value={reprogramEndDate} min={action.activity.startDateIso} onChange={(event) => setReprogramEndDate(event.target.value)} required /></label><label className="full-field">Justificativa<textarea name="reason" rows={3} placeholder="Por que a data está sendo alterada?" required /></label></div>}
-  </div><footer><button type="button" className="secondary-button" onClick={requestClose}>Cancelar</button><button type="submit" className="primary-button button-with-icon"><Check aria-hidden="true" />{copy.submit}</button></footer></form>
+  </div><footer><button type="button" className="secondary-button" onClick={requestClose} disabled={busy}>Cancelar</button><button type="submit" className="primary-button button-with-icon" disabled={busy}><Check aria-hidden="true" />{busy ? 'Salvando…' : copy.submit}</button></footer></form>
     {discardDialog}
   </div></ModalPortal>;
 }
@@ -2499,6 +2352,11 @@ function WorkFormPage({ work, works, properties, units, onCancel, onSave }: { wo
 }
 
 function DashboardPage({ charges, negotiations, expenses, properties, units, contracts, onNavigate }: { charges: Charge[]; negotiations: Record<string, ChargeNegotiation>; expenses: Expense[]; properties: Property[]; units: Unit[]; contracts: Contract[]; onNavigate: (page: Page, status?: string) => void }) {
+  // Competência e data-base derivadas da data atual (antes eram fixas em "08/2026").
+  const now = new Date();
+  const monthAbbr = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+  const currentCompetence = `${String(now.getMonth() + 1).padStart(2, "0")}/${now.getFullYear()}`;
+  const dataBaseLabel = `${now.getDate()} ${monthAbbr[now.getMonth()]} ${now.getFullYear()}`;
   const openCharges = charges.filter((charge) => charge.status !== "Recebida");
   const overdueCharges = charges.filter((charge) => charge.status === "Vencida");
   const partialCharges = charges.filter((charge) => charge.status === "Parcial");
@@ -2507,7 +2365,7 @@ function DashboardPage({ charges, negotiations, expenses, properties, units, con
   const receivableBalance = openCharges.reduce((sum, charge) => sum + operationalChargeBalance(charge, negotiations[charge.id]), 0);
   const overdueReceivable = overdueCharges.reduce((sum, charge) => sum + chargeBalance(charge), 0);
   const payableBalance = openExpenses.reduce((sum, expense) => sum + expense.amount, 0);
-  const currentPeriodCharges = charges.filter((charge) => charge.competence === "08/2026");
+  const currentPeriodCharges = charges.filter((charge) => charge.competence === currentCompetence);
   const currentPeriodBilled = currentPeriodCharges.reduce((sum, charge) => sum + chargeTotal(charge), 0);
   const currentPeriodReceived = currentPeriodCharges.reduce((sum, charge) => sum + receivedTotal(charge), 0);
   const currentPeriodExpenses = expenses.reduce((sum, expense) => sum + expense.amount, 0);
@@ -2539,7 +2397,7 @@ function DashboardPage({ charges, negotiations, expenses, properties, units, con
   const chartBilledTotal = monthlyRows.reduce((sum, row) => sum + row.billed, 0);
   const chartReceivedTotal = monthlyRows.reduce((sum, row) => sum + row.received, 0);
   const chartCollectionRate = chartBilledTotal ? Math.round((chartReceivedTotal / chartBilledTotal) * 100) : 0;
-  const chartLastCompetence = monthlyRows[monthlyRows.length - 1]?.competence ?? "08/2026";
+  const chartLastCompetence = monthlyRows[monthlyRows.length - 1]?.competence ?? currentCompetence;
   const portfolios = Array.from(new Set(units.map((unit) => unit.portfolio))).map((portfolio) => {
     const portfolioUnits = units.filter((unit) => unit.portfolio === portfolio);
     const occupied = portfolioUnits.filter((unit) => unit.occupied).length;
@@ -2551,7 +2409,7 @@ function DashboardPage({ charges, negotiations, expenses, properties, units, con
   return <>
     <section className="dashboard-executive-hero" aria-labelledby="dashboard-title">
       <div className="dashboard-executive-main">
-        <header><div><span className="dashboard-live-dot" aria-hidden="true" /><span>Data-base demonstrativa · 12 ago 2026</span></div><b>Competência 08/2026</b></header>
+        <header><div><span className="dashboard-live-dot" aria-hidden="true" /><span>Data-base · {dataBaseLabel}</span></div><b>Competência {currentCompetence}</b></header>
         <div className="dashboard-executive-copy"><p>Painel executivo</p><h1 id="dashboard-title">Visão geral</h1><span>Uma leitura integrada da operação patrimonial e da posição financeira.</span></div>
         <div className="dashboard-result"><span>Projeção do resultado mensal</span><strong className={projectedResult >= 0 ? "positive" : "negative"}>{brl.format(projectedResult)}</strong><small>Recebíveis previstos menos todas as despesas cadastradas</small></div>
         <div className="dashboard-result-breakdown"><span><small>Recebíveis previstos</small><strong>{brl.format(currentPeriodBilled)}</strong></span><span><small>Despesas cadastradas</small><strong>{brl.format(currentPeriodExpenses)}</strong></span><span className="dashboard-realized-summary"><small>Realizado até a data-base</small><strong className={realizedResult >= 0 ? "positive" : "negative"}>{brl.format(realizedResult)}</strong><em>{brl.format(currentPeriodReceived)} recebidos − {brl.format(currentPeriodPaidExpenses)} pagos</em></span></div>
@@ -3029,7 +2887,7 @@ function TenantsPage({ tenants, agencies, contracts, charges, search, setSearch,
   </div>;
 }
 
-function AgencyModal({ agencies, onClose, onSave }: { agencies: RealEstateAgency[]; onClose: () => void; onSave: (agency: Omit<RealEstateAgency, "id">) => void }) {
+function AgencyModal({ agencies, onClose, onSave }: { agencies: RealEstateAgency[]; onClose: () => void; onSave: (agency: Omit<RealEstateAgency, "id" | "databaseId">) => void | Promise<void> }) {
   const [document, setDocument] = useState("");
   const [documentError, setDocumentError] = useState("");
   const [formError, setFormError] = useState("");
@@ -3063,7 +2921,14 @@ function AgencyModal({ agencies, onClose, onSave }: { agencies: RealEstateAgency
     }
     setFormError("");
     setSaving(true);
-    window.setTimeout(() => onSave({ name: String(data.get("agencyName") ?? "").trim(), tradeName: String(data.get("agencyTradeName") ?? "").trim(), document, creci: String(data.get("agencyCreci") ?? "").trim(), contactName: String(data.get("agencyContactName") ?? "").trim(), phone: String(data.get("agencyPhone") ?? "").trim(), email: String(data.get("agencyEmail") ?? "").trim(), notes: String(data.get("agencyNotes") ?? "").trim() }), 450);
+    window.setTimeout(async () => {
+      try {
+        await onSave({ name: String(data.get("agencyName") ?? "").trim(), tradeName: String(data.get("agencyTradeName") ?? "").trim(), document, creci: String(data.get("agencyCreci") ?? "").trim(), contactName: String(data.get("agencyContactName") ?? "").trim(), phone: String(data.get("agencyPhone") ?? "").trim(), email: String(data.get("agencyEmail") ?? "").trim(), notes: String(data.get("agencyNotes") ?? "").trim() });
+      } catch (error) {
+        setSaving(false);
+        setFormError(error instanceof Error ? error.message : "Não foi possível salvar. Tente novamente.");
+      }
+    }, 450);
   };
 
   return <div className="modal-layer" role="dialog" aria-modal="true" aria-label="Nova imobiliária"><button type="button" className="drawer-backdrop" onClick={requestClose} aria-label="Fechar formulário" /><form className="receipt-modal entity-modal agency-modal" noValidate onSubmit={handleSubmit} onInputCapture={() => formError && setFormError("")} onChange={onFormChange}><header className="entity-form-hero"><span className="entity-form-mark" aria-hidden="true">IM</span><div><p>Rede de administração</p><h2>Nova imobiliária</h2><span>Cadastre a empresa que será responsável pelo relacionamento com locatários.</span></div><b>Novo cadastro</b><button type="button" className="close-button" onClick={requestClose} aria-label="Fechar formulário"><X aria-hidden="true" /></button></header><div className="entity-modal-body"><InlineFieldError message={formError} /><div className="form-grid entity-grid">
@@ -3258,11 +3123,11 @@ function ChargeDrawer({ charge, negotiation, receipts, onClose, onReceipt, onNeg
       <div className="charge-detail-balance"><span>{negotiation ? "Saldo acordado" : "Saldo atual"}</span><strong>{brl.format(balanceValue)}</strong><small>{negotiation ? "valor da negociação" : "a receber"}</small></div>
       <div className="charge-detail-progress"><span><b>{receivedRate}% recebido</b><small>{charge.status === "Recebida" ? "Cobrança integralmente quitada" : "Progresso das baixas registradas"}</small></span><i aria-hidden="true"><b style={{ width: `${receivedRate}%` }} /></i></div>
     </section>
-    {negotiation && <section className="negotiation-card" aria-labelledby="negotiation-card-title"><div className="section-title"><h3 id="negotiation-card-title">Acordo de negociação</h3><span>{negotiation.id}</span></div><div className="negotiation-card-values"><span>Total acordado<strong>{brl.format(negotiation.negotiatedTotal)}</strong></span><span>Entrada prevista<strong>{brl.format(negotiation.downPayment)}</strong></span><span>Parcelamento<strong>{negotiation.installmentCount}× de {brl.format(negotiation.schedule[0]?.amount ?? 0)}</strong></span></div><dl className="negotiation-card-meta"><div><dt>Motivo</dt><dd>{negotiation.reason === "Outro" ? negotiation.otherReason || "Outro" : negotiation.reason}</dd></div><div><dt>Forma de pagamento</dt><dd>{negotiation.paymentMethod}</dd></div><div><dt>Período</dt><dd>{formatExpenseDate(negotiation.firstDueDate)}{lastInstallment && negotiation.installmentCount > 1 ? ` — ${formatExpenseDate(lastInstallment.dueDate)}` : ""}</dd></div>{negotiation.contactName && <div><dt>Contato</dt><dd>{negotiation.contactName} · {negotiation.contactChannel}</dd></div>}{negotiation.agreementDocumentName && <div><dt>Documento</dt><dd>{negotiation.agreementDocumentName}</dd></div>}</dl>{negotiation.notes && <p>{negotiation.notes}</p>}</section>}
+    {negotiation && <section className="negotiation-card" aria-labelledby="negotiation-card-title"><div className="section-title"><h3 id="negotiation-card-title">Acordo de negociação</h3><span>{negotiation.id}</span></div><div className="negotiation-card-values"><span>Total acordado<strong>{brl.format(negotiation.negotiatedTotal)}</strong></span><span>Entrada prevista<strong>{brl.format(negotiation.downPayment)}</strong></span><span>Parcelamento<strong>{negotiation.installmentCount}× de {brl.format(negotiation.schedule[0]?.amount ?? 0)}</strong></span></div><dl className="negotiation-card-meta"><div><dt>Motivo</dt><dd>{negotiation.reason === "Outro" ? negotiation.otherReason || "Outro" : negotiation.reason}</dd></div><div><dt>Forma de pagamento</dt><dd>{negotiation.paymentMethod}</dd></div><div><dt>Ajustes</dt><dd>Desconto {brl.format(negotiation.discount)} · multa {brl.format(negotiation.surchargeBreakdown?.fine ?? 0)} · juros {brl.format(negotiation.surchargeBreakdown?.interest ?? 0)} · correção {brl.format(negotiation.surchargeBreakdown?.correction ?? 0)}</dd></div><div><dt>Período</dt><dd>{formatExpenseDate(negotiation.firstDueDate)}{lastInstallment && negotiation.installmentCount > 1 ? ` — ${formatExpenseDate(lastInstallment.dueDate)}` : ""}</dd></div>{negotiation.contactName && <div><dt>Contato</dt><dd>{negotiation.contactName} · {negotiation.contactChannel}</dd></div>}{negotiation.agreementDocumentName && <div><dt>Documento</dt><dd>{negotiation.agreementDocumentName}</dd></div>}</dl>{negotiation.notes && <p>{negotiation.notes}</p>}</section>}
     <section className="charge-detail-context" aria-labelledby="charge-context-title"><header><div><span>Origem da cobrança</span><h3 id="charge-context-title">Vínculos e competência</h3></div><b>{charge.competence}</b></header><div><span>Contrato<strong title={charge.contract}>{charge.contract}</strong></span><span>Carteira<strong title={charge.portfolio}>{charge.portfolio}</strong></span><span>Locatário<strong title={charge.tenant}>{charge.tenant}</strong></span><span>Imóvel<strong title={charge.property}>{charge.property}</strong></span><span>Tipo<strong>{charge.inclusionType || "Normal"}</strong></span><span>Pagamento<strong>{charge.paymentMethod || "Não definido"}</strong></span></div><footer>{charge.units.map((unit) => <span key={unit}>{unit}</span>)}</footer></section>
     <section className="charge-items-block"><div className="section-title"><h3>Composição da cobrança</h3><span>{charge.items.length} itens</span></div><div className="charge-items">{charge.items.map((item) => <article className="charge-item" key={`${item.name}-${item.dueDate}`}><div className="charge-item-head"><strong>{item.name}</strong><span>Vence {item.dueDate}</span></div>{(item.reference || item.supportDocumentName) && <p className="charge-item-reference-line">{[item.reference, item.supportDocumentName].filter(Boolean).join(" · ")}</p>}<div className="charge-item-values"><span>Previsto <b>{brl.format(item.amount)}</b></span><span>Recebido <b>{brl.format(item.received)}</b></span><span>Saldo <b>{brl.format(item.amount - item.received)}</b></span></div></article>)}</div></section>
-    <section className="history-block"><div className="section-title"><h3>Histórico de recebimentos</h3><span>{receipts.length ? `${receipts.length} ${receipts.length === 1 ? "registro" : "registros"}` : receivedTotal(charge) ? "Registro demonstrativo" : "Sem registros"}</span></div>{receipts.length ? receipts.map((receipt) => <div className="history-entry" key={receipt.id}><i aria-hidden="true" /><div><strong>{brl.format(receipt.amount)}</strong><span>{formatExpenseDate(receipt.receiptDate)} · {receipt.paymentMethod} · {receipt.financialAccount}</span>{receipt.reference && <small>Referência {receipt.reference}</small>}</div></div>) : receivedTotal(charge) ? <div className="history-entry"><i aria-hidden="true" /><div><strong>{brl.format(receivedTotal(charge))}</strong><span>10 ago 2026 · Baixa manual distribuída por item</span></div></div> : <CompactEmptyState mark="↓" tone="charge" title="Aguardando a primeira baixa" description="Recebimentos parciais ou integrais serão organizados aqui em ordem cronológica." />}</section>
-  </div><footer className="drawer-footer charge-drawer-footer charge-detail-footer"><button type="button" className="secondary-button drawer-footer-close" onClick={onClose}>Fechar</button>{charge.status !== "Recebida" && <><button type="button" className="secondary-button negotiation-action-button button-with-icon" onClick={onNegotiate}><Handshake aria-hidden="true" />{negotiation ? "Editar negociação" : "Negociar cobrança"}</button><button type="button" className="primary-button button-with-icon" onClick={onReceipt}><HandCoins aria-hidden="true" />Registrar recebimento</button></>}</footer></aside></div>;
+    <section className="history-block"><div className="section-title"><h3>Histórico de recebimentos</h3><span>{receipts.length ? `${receipts.length} ${receipts.length === 1 ? "registro" : "registros"}` : receivedTotal(charge) ? "Registro demonstrativo" : "Sem registros"}</span></div>{receipts.length ? receipts.map((receipt) => <div className="history-entry" key={receipt.id}><i aria-hidden="true" /><div><strong>{brl.format(receipt.amount)}</strong><span>{formatExpenseDate(receipt.receiptDate)} · {receipt.paymentMethod} · {receipt.financialAccount}</span>{receipt.creditDate !== receipt.receiptDate && <small>Crédito em {formatExpenseDate(receipt.creditDate)}</small>}{(receipt.discount > 0 || receipt.interest > 0) && <small>Ajustes: desconto {brl.format(receipt.discount)} · acréscimo {brl.format(receipt.interest)} · liquidado {brl.format(receipt.amount + receipt.discount - receipt.interest)}</small>}{receipt.reference && <small>Referência {receipt.reference}</small>}{receipt.thirdPartyPayer && <small>Pagador {receipt.thirdPartyPayer}</small>}{receipt.proofName && <small>Comprovante {receipt.proofName}</small>}{receipt.note && <small>{receipt.note}</small>}</div></div>) : receivedTotal(charge) ? <div className="history-entry"><i aria-hidden="true" /><div><strong>{brl.format(receivedTotal(charge))}</strong><span>10 ago 2026 · Baixa manual distribuída por item</span></div></div> : <CompactEmptyState mark="↓" tone="charge" title="Aguardando a primeira baixa" description="Recebimentos parciais ou integrais serão organizados aqui em ordem cronológica." />}</section>
+  </div><footer className="drawer-footer charge-drawer-footer charge-detail-footer"><button type="button" className="secondary-button drawer-footer-close" onClick={onClose}>Fechar</button>{charge.status !== "Recebida" && <><button type="button" className="secondary-button negotiation-action-button button-with-icon" onClick={onNegotiate}><Handshake aria-hidden="true" />{negotiation ? "Renegociar condições" : "Negociar cobrança"}</button><button type="button" className="primary-button button-with-icon" onClick={onReceipt}><HandCoins aria-hidden="true" />Registrar recebimento</button></>}</footer></aside></div>;
 }
 
 function ContractDrawer({ contract, charges, onClose, onCharge }: { contract: Contract; charges: Charge[]; onClose: () => void; onCharge: () => void }) {
@@ -3322,7 +3187,8 @@ function ExpenseDrawer({ expense, onClose, onStatusChange }: { expense: Expense;
         <div><span>Situação</span><strong>{expense.status}</strong><small>{timing || (expense.status === "Pago" ? "Pagamento concluído" : "Dentro do prazo")}</small></div>
       </section>
       <section className="expense-detail-timeline" aria-labelledby="expense-timeline-title"><header><div><span>Agenda financeira</span><h3 id="expense-timeline-title">Vencimento e pagamento</h3></div>{timing && <b className={expense.status === "Vencido" ? "expense-timeline-overdue" : "expense-timeline-soon"}>{timing}</b>}</header><div><span className="expense-timeline-due"><i aria-hidden="true" /><small>Vencimento</small><strong>{expense.dueDate}</strong></span><i aria-hidden="true" /><span className={expense.status === "Pago" ? "expense-timeline-complete" : ""}><i aria-hidden="true" /><small>Pagamento</small><strong>{expense.paidDate ?? "Ainda não realizado"}</strong></span></div></section>
-      <dl className="detail-list registry-detail-list"><div><dt>Competência</dt><dd>{expense.competence || "Não informada"}</dd></div><div><dt>Alocação</dt><dd>{expense.allocationType || "Geral da operação"}{expense.allocationId ? ` · ${expense.allocationId}` : ""}</dd></div><div><dt>Documento</dt><dd>{[expense.documentType, expense.documentNumber].filter(Boolean).join(" · ") || "Não informado"}</dd></div><div><dt>Lançamento</dt><dd>{expense.entryType || "Única"}{expense.recurrence ? ` · ${expense.recurrence}` : ""}</dd></div><div><dt>Pagamento</dt><dd>{[expense.paymentMethod, expense.financialAccount].filter(Boolean).join(" · ") || "Ainda não realizado"}</dd></div><div><dt>Anexo</dt><dd>{expense.attachmentName || "Não anexado"}</dd></div></dl>
+      <dl className="detail-list registry-detail-list"><div><dt>Competência</dt><dd>{expense.competence || "Não informada"}</dd></div><div><dt>Alocação</dt><dd>{expense.allocationType || "Geral da operação"}{expense.allocationId ? ` · ${expense.allocationId}` : ""}</dd></div><div><dt>Documento</dt><dd>{[expense.documentType, expense.documentNumber].filter(Boolean).join(" · ") || "Não informado"}{expense.issueDate ? ` · emitido em ${formatExpenseDate(expense.issueDate)}` : ""}</dd></div><div><dt>Lançamento</dt><dd>{expense.entryType || "Única"}{expense.recurrence ? ` · ${expense.recurrence}` : ""}</dd></div><div><dt>Previsão</dt><dd>{expense.plannedDate ? formatExpenseDate(expense.plannedDate) : "Não informada"}</dd></div><div><dt>Pagamento</dt><dd>{[expense.paymentMethod, expense.financialAccount].filter(Boolean).join(" · ") || "Ainda não realizado"}</dd></div><div><dt>Anexo</dt><dd>{expense.attachmentName || "Não anexado"}</dd></div></dl>
+      {expense.notes && <p className="detail-note">{expense.notes}</p>}
       {expense.status === "Vencido" && <aside className="expense-alert"><span>!</span><div><strong>Pagamento em atraso</strong><p>Esta despesa está vencida e precisa de acompanhamento.</p></div></aside>}
       {expense.status === "Pendente" && timing && <aside className="expense-alert expense-alert-soon"><span>•</span><div><strong>Vencimento próximo</strong><p>Priorize a conferência desta despesa.</p></div></aside>}
       <section className="expense-status-editor" aria-labelledby="expense-status-title"><div><h3 id="expense-status-title">Atualizar situação</h3><p>Registre a evolução operacional deste compromisso.</p></div><label>Status<select value={status} onChange={(event) => { const nextStatus = event.target.value as ExpenseStatus; setStatus(nextStatus); if (nextStatus === "Pago" && !paidIso) setPaidIso(DEMO_DATE_ISO); }}><option>Pendente</option><option>Vencido</option><option>Pago</option></select></label>{status === "Pago" && <label>Data do pagamento<input type="date" value={paidIso} onChange={(event) => setPaidIso(event.target.value)} required /></label>}</section>
@@ -3336,7 +3202,7 @@ function ReportExportModal({ initialPortfolio, portfolioOptions, propertyOptions
     const [leftMonth, leftYear] = left.split("/").map(Number);
     const [rightMonth, rightYear] = right.split("/").map(Number);
     return leftYear * 12 + leftMonth - (rightYear * 12 + rightMonth);
-  }).at(-1) ?? "08/2026", [chargeOptions]);
+  }).at(-1) ?? `${String(new Date().getMonth() + 1).padStart(2, "0")}/${new Date().getFullYear()}`, [chargeOptions]);
   const initialScope = portfolioOptions.some((portfolio) => portfolio.name === initialPortfolio) ? initialPortfolio : ALL_REPORT_PORTFOLIOS;
   const [portfolioScope, setPortfolioScope] = useState(initialScope);
   const [competenceInput, setCompetenceInput] = useState(competenceToInputValue(latestCompetence));
@@ -3405,15 +3271,16 @@ function ReportExportModal({ initialPortfolio, portfolioOptions, propertyOptions
 
 function NegotiationModal({ charge, negotiation, onClose, onSave }: { charge: Charge; negotiation?: ChargeNegotiation; onClose: () => void; onSave: (negotiation: ChargeNegotiation) => void }) {
   const originalBalance = chargeBalance(charge);
-  const moneyInput = (value: number | undefined) => value ? String(value) : "";
-  const [discount, setDiscount] = useState(moneyInput(negotiation?.discount));
-  const [fine, setFine] = useState(moneyInput(negotiation?.surchargeBreakdown?.fine ?? negotiation?.surcharge));
-  const [interest, setInterest] = useState(moneyInput(negotiation?.surchargeBreakdown?.interest));
-  const [correction, setCorrection] = useState(moneyInput(negotiation?.surchargeBreakdown?.correction));
-  const [downPayment, setDownPayment] = useState(moneyInput(negotiation?.downPayment));
+  // Uma substituição aplica novos ajustes sobre o saldo remanescente. Repetir os
+  // ajustes da versão anterior cobraria desconto/acréscimo duas vezes.
+  const [discount, setDiscount] = useState("");
+  const [fine, setFine] = useState("");
+  const [interest, setInterest] = useState("");
+  const [correction, setCorrection] = useState("");
+  const [downPayment, setDownPayment] = useState("");
   const [downPaymentDueDate, setDownPaymentDueDate] = useState(negotiation?.downPaymentDueDate ?? DEMO_DATE_ISO);
   const [installmentCount, setInstallmentCount] = useState(String(negotiation?.installmentCount ?? 3));
-  const [firstDueDate, setFirstDueDate] = useState(negotiation?.firstDueDate ?? "2026-09-10");
+  const [firstDueDate, setFirstDueDate] = useState(negotiation?.firstDueDate ?? addDaysIso(DEMO_DATE_ISO, 30));
   const [reason, setReason] = useState(negotiation?.reason ?? "");
   const [otherReason, setOtherReason] = useState(negotiation?.otherReason ?? "");
   const [paymentMethod, setPaymentMethod] = useState(negotiation?.paymentMethod ?? "Boleto bancário");
@@ -3422,6 +3289,13 @@ function NegotiationModal({ charge, negotiation, onClose, onSave }: { charge: Ch
   const [agreementDocumentName, setAgreementDocumentName] = useState(negotiation?.agreementDocumentName ?? "");
   const [notes, setNotes] = useState(negotiation?.notes ?? "");
   const [formError, setFormError] = useState("");
+  const [step, setStep] = useState(1);
+  const stepDescriptions = [
+    "Separe desconto, encargos e uma entrada prevista para o acordo.",
+    "Monte o parcelamento, os vencimentos e o motivo da negociação.",
+    "Registre com quem o acordo foi tratado e anexe a evidência.",
+    "Confira o resumo do acordo antes de confirmar.",
+  ];
   const { onFormChange, requestClose, discardDialog } = useDiscardGuard(onClose, "Os termos da negociação não serão salvos.");
   const surcharge = Number(fine || 0) + Number(interest || 0) + Number(correction || 0);
   const terms: NegotiationTerms = {
@@ -3439,6 +3313,30 @@ function NegotiationModal({ charge, negotiation, onClose, onSave }: { charge: Ch
   const clearError = () => setFormError("");
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (step < 4) {
+      const currentSection = event.currentTarget.querySelector<HTMLElement>(`.negotiation-step-${step}`);
+      const invalidField = currentSection ? Array.from(currentSection.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>("input, select, textarea")).find((field) => !field.checkValidity()) : undefined;
+      if (invalidField) {
+        const fieldName = invalidField.closest("label")?.childNodes[0]?.textContent?.trim() || "campo obrigatório";
+        invalidField.setAttribute("aria-invalid", "true");
+        setFormError(`Revise “${fieldName}” antes de continuar.`);
+        invalidField.focus();
+        return;
+      }
+      if (step === 1) {
+        if (termsError) { setFormError(termsError); return; }
+        if (terms.downPayment > 0 && !downPaymentDueDate) { setFormError("Informe o vencimento da entrada."); return; }
+      }
+      if (step === 2) {
+        if (termsError) { setFormError(termsError); return; }
+        if (!reason) { setFormError("Selecione o motivo da negociação."); return; }
+        if (reason === "Outro" && !otherReason.trim()) { setFormError("Descreva o motivo da negociação."); return; }
+        if (!paymentMethod) { setFormError("Selecione a forma de pagamento."); return; }
+      }
+      setFormError("");
+      setStep((current) => Math.min(4, current + 1));
+      return;
+    }
     const error = termsError || (!reason ? "Selecione o motivo da negociação." : "") || (reason === "Outro" && !otherReason.trim() ? "Descreva o motivo da negociação." : "") || (terms.downPayment > 0 && !downPaymentDueDate ? "Informe o vencimento da entrada." : "") || (!paymentMethod ? "Selecione a forma de pagamento." : "");
     if (error) {
       setFormError(error);
@@ -3465,10 +3363,10 @@ function NegotiationModal({ charge, negotiation, onClose, onSave }: { charge: Ch
     });
   };
 
-  return <div className="modal-layer" role="dialog" aria-modal="true" aria-label={`Negociar cobrança ${charge.id}`}><button type="button" className="drawer-backdrop" onClick={requestClose} aria-label="Fechar negociação" /><form className="receipt-modal negotiation-modal" noValidate onSubmit={handleSubmit} onChange={onFormChange}><ModalHeader eyebrow={negotiation ? "Revisão do acordo" : "Cobrança em aberto"} title={negotiation ? `Editar negociação ${charge.id}` : `Negociar ${charge.id}`} onClose={requestClose} /><div className="negotiation-modal-body">
+  return <div className="modal-layer" role="dialog" aria-modal="true" aria-label={`Negociar cobrança ${charge.id}`}><button type="button" className="drawer-backdrop" onClick={requestClose} aria-label="Fechar negociação" /><form className="receipt-modal entity-modal entity-negotiation-modal entity-wizard-modal negotiation-modal" noValidate onSubmit={handleSubmit} onChange={onFormChange}><header className="entity-form-hero"><span className="entity-form-mark" aria-hidden="true">NG</span><div><h2>{negotiation ? `Renegociar ${charge.id}` : `Negociar ${charge.id}`}</h2><span>{stepDescriptions[step - 1]}</span></div><b>{negotiation ? "Nova versão" : "Novo acordo"}</b><button type="button" className="close-button" onClick={requestClose} aria-label="Fechar negociação"><X aria-hidden="true" /></button></header><nav className="portfolio-form-progress" aria-label="Progresso da negociação" role="progressbar" aria-valuemin={1} aria-valuemax={stepDescriptions.length} aria-valuenow={step}>{stepDescriptions.map((_, index) => <span key={index} aria-label={`Etapa ${index + 1}`} className={index + 1 <= step ? "is-complete" : ""} aria-current={index + 1 === step ? "step" : undefined} />)}</nav><div className="entity-modal-body negotiation-modal-body">
     <div className="negotiation-context"><div><span>Locatário</span><strong>{charge.tenant}</strong></div><div><span>Competência</span><strong>{charge.competence}</strong></div><div><span>Saldo atual</span><strong>{brl.format(originalBalance)}</strong></div></div>
     <InlineFieldError message={formError || termsError} />
-    <section className="negotiation-section" aria-labelledby="negotiation-values-title"><div className="negotiation-section-heading"><span aria-hidden="true">01</span><div><h3 id="negotiation-values-title">Condições financeiras</h3><p>Separe desconto, encargos e uma entrada prevista para manter a memória de cálculo.</p></div></div><div className="negotiation-fields-grid">
+    <section className="negotiation-section negotiation-step negotiation-step-1" hidden={step !== 1} aria-labelledby="negotiation-values-title"><div className="negotiation-section-heading"><span aria-hidden="true">01</span><div><h3 id="negotiation-values-title">Condições financeiras</h3><p>Separe desconto, encargos e uma entrada prevista para manter a memória de cálculo.</p></div></div><div className="negotiation-fields-grid">
       <label>Desconto<input type="number" inputMode="decimal" min="0" max={originalBalance} step="0.01" placeholder="0,00" value={discount} onChange={(event) => { setDiscount(event.target.value); clearError(); }} /><small>Reduz o saldo original.</small></label>
       <label>Multa<input type="number" inputMode="decimal" min="0" step="0.01" placeholder="0,00" value={fine} onChange={(event) => { setFine(event.target.value); clearError(); }} /></label>
       <label>Juros<input type="number" inputMode="decimal" min="0" step="0.01" placeholder="0,00" value={interest} onChange={(event) => { setInterest(event.target.value); clearError(); }} /></label>
@@ -3476,17 +3374,16 @@ function NegotiationModal({ charge, negotiation, onClose, onSave }: { charge: Ch
       <label>Entrada prevista<input type="number" inputMode="decimal" min="0" max={Math.max(0, totals.negotiatedTotal - 0.01)} step="0.01" placeholder="0,00" value={downPayment} onChange={(event) => { setDownPayment(event.target.value); clearError(); }} /><small>Não será registrada como recebida automaticamente.</small></label>
       {terms.downPayment > 0 && <label>Vencimento da entrada<input type="date" min={DEMO_DATE_ISO} value={downPaymentDueDate} onChange={(event) => { setDownPaymentDueDate(event.target.value); clearError(); }} required /></label>}
     </div></section>
-    <section className="negotiation-section" aria-labelledby="negotiation-installments-title"><div className="negotiation-section-heading"><span aria-hidden="true">02</span><div><h3 id="negotiation-installments-title">Parcelamento e vencimentos</h3><p>Monte o calendário mensal para o saldo após a entrada.</p></div></div><div className="negotiation-fields-grid negotiation-installment-fields">
+    <section className="negotiation-section negotiation-step negotiation-step-2" hidden={step !== 2} aria-labelledby="negotiation-installments-title"><div className="negotiation-section-heading"><span aria-hidden="true">02</span><div><h3 id="negotiation-installments-title">Parcelamento e vencimentos</h3><p>Monte o calendário mensal para o saldo após a entrada.</p></div></div><div className="negotiation-fields-grid negotiation-installment-fields">
       <label>Número de parcelas<input type="number" inputMode="numeric" min="1" max="24" step="1" value={installmentCount} onChange={(event) => { setInstallmentCount(event.target.value); clearError(); }} required /></label>
       <label>Primeiro vencimento<input type="date" min={DEMO_DATE_ISO} value={firstDueDate} onChange={(event) => { setFirstDueDate(event.target.value); clearError(); }} required /></label>
       <label>Forma de pagamento<select value={paymentMethod} onChange={(event) => { setPaymentMethod(event.target.value); clearError(); }} required><option>Boleto bancário</option><option>Pix</option><option>Transferência bancária</option><option>Débito automático</option></select></label>
       <label>Motivo da negociação<select value={reason} onChange={(event) => { setReason(event.target.value); clearError(); }} required><option value="" disabled>Selecione o motivo</option><option>Atraso temporário</option><option>Readequação de fluxo</option><option>Contestação parcial</option><option>Acordo comercial</option><option>Outro</option></select></label>
       {reason === "Outro" && <label className="full-field">Descrição do motivo<input value={otherReason} onChange={(event) => { setOtherReason(event.target.value); clearError(); }} required /></label>}
     </div></section>
-    <section className="negotiation-preview" aria-labelledby="negotiation-preview-title"><div className="section-title"><h3 id="negotiation-preview-title">Resumo do acordo</h3><span>{schedule.length ? `${schedule.length} ${schedule.length === 1 ? "parcela" : "parcelas"}` : "Revise as condições"}</span></div><div className="negotiation-preview-values"><span>Saldo original<strong>{brl.format(originalBalance)}</strong></span><span>Desconto<strong className="negotiation-discount">− {brl.format(terms.discount)}</strong></span><span>Acréscimos<strong>+ {brl.format(terms.surcharge)}</strong></span><span>Total acordado<strong>{brl.format(totals.negotiatedTotal)}</strong></span><span>Entrada prevista<strong>{brl.format(terms.downPayment)}</strong></span><span>Saldo parcelado<strong>{brl.format(totals.financedAmount)}</strong></span></div>{schedule.length > 0 && <div className="negotiation-schedule"><div className="negotiation-schedule-heading"><span>Calendário previsto</span><strong>{terms.installmentCount}× a partir de {brl.format(firstInstallment)}</strong></div><ol>{schedule.map((installment) => <li key={installment.number}><span>{String(installment.number).padStart(2, "0")}</span><strong>{formatExpenseDate(installment.dueDate)}</strong><b>{brl.format(installment.amount)}</b></li>)}</ol></div>}</section>
-    <section className="negotiation-section" aria-labelledby="negotiation-record-title"><div className="negotiation-section-heading"><span aria-hidden="true">03</span><div><h3 id="negotiation-record-title">Contato e formalização</h3><p>Registre com quem o acordo foi tratado e a evidência correspondente.</p></div></div><div className="negotiation-fields-grid"><label>Contato responsável<input value={contactName} onChange={(event) => setContactName(event.target.value)} placeholder="Nome da pessoa que aprovou" /></label><label>Canal do acordo<select value={contactChannel} onChange={(event) => setContactChannel(event.target.value)}><option>WhatsApp</option><option>E-mail</option><option>Telefone</option><option>Presencial</option><option>Portal</option></select></label><FileField className="full-field" label="Documento do acordo" optional hint="Termo, e-mail ou evidência do aceite." accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" value={agreementDocumentName ? [agreementDocumentName] : []} onChange={(names) => setAgreementDocumentName(names[0] ?? "")} /></div></section>
-    <label className="standalone-label negotiation-notes">Observações<textarea rows={3} maxLength={500} placeholder="Registre condições adicionais ou o histórico do contato." value={notes} onChange={(event) => { setNotes(event.target.value); clearError(); }} /><small>{notes.length}/500 caracteres</small></label>
-  </div><footer><button type="button" className="secondary-button" onClick={requestClose}>Cancelar</button><button className="primary-button" disabled={Boolean(termsError)}>{negotiation ? "Salvar alterações" : "Confirmar negociação"}</button></footer></form>
+    <section className="negotiation-section negotiation-step negotiation-step-3" hidden={step !== 3} aria-labelledby="negotiation-record-title"><div className="negotiation-section-heading"><span aria-hidden="true">03</span><div><h3 id="negotiation-record-title">Contato e formalização</h3><p>Registre com quem o acordo foi tratado e a evidência correspondente.</p></div></div><div className="negotiation-fields-grid"><label>Contato responsável<input value={contactName} onChange={(event) => setContactName(event.target.value)} placeholder="Nome da pessoa que aprovou" /></label><label>Canal do acordo<select value={contactChannel} onChange={(event) => setContactChannel(event.target.value)}><option>WhatsApp</option><option>E-mail</option><option>Telefone</option><option>Presencial</option><option>Portal</option></select></label><FileField className="full-field" label="Documento do acordo" optional hint="Termo, e-mail ou evidência do aceite." accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" value={agreementDocumentName ? [agreementDocumentName] : []} onChange={(names) => setAgreementDocumentName(names[0] ?? "")} /><label className="standalone-label negotiation-notes full-field">Observações<textarea rows={3} maxLength={500} placeholder="Registre condições adicionais ou o histórico do contato." value={notes} onChange={(event) => { setNotes(event.target.value); clearError(); }} /><small>{notes.length}/500 caracteres</small></label></div></section>
+    {step === 4 && <section className="negotiation-preview" aria-labelledby="negotiation-preview-title"><div className="section-title"><h3 id="negotiation-preview-title">Resumo do acordo</h3><span>{schedule.length ? `${schedule.length} ${schedule.length === 1 ? "parcela" : "parcelas"}` : "Revise as condições"}</span></div><div className="negotiation-preview-values"><span>Saldo original<strong>{brl.format(originalBalance)}</strong></span><span>Desconto<strong className="negotiation-discount">− {brl.format(terms.discount)}</strong></span><span>Acréscimos<strong>+ {brl.format(terms.surcharge)}</strong></span><span>Total acordado<strong>{brl.format(totals.negotiatedTotal)}</strong></span><span>Entrada prevista<strong>{brl.format(terms.downPayment)}</strong></span><span>Saldo parcelado<strong>{brl.format(totals.financedAmount)}</strong></span></div>{schedule.length > 0 && <div className="negotiation-schedule"><div className="negotiation-schedule-heading"><span>Calendário previsto</span><strong>{terms.installmentCount}× a partir de {brl.format(firstInstallment)}</strong></div><ol>{schedule.map((installment) => <li key={installment.number}><span>{String(installment.number).padStart(2, "0")}</span><strong>{formatExpenseDate(installment.dueDate)}</strong><b>{brl.format(installment.amount)}</b></li>)}</ol></div>}<div className="negotiation-preview-meta"><span>Motivo: {reason || "não informado"}{reason === "Outro" && otherReason.trim() ? ` — ${otherReason.trim()}` : ""}</span><span>Pagamento: {paymentMethod}{contactName.trim() ? ` · ${contactName.trim()}` : ""}</span></div></section>}
+  </div><footer className="entity-form-footer portfolio-wizard-footer"><button type="button" className="secondary-button button-with-icon" onClick={step === 1 ? requestClose : () => setStep((current) => Math.max(1, current - 1))}>{step === 1 ? "Cancelar" : <><ArrowRight aria-hidden="true" style={{ transform: "rotate(180deg)" }} />Voltar</>}</button><button className="primary-button button-with-icon" disabled={step === 4 && Boolean(termsError)} title={step === 4 && termsError ? termsError : undefined}>{step === 4 ? <><CircleCheck aria-hidden="true" />{negotiation ? "Salvar nova versão" : "Confirmar negociação"}</> : <>Continuar<ArrowRight aria-hidden="true" /></>}</button></footer></form>
     {discardDialog}
   </div>;
 }
@@ -3507,6 +3404,10 @@ function ReceiptModal({ charge, onClose, onSave }: { charge: Charge; onClose: ()
   const [proofName, setProofName] = useState("");
   const [note, setNote] = useState("");
   const [step, setStep] = useState<1 | 2>(1);
+  const stepDescriptions = [
+    "Informe o valor recebido, os ajustes e a comprovação.",
+    "Revise a distribuição do valor entre os itens da cobrança.",
+  ];
   const { onFormChange, requestClose, discardDialog } = useDiscardGuard(onClose, "Os dados do recebimento não serão salvos.");
   const receivedValue = Number(receivedAmount);
   const discountValue = Number(discount || 0);
@@ -3573,11 +3474,7 @@ function ReceiptModal({ charge, onClose, onSave }: { charge: Charge; onClose: ()
       allocations: allocations.map((amount, index) => ({ itemIndex: pendingItems[index].itemIndex, amount })).filter((allocation) => allocation.amount > 0),
     });
   };
-  return <div className="modal-layer" role="dialog" aria-modal="true" aria-label="Registrar recebimento"><button type="button" className="drawer-backdrop" onClick={requestClose} aria-label="Fechar formulário" /><form className="receipt-modal allocation-modal" onSubmit={handleReceiptSubmit} onChange={onFormChange}><ModalHeader eyebrow="Baixa manual" title="Registrar recebimento" onClose={requestClose} />
-    <ol className="receipt-steps" aria-label={`Etapa ${step} de 2`}>
-      <li className={step === 1 ? "is-active" : "is-done"} aria-current={step === 1 ? "step" : undefined}><b>{step === 1 ? "1" : <Check aria-hidden="true" />}</b>Dados do recebimento</li>
-      <li className={step === 2 ? "is-active" : ""} aria-current={step === 2 ? "step" : undefined}><b>2</b>Revisão da distribuição</li>
-    </ol>
+  return <div className="modal-layer" role="dialog" aria-modal="true" aria-label="Registrar recebimento"><button type="button" className="drawer-backdrop" onClick={requestClose} aria-label="Fechar formulário" /><form className="receipt-modal entity-modal entity-receipt-modal entity-wizard-modal allocation-modal" onSubmit={handleReceiptSubmit} onChange={onFormChange}><header className="entity-form-hero"><span className="entity-form-mark" aria-hidden="true">RE</span><div><h2>Registrar recebimento</h2><span>{stepDescriptions[step - 1]}</span></div><b>Baixa manual</b><button type="button" className="close-button" onClick={requestClose} aria-label="Fechar formulário"><X aria-hidden="true" /></button></header><nav className="portfolio-form-progress" aria-label={`Etapa ${step} de 2`} role="progressbar" aria-valuemin={1} aria-valuemax={2} aria-valuenow={step}>{stepDescriptions.map((_, index) => <span key={index} aria-label={`Etapa ${index + 1}`} className={index + 1 <= step ? "is-complete" : ""} aria-current={index + 1 === step ? "step" : undefined} />)}</nav><div className="entity-modal-body receipt-wizard-body">
     <div className="receipt-summary"><div><span>Valor da cobrança</span><strong>{brl.format(chargeTotal(charge))}</strong></div><div><span>Já recebido</span><strong>{brl.format(receivedTotal(charge))}</strong></div><div><span>Saldo atual</span><strong>{brl.format(currentBalance)}</strong></div></div><InlineFieldError message={receiptError} />
     {step === 1 && <>
     <section className="receipt-form-section"><div className="section-title"><h3>Dados do recebimento</h3><span>Informações para conciliação e auditoria</span></div><div className="form-grid"><label>Data do recebimento<input type="date" value={receiptDate} onChange={(event) => setReceiptDate(event.target.value)} required /></label><label>Data do crédito<input type="date" value={creditDate} onChange={(event) => setCreditDate(event.target.value)} required /></label><label>Valor recebido<input type="number" inputMode="decimal" min="0.01" step="0.01" placeholder="0,00" value={receivedAmount} onChange={(event) => changeReceivedAmount(event.target.value)} required autoFocus /></label><label>Forma de pagamento<select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)} required>{PAYMENT_METHOD_OPTIONS.map((method) => <option key={method}>{method}</option>)}</select></label><label>Conta financeira<select value={financialAccount} onChange={(event) => setFinancialAccount(event.target.value)} required>{FINANCIAL_ACCOUNT_OPTIONS.map((account) => <option key={account}>{account}</option>)}</select></label><label>Identificador / referência<input value={reference} placeholder="NSU, E2E do Pix ou código bancário" onChange={(event) => setReference(event.target.value)} /></label></div></section>
@@ -3590,7 +3487,7 @@ function ReceiptModal({ charge, onClose, onSave }: { charge: Charge; onClose: ()
     <div className="post-balance"><span>Saldo após esta baixa</span><strong>{brl.format(Math.max(0, currentBalance - allocationTotal))}</strong></div>
     <aside className="receipt-review" role="status"><span aria-hidden="true"><Check /></span><div><strong>Confira antes de confirmar</strong><p>{brl.format(receivedValue)} recebido via {paymentMethod}, liquidando {brl.format(allocationTotal)} em {allocations.filter((value) => value > 0).length} {allocations.filter((value) => value > 0).length === 1 ? "item" : "itens"}. O saldo ficará em {brl.format(Math.max(0, currentBalance - allocationTotal))}.</p></div></aside>
     </>}
-    <footer>{step === 1 ? <button type="button" className="secondary-button" onClick={requestClose}>Cancelar</button> : <button type="button" className="secondary-button" onClick={() => setStep(1)}><ArrowRight aria-hidden="true" style={{ transform: "rotate(180deg)" }} />Voltar aos dados</button>}<button className="primary-button button-with-icon" disabled={step === 1 ? !canAdvance : !canConfirm}>{step === 1 ? <>Continuar<ArrowRight aria-hidden="true" /></> : <><CircleCheck aria-hidden="true" />Confirmar recebimento</>}</button></footer></form>
+  </div><footer className="entity-form-footer portfolio-wizard-footer">{step === 1 ? <button type="button" className="secondary-button button-with-icon" onClick={requestClose}>Cancelar</button> : <button type="button" className="secondary-button button-with-icon" onClick={() => setStep(1)}><ArrowRight aria-hidden="true" style={{ transform: "rotate(180deg)" }} />Voltar aos dados</button>}<button className="primary-button button-with-icon" disabled={step === 1 ? !canAdvance : !canConfirm}>{step === 1 ? <>Continuar<ArrowRight aria-hidden="true" /></> : <><CircleCheck aria-hidden="true" />Confirmar recebimento</>}</button></footer></form>
     {discardDialog}
   </div>;
 }
@@ -3602,10 +3499,13 @@ function EntityFormSection({ index, title, description, children, className = ""
   return <section className={`entity-form-section full-field ${className}`} hidden={hidden}>{!hideHeader && <header><span>{index}</span><div><h3>{title}</h3><p>{description}</p></div></header>}<div className="entity-form-section-fields">{children}</div></section>;
 }
 
-function EntityForm({ kind, portfolio, property, unit, tenant, documents: initialDocuments = [], categorizedDocuments: initialCategorizedDocuments = createEmptyCategorizedDocuments(), chargeSourceContract, portfolioOptions, propertyOptions, unitOptions, tenantOptions, agencyOptions, contractOptions, chargeOptions, onClose, onSave }: { kind: Exclude<FormKind, null>; portfolio?: Portfolio | null; property?: Property | null; unit?: Unit | null; tenant?: Tenant | null; documents?: LocalDocument[]; categorizedDocuments?: CategorizedDocuments; chargeSourceContract?: Contract | null; portfolioOptions: Portfolio[]; propertyOptions: Property[]; unitOptions: Unit[]; tenantOptions: Tenant[]; agencyOptions: RealEstateAgency[]; contractOptions: Contract[]; chargeOptions: Charge[]; onClose: () => void; onSave: (data: FormData, documents?: FormDocuments) => void }) {
+function EntityForm({ kind, portfolio, property, unit, tenant, documents: initialDocuments = [], categorizedDocuments: initialCategorizedDocuments = createEmptyCategorizedDocuments(), chargeSourceContract, portfolioOptions, propertyOptions, unitOptions, tenantOptions, agencyOptions, contractOptions, chargeOptions, supplierOptions = [], onClose, onSave }: { kind: Exclude<FormKind, null>; portfolio?: Portfolio | null; property?: Property | null; unit?: Unit | null; tenant?: Tenant | null; documents?: LocalDocument[]; categorizedDocuments?: CategorizedDocuments; chargeSourceContract?: Contract | null; portfolioOptions: Portfolio[]; propertyOptions: Property[]; unitOptions: Unit[]; tenantOptions: Tenant[]; agencyOptions: RealEstateAgency[]; contractOptions: Contract[]; chargeOptions: Charge[]; supplierOptions?: string[]; onClose: () => void; onSave: (data: FormData, documents?: FormDocuments) => void | Promise<void> }) {
   const initialUnitType = unit?.unitType || UNIT_TYPE_OPTIONS.find((type) => unit?.name.startsWith(`${type.replace(" comercial", "")} `)) || "Sala comercial";
   const initialUnitCode = unit?.code ?? unit?.name.replace(new RegExp(`^${initialUnitType.replace(" comercial", "")}\\s+`, "i"), "") ?? "";
   const initialChargeContract = chargeSourceContract ?? contractOptions[0];
+  const currentCompetenceInput = currentMonthInputValue();
+  const initialChargeCompetence = initialChargeContract?.startIso?.slice(0, 7);
+  const defaultChargeCompetence = initialChargeCompetence && initialChargeCompetence > currentCompetenceInput ? initialChargeCompetence : currentCompetenceInput;
   const baseConfig = {
     portfolio: ["Estrutura patrimonial", "Nova Carteira", "Salvar carteira"], property: ["Estrutura patrimonial", "Novo imóvel", "Salvar imóvel"], unit: ["Estrutura locável", "Nova unidade", "Salvar unidade"], tenant: ["Cadastro essencial", "Novo locatário", "Salvar locatário"], contract: ["Locação", "Novo contrato", "Salvar contrato"], charge: ["Inclusão manual", "Nova cobrança", "Salvar cobrança"], expense: ["Controle financeiro", "Nova despesa", "Salvar despesa"],
   }[kind];
@@ -3625,14 +3525,21 @@ function EntityForm({ kind, portfolio, property, unit, tenant, documents: initia
   const [portfolioReview, setPortfolioReview] = useState<Record<string, string>>({});
   const [propertyStep, setPropertyStep] = useState(1);
   const [propertyReview, setPropertyReview] = useState<Record<string, string>>({});
+  const [unitStep, setUnitStep] = useState(1);
+  const [unitReview, setUnitReview] = useState<Record<string, string>>({});
+  const [tenantStep, setTenantStep] = useState(1);
+  const [tenantReview, setTenantReview] = useState<Record<string, string>>({});
   const [tenantType, setTenantType] = useState<Tenant["type"]>(tenant?.type ?? "PJ");
   const [tenantDocument, setTenantDocument] = useState(tenant?.document ?? "");
   const [tenantDocumentError, setTenantDocumentError] = useState("");
+  const [contractStep, setContractStep] = useState(1);
+  const [contractReview, setContractReview] = useState<Record<string, string>>({});
   const [contractPortfolio, setContractPortfolio] = useState(portfolioOptions[0]?.name ?? "");
   const [contractProperty, setContractProperty] = useState("");
   const [selectedUnits, setSelectedUnits] = useState<string[]>([]);
   const [contractStart, setContractStart] = useState("");
   const [contractRent, setContractRent] = useState("");
+  const [contractAdjustmentIndex, setContractAdjustmentIndex] = useState("IPCA");
   const [contractGuaranteeType, setContractGuaranteeType] = useState("Sem garantia");
   const [contractDocumentName, setContractDocumentName] = useState("");
   const [contractRules, setContractRules] = useState<ContractChargeRule[]>([
@@ -3640,11 +3547,15 @@ function EntityForm({ kind, portfolio, property, unit, tenant, documents: initia
     { name: "IPTU", responsibility: "Locatário", calculation: "Valor variável", amount: 0, dueRule: "Mesmo dia do aluguel", recurrence: "Mensal", proofRequired: true },
     { name: "Condomínio", responsibility: "Locatário", calculation: "Valor variável", amount: 0, dueRule: "Conforme documento", recurrence: "Mensal", proofRequired: true },
   ]);
+  const [chargeStep, setChargeStep] = useState(1);
+  const [chargeReview, setChargeReview] = useState<Record<string, string>>({});
   const [chargeContractId, setChargeContractId] = useState(initialChargeContract?.id ?? "");
-  const [chargeCompetence, setChargeCompetence] = useState("2026-08");
-  const [chargeItems, setChargeItems] = useState<ChargeDraftItem[]>(() => initialChargeContract ? buildChargeItemsFromContract(initialChargeContract, "2026-08") : []);
+  const [chargeCompetence, setChargeCompetence] = useState(defaultChargeCompetence);
+  const [chargeItems, setChargeItems] = useState<ChargeDraftItem[]>(() => initialChargeContract ? buildChargeItemsFromContract(initialChargeContract, defaultChargeCompetence) : []);
   const [chargeItemsDirty, setChargeItemsDirty] = useState(false);
   const [chargeInclusionType, setChargeInclusionType] = useState("Normal");
+  const [expenseStep, setExpenseStep] = useState(1);
+  const [expenseReview, setExpenseReview] = useState<Record<string, string>>({});
   const [expenseAllocationType, setExpenseAllocationType] = useState("Geral da operação");
   const [expenseEntryType, setExpenseEntryType] = useState("Única");
   const [expenseAlreadyPaid, setExpenseAlreadyPaid] = useState(false);
@@ -3777,6 +3688,161 @@ function EntityForm({ kind, portfolio, property, unit, tenant, documents: initia
       setPropertyStep((step) => Math.min(4, step + 1));
       return;
     }
+    if (kind === "unit" && unitStep < 3) {
+      const currentSection = formRef.current?.querySelector<HTMLElement>(`.unit-step-${unitStep}`);
+      const invalidField = currentSection ? Array.from(currentSection.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>("input, select, textarea")).find((field) => !field.checkValidity()) : undefined;
+      if (invalidField) {
+        const fieldName = invalidField.closest("label")?.childNodes[0]?.textContent?.trim() || "campo obrigatório";
+        invalidField.setAttribute("aria-invalid", "true");
+        invalidField.setAttribute("aria-describedby", "entity-form-error");
+        setFormError(`Revise “${fieldName}” antes de continuar.`);
+        invalidField.focus();
+        return;
+      }
+      setFormError("");
+      if (unitStep === 2 && formRef.current) {
+        const values = new FormData(formRef.current);
+        setUnitReview(Object.fromEntries(Array.from(values.entries()).map(([key, value]) => [key, String(value)])));
+      }
+      setUnitStep((step) => Math.min(3, step + 1));
+      return;
+    }
+    if (kind === "tenant" && tenantStep < 4) {
+      const currentSection = formRef.current?.querySelector<HTMLElement>(`.tenant-step-${tenantStep}`);
+      const invalidField = currentSection ? Array.from(currentSection.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>("input, select, textarea")).find((field) => !field.checkValidity()) : undefined;
+      if (invalidField) {
+        const fieldName = invalidField.closest("label")?.childNodes[0]?.textContent?.trim() || "campo obrigatório";
+        invalidField.setAttribute("aria-invalid", "true");
+        invalidField.setAttribute("aria-describedby", "entity-form-error");
+        setFormError(`Revise “${fieldName}” antes de continuar.`);
+        invalidField.focus();
+        return;
+      }
+      if (tenantStep === 1) {
+        const documentError = getTenantDocumentError(tenantDocument, tenantType);
+        if (documentError) {
+          setTenantDocumentError(documentError);
+          formRef.current?.querySelector<HTMLElement>('[name="tenantDocument"]')?.focus();
+          return;
+        }
+      }
+      if (tenantStep === 2 && formRef.current) {
+        const values = new FormData(formRef.current);
+        if (!String(values.get("tenantPhone") ?? "").trim() && !String(values.get("tenantEmail") ?? "").trim()) {
+          setFormError("Informe ao menos um canal de contato: telefone/WhatsApp ou e-mail.");
+          return;
+        }
+      }
+      setFormError("");
+      if (tenantStep === 3 && formRef.current) {
+        const values = new FormData(formRef.current);
+        setTenantReview(Object.fromEntries(Array.from(values.entries()).map(([key, value]) => [key, String(value)])));
+      }
+      setTenantStep((step) => Math.min(4, step + 1));
+      return;
+    }
+    if (kind === "contract" && contractStep < 5) {
+      const currentSection = formRef.current?.querySelector<HTMLElement>(`.contract-step-${contractStep}`);
+      const invalidField = currentSection ? Array.from(currentSection.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>("input, select, textarea")).find((field) => !field.checkValidity()) : undefined;
+      if (invalidField) {
+        const fieldName = invalidField.closest("label")?.childNodes[0]?.textContent?.trim() || "campo obrigatório";
+        invalidField.setAttribute("aria-invalid", "true");
+        invalidField.setAttribute("aria-describedby", "entity-form-error");
+        setFormError(`Revise “${fieldName}” antes de continuar.`);
+        invalidField.focus();
+        return;
+      }
+      const values = formRef.current ? new FormData(formRef.current) : null;
+      if (contractStep === 1 && selectedUnits.length === 0) {
+        setFormError("Selecione ao menos uma unidade pertencente ao imóvel escolhido.");
+        return;
+      }
+      if (contractStep === 2 && values) {
+        const startIso = String(values.get("contractStart") ?? "");
+        const endIso = String(values.get("contractEnd") ?? "");
+        if (startIso && endIso && startIso >= endIso) {
+          setFormError("O fim da vigência deve ser posterior ao início do contrato.");
+          return;
+        }
+        if (Number(values.get("contractRent")) <= 0) {
+          setFormError("O aluguel base deve ser maior que zero.");
+          return;
+        }
+      }
+      if (contractStep === 3 && (contractRules.length === 0 || contractRules.some((rule) => !rule.name.trim() || (rule.calculation === "Valor fixo" && rule.name !== "Aluguel" && rule.amount <= 0)))) {
+        setFormError("Revise a composição financeira: cada item precisa de categoria e valor quando for fixo.");
+        return;
+      }
+      if (contractStep === 4 && contractGuaranteeType !== "Sem garantia" && values && !String(values.get("contractGuaranteeDetails") ?? "").trim()) {
+        setFormError("Detalhe a garantia selecionada antes de continuar.");
+        return;
+      }
+      setFormError("");
+      if (contractStep === 4 && values) {
+        setContractReview(Object.fromEntries(Array.from(values.entries()).map(([key, value]) => [key, String(value)])));
+      }
+      setContractStep((step) => Math.min(5, step + 1));
+      return;
+    }
+    if (kind === "charge" && chargeStep < 3) {
+      const currentSection = formRef.current?.querySelector<HTMLElement>(`.charge-step-${chargeStep}`);
+      const invalidField = currentSection ? Array.from(currentSection.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>("input, select, textarea")).find((field) => !field.checkValidity()) : undefined;
+      if (invalidField) {
+        const fieldName = invalidField.closest("label")?.childNodes[0]?.textContent?.trim() || "campo obrigatório";
+        invalidField.setAttribute("aria-invalid", "true");
+        invalidField.setAttribute("aria-describedby", "entity-form-error");
+        setFormError(`Revise “${fieldName}” antes de continuar.`);
+        invalidField.focus();
+        return;
+      }
+      if (chargeStep === 1) {
+        const step1Error = !selectedChargeContract ? "Selecione um contrato válido para a cobrança."
+          : !chargeCompetenceParts ? "Informe uma competência válida."
+          : duplicateCharge && chargeInclusionType === "Normal" ? `Já existe a cobrança ${duplicateCharge.id} para ${chargeContractId} na competência ${chargeCompetenceLabel}. Escolha reemissão ou lançamento extraordinário se for uma exceção.`
+          : "";
+        if (step1Error) {
+          setFormError(step1Error);
+          return;
+        }
+      }
+      if (chargeStep === 2) {
+        const step2Error = chargeItems.length === 0 ? "Adicione ao menos um item à cobrança."
+          : !chargeItems.some((item) => Number.isFinite(item.amount) && item.amount > 0) ? "A cobrança precisa ter ao menos um item com valor positivo."
+          : chargeItems.some((item) => !item.name.trim() || !Number.isFinite(item.amount) || item.amount <= 0) ? "Todos os itens devem ter descrição e valor maior que zero."
+          : chargeItems.some((item) => !/^\d{4}-\d{2}-\d{2}$/.test(item.due)) ? "Todos os vencimentos devem ser datas válidas."
+          : "";
+        if (step2Error) {
+          setFormError(step2Error);
+          return;
+        }
+      }
+      setFormError("");
+      if (chargeStep === 2 && formRef.current) {
+        const values = new FormData(formRef.current);
+        setChargeReview(Object.fromEntries(Array.from(values.entries()).map(([key, value]) => [key, String(value)])));
+      }
+      setChargeStep((step) => Math.min(3, step + 1));
+      return;
+    }
+    if (kind === "expense" && expenseStep < 4) {
+      const currentSection = formRef.current?.querySelector<HTMLElement>(`.expense-step-${expenseStep}`);
+      const invalidField = currentSection ? Array.from(currentSection.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>("input, select, textarea")).find((field) => !field.checkValidity()) : undefined;
+      if (invalidField) {
+        const fieldName = invalidField.closest("label")?.childNodes[0]?.textContent?.trim() || "campo obrigatório";
+        invalidField.setAttribute("aria-invalid", "true");
+        invalidField.setAttribute("aria-describedby", "entity-form-error");
+        setFormError(`Revise “${fieldName}” antes de continuar.`);
+        invalidField.focus();
+        return;
+      }
+      setFormError("");
+      if (expenseStep === 3 && formRef.current) {
+        const values = new FormData(formRef.current);
+        setExpenseReview(Object.fromEntries(Array.from(values.entries()).map(([key, value]) => [key, String(value)])));
+      }
+      setExpenseStep((step) => Math.min(4, step + 1));
+      return;
+    }
     const data = new FormData(event.currentTarget);
     if (kind === "portfolio") {
       const documentChanged = !portfolio || documentDigits(portfolioDocument) !== documentDigits(portfolio.document);
@@ -3790,11 +3856,12 @@ function EntityForm({ kind, portfolio, property, unit, tenant, documents: initia
       const documentError = getTenantDocumentError(tenantDocument, tenantType);
       if (documentError) {
         setTenantDocumentError(documentError);
-        const documentField = event.currentTarget.elements.namedItem("tenantDocument");
-        if (documentField instanceof HTMLElement) documentField.focus();
+        setTenantStep(1);
+        setFormError(documentError);
         return;
       }
       if (!String(data.get("tenantPhone") ?? "").trim() && !String(data.get("tenantEmail") ?? "").trim()) {
+        setTenantStep(2);
         setFormError("Informe ao menos um canal de contato: telefone/WhatsApp ou e-mail.");
         return;
       }
@@ -3846,7 +3913,14 @@ function EntityForm({ kind, portfolio, property, unit, tenant, documents: initia
     }
     setFormError("");
     setSaving(true);
-    window.setTimeout(() => onSave(data, supportsDocumentTopics ? categorizedDocuments : supportsDocuments ? documents : undefined), 450);
+    window.setTimeout(async () => {
+      try {
+        await onSave(data, supportsDocumentTopics ? categorizedDocuments : supportsDocuments ? documents : undefined);
+      } catch (error) {
+        setSaving(false);
+        setFormError(error instanceof Error ? error.message : "Não foi possível salvar. Tente novamente.");
+      }
+    }, 450);
   };
   const clearFieldError = (event: FormEvent<HTMLFormElement>) => {
     const field = event.target;
@@ -3867,14 +3941,65 @@ function EntityForm({ kind, portfolio, property, unit, tenant, documents: initia
     "Complete os dados registrais e a administração.",
     "Confira os dados antes de criar o imóvel.",
   ];
-  const currentStep = kind === "portfolio" ? portfolioStep : propertyStep;
-  const currentStepDescriptions = kind === "portfolio" ? portfolioStepDescriptions : propertyStepDescriptions;
-  const wizardStep = kind === "portfolio" ? portfolioStep : propertyStep;
-  const wizardFinalStep = kind === "portfolio" ? 3 : 4;
+  const unitStepDescriptions = [
+    "Vincule a unidade ao imóvel e defina seu tipo e código.",
+    "Informe as características cadastrais e anexe os documentos da unidade.",
+    "Confira os dados antes de criar a unidade.",
+  ];
+  const tenantStepDescriptions = [
+    "Informe o tipo de pessoa, o nome e o documento do locatário.",
+    "Registre os canais de contato e a imobiliária responsável.",
+    "Complete o endereço de cobrança e anexe os documentos.",
+    "Confira os dados antes de criar o locatário.",
+  ];
+  const contractStepDescriptions = [
+    "Vincule carteira, imóvel, unidades disponíveis e locatário.",
+    "Defina a vigência e as condições financeiras da locação.",
+    "Ajuste o reajuste, os encargos e a composição das cobranças.",
+    "Registre a garantia e anexe o instrumento contratual.",
+    "Confira os dados antes de criar o contrato.",
+  ];
+  const chargeStepDescriptions = [
+    "Selecione o contrato, a competência e o tipo de lançamento.",
+    "Monte a composição da cobrança item a item.",
+    "Confira os dados antes de incluir a cobrança.",
+  ];
+  const expenseStepDescriptions = [
+    "Vincule o fornecedor, a categoria e a alocação da despesa.",
+    "Defina valor, competência e vencimento.",
+    "Registre o documento, a baixa e as observações.",
+    "Confira os dados antes de criar a despesa.",
+  ];
+  const isWizard = kind === "portfolio" || kind === "property" || kind === "unit" || kind === "tenant" || kind === "contract" || kind === "charge" || kind === "expense";
+  const currentStep = kind === "portfolio" ? portfolioStep : kind === "property" ? propertyStep : kind === "unit" ? unitStep : kind === "tenant" ? tenantStep : kind === "contract" ? contractStep : kind === "charge" ? chargeStep : expenseStep;
+  const currentStepDescriptions = kind === "portfolio" ? portfolioStepDescriptions : kind === "property" ? propertyStepDescriptions : kind === "unit" ? unitStepDescriptions : kind === "tenant" ? tenantStepDescriptions : kind === "contract" ? contractStepDescriptions : kind === "charge" ? chargeStepDescriptions : expenseStepDescriptions;
+  const wizardStep = currentStep;
+  const wizardFinalStep = kind === "contract" ? 5 : kind === "property" || kind === "tenant" || kind === "expense" ? 4 : 3;
+  const wizardEntityLabel = kind === "portfolio" ? "carteira" : kind === "property" ? "imóvel" : kind === "unit" ? "unidade" : kind === "tenant" ? "locatário" : kind === "contract" ? "contrato" : kind === "charge" ? "cobrança" : "despesa";
+  const setWizardStep = kind === "portfolio" ? setPortfolioStep : kind === "property" ? setPropertyStep : kind === "unit" ? setUnitStep : kind === "tenant" ? setTenantStep : kind === "contract" ? setContractStep : kind === "charge" ? setChargeStep : setExpenseStep;
   const portfolioReviewLabel = portfolioReview.portfolioOwnerType === "PF" ? "Pessoa física" : "Pessoa jurídica";
   const portfolioReviewValue = (value: string | undefined, fallback = "Não informado") => value?.trim() || fallback;
   const propertyReviewValue = (value: string | undefined, fallback = "Não informado") => value?.trim() || fallback;
-  return <div className="modal-layer" role="dialog" aria-modal="true" aria-label={config[1]}><button type="button" className="drawer-backdrop" onClick={requestClose} aria-label="Fechar formulário" /><form ref={formRef} className={`receipt-modal entity-modal entity-${kind}-modal`} noValidate onSubmit={handleSubmit} onInputCapture={clearFieldError} onChange={onFormChange}><header className="entity-form-hero"><span className="entity-form-mark" aria-hidden="true">{presentation.mark}</span><div>{kind !== "portfolio" && kind !== "property" && <p>{presentation.label}</p>}<h2>{config[1]}</h2><span>{kind === "portfolio" || kind === "property" ? currentStepDescriptions[currentStep - 1] : presentation.description}</span></div><b>{portfolio || property || unit || tenant ? "Modo de edição" : "Novo cadastro"}</b><button type="button" className="close-button" onClick={requestClose} aria-label="Fechar formulário"><X aria-hidden="true" /></button></header>{(kind === "portfolio" || kind === "property") && <nav className={`portfolio-form-progress ${kind === "property" ? "entity-property-progress" : ""}`} aria-label={`Progresso do cadastro de ${kind === "portfolio" ? "carteira" : "imóvel"}`} role="progressbar" aria-valuemin={1} aria-valuemax={currentStepDescriptions.length} aria-valuenow={currentStep}>{currentStepDescriptions.map((_, index) => <span key={index} aria-label={`Etapa ${index + 1}`} className={index + 1 <= currentStep ? "is-complete" : ""} aria-current={index + 1 === currentStep ? "step" : undefined} />)}</nav>}<div className="entity-modal-body"><InlineFieldError message={formError || chargeBusinessError} /><div className="form-grid entity-grid">
+  const unitReviewValue = (value: string | undefined, fallback = "Não informado") => value?.trim() || fallback;
+  const tenantReviewValue = (value: string | undefined, fallback = "Não informado") => value?.trim() || fallback;
+  const tenantReviewLabel = tenantReview.tenantType === "PF" ? "Pessoa física" : "Pessoa jurídica";
+  const tenantReviewAgency = agencyOptions.find((agency) => agency.id === tenantReview.tenantResponsibleAgency);
+  const tenantReviewHasBilling = ["tenantBillingStreet", "tenantBillingCity", "tenantBillingCep", "tenantBillingDistrict"].some((key) => tenantReview[key]?.trim());
+  const tenantReviewBillingAddress = tenantReviewHasBilling
+    ? [
+      tenantReview.tenantBillingStreet?.trim() && `${tenantReview.tenantBillingStreet.trim()}${tenantReview.tenantBillingNumber?.trim() ? `, ${tenantReview.tenantBillingNumber.trim()}` : ""}${tenantReview.tenantBillingComplement?.trim() ? `, ${tenantReview.tenantBillingComplement.trim()}` : ""}`,
+      tenantReview.tenantBillingDistrict?.trim(),
+      tenantReview.tenantBillingCity?.trim() && tenantReview.tenantBillingState?.trim() ? `${tenantReview.tenantBillingCity.trim()}/${tenantReview.tenantBillingState.trim()}` : tenantReview.tenantBillingCity?.trim() || tenantReview.tenantBillingState?.trim(),
+      tenantReview.tenantBillingCep?.trim(),
+    ].filter(Boolean).join(" · ")
+    : tenant?.billingAddress ?? "";
+  const contractReviewValue = (value: string | undefined, fallback = "Não informado") => value?.trim() || fallback;
+  const contractReviewTenant = tenantOptions.find((record) => record.id === contractReview.contractTenant);
+  const contractReviewUnitNames = selectedUnits.map((id) => unitOptions.find((record) => record.id === id)?.name).filter(Boolean).join(", ");
+  const chargeReviewValue = (value: string | undefined, fallback = "Não informado") => value?.trim() || fallback;
+  const chargeReviewTotal = chargeItems.reduce((sum, item) => sum + (Number.isFinite(item.amount) ? item.amount : 0), 0);
+  const expenseReviewValue = (value: string | undefined, fallback = "Não informado") => value?.trim() || fallback;
+  return <div className="modal-layer" role="dialog" aria-modal="true" aria-label={config[1]}><button type="button" className="drawer-backdrop" onClick={requestClose} aria-label="Fechar formulário" /><form ref={formRef} className={`receipt-modal entity-modal entity-${kind}-modal${isWizard ? " entity-wizard-modal" : ""}`} noValidate onSubmit={handleSubmit} onInputCapture={clearFieldError} onChange={onFormChange}><header className="entity-form-hero"><span className="entity-form-mark" aria-hidden="true">{presentation.mark}</span><div>{!isWizard && <p>{presentation.label}</p>}<h2>{config[1]}</h2><span>{isWizard ? currentStepDescriptions[currentStep - 1] : presentation.description}</span></div><b>{portfolio || property || unit || tenant ? "Modo de edição" : "Novo cadastro"}</b><button type="button" className="close-button" onClick={requestClose} aria-label="Fechar formulário"><X aria-hidden="true" /></button></header>{isWizard && <nav className="portfolio-form-progress" aria-label={`Progresso do cadastro de ${wizardEntityLabel}`} role="progressbar" aria-valuemin={1} aria-valuemax={currentStepDescriptions.length} aria-valuenow={currentStep}>{currentStepDescriptions.map((_, index) => <span key={index} aria-label={`Etapa ${index + 1}`} className={index + 1 <= currentStep ? "is-complete" : ""} aria-current={index + 1 === currentStep ? "step" : undefined} />)}</nav>}<div className="entity-modal-body"><InlineFieldError message={formError || (kind === "charge" && chargeStep > 1 ? chargeBusinessError : "")} /><div className="form-grid entity-grid">
     {kind === "portfolio" && <>
       <EntityFormSection index="01" title="Identificação e titularidade" description="Informe o nome da carteira e os dados do titular." className="portfolio-step portfolio-step-1" hidden={portfolioStep !== 1} hideHeader><label className="full-field">Nome da carteira<span className="portfolio-input-control"><input name="portfolioName" placeholder="Ex.: Carteira Atlas" defaultValue={portfolio?.name ?? ""} required /><BriefcaseBusiness aria-hidden="true" /></span></label><label>Tipo de titular<span className="portfolio-input-control"><select name="portfolioOwnerType" value={portfolioOwnerType} onChange={(event) => { const type = event.target.value as Tenant["type"]; setPortfolioOwnerType(type); setPortfolioDocument(maskTenantDocument(portfolioDocument, type)); }}><option value="PJ">Pessoa jurídica</option><option value="PF">Pessoa física</option></select><Landmark aria-hidden="true" /></span></label><label>Titular<span className="portfolio-input-control"><input name="portfolioHolder" placeholder="Razão social ou nome" defaultValue={portfolio?.holder ?? ""} required /><UsersRound aria-hidden="true" /></span></label><label className="full-field">{portfolioOwnerType === "PJ" ? "CNPJ" : "CPF"} do titular<span className="portfolio-input-control"><input name="portfolioDocument" inputMode="numeric" value={portfolioDocument} onChange={(event) => setPortfolioDocument(maskTenantDocument(event.target.value, portfolioOwnerType))} placeholder={portfolioOwnerType === "PJ" ? "00.000.000/0000-00" : "000.000.000-00"} required /><FileSignature aria-hidden="true" /></span></label></EntityFormSection>
       <EntityFormSection index="02" title="Administração (opcional)" description="Estas informações podem ser preenchidas depois." className="portfolio-step portfolio-step-2" hidden={portfolioStep !== 2} hideHeader><label className="full-field">Gestor responsável<span className="portfolio-input-control"><select name="portfolioManager" defaultValue={portfolio?.manager ?? ""}><option value="">Não definido</option>{MANAGER_OPTIONS.map((manager) => <option key={manager}>{manager}</option>)}</select><UsersRound aria-hidden="true" /></span></label><label>Descrição<span className="portfolio-input-control"><textarea name="portfolioDescription" rows={4} placeholder="Objetivo e escopo desta carteira" defaultValue={portfolio?.description ?? ""} /><ClipboardList aria-hidden="true" /></span></label><label>Observações internas<span className="portfolio-input-control"><textarea name="portfolioNotes" rows={4} defaultValue={portfolio?.notes ?? ""} /><FileSignature aria-hidden="true" /></span></label></EntityFormSection>
@@ -3887,116 +4012,129 @@ function EntityForm({ kind, portfolio, property, unit, tenant, documents: initia
       {propertyStep === 4 && <section className="portfolio-review-screen full-field" aria-labelledby="property-review-title"><header><p className="eyebrow">Validação dos dados</p><h3 id="property-review-title">Confira seu imóvel antes de criar</h3><p>Revise as informações e volte a qualquer etapa para corrigir o que for necessário.</p></header><div className="portfolio-review-grid"><div><div><span>Identificação</span><strong>{propertyReviewValue(propertyReview.propertyName)}</strong><small>{propertyReviewValue(propertyReview.propertyType)} · {propertyReviewValue(propertyReview.propertyPortfolio)}</small></div><button type="button" className="portfolio-review-edit" onClick={() => setPropertyStep(1)}><PencilLine aria-hidden="true" />Editar</button></div><div><div><span>Localização</span><strong>{propertyReviewValue(propertyReview.propertyStreet)}, {propertyReviewValue(propertyReview.propertyNumber)}</strong><small>{propertyReviewValue(propertyReview.propertyDistrict)} · {propertyReviewValue(propertyReview.propertyCity)}/{propertyReviewValue(propertyReview.propertyState)} · CEP {propertyReviewValue(propertyReview.propertyCep)}</small></div><button type="button" className="portfolio-review-edit" onClick={() => setPropertyStep(2)}><PencilLine aria-hidden="true" />Editar</button></div><div><div><span>Registro e administração</span><strong>{propertyReviewValue(propertyReview.propertyManager, "Não definido")}</strong><small>Inscrição: {propertyReviewValue(propertyReview.propertyMunicipalRegistration, "Não informada")}</small><small>Matrícula: {propertyReviewValue(propertyReview.propertyRegistryNumber, "Não informada")}</small><small>Observações: {propertyReviewValue(propertyReview.propertyNotes, "Não informadas")}</small></div><button type="button" className="portfolio-review-edit" onClick={() => setPropertyStep(3)}><PencilLine aria-hidden="true" />Editar</button></div></div></section>}
     </>}
     {kind === "unit" && <>
-      <EntityFormSection index="01" title="Vínculo e identificação" description="Imóvel, tipo e código são obrigatórios. Novas unidades são cadastradas como disponíveis.">
+      <EntityFormSection index="01" title="Vínculo e identificação" description="Imóvel, tipo e código são obrigatórios. Novas unidades são cadastradas como disponíveis." className="unit-step unit-step-1" hidden={unitStep !== 1} hideHeader>
         {unit?.occupied && <p className="form-help full-field" id="unit-identity-help">Unidade ocupada: imóvel, tipo e código estão protegidos para preservar os vínculos. Os demais dados podem ser atualizados.</p>}
-        <label>Imóvel<select name="unitProperty" defaultValue={unit?.property ?? propertyOptions[0]?.name} required disabled={unit?.occupied} aria-describedby={unit?.occupied ? "unit-identity-help" : undefined}>{propertyOptions.map((option) => <option key={option.id}>{option.name}</option>)}</select></label>
-        <label>Tipo de unidade<select name="unitType" defaultValue={initialUnitType} required disabled={unit?.occupied} aria-describedby={unit?.occupied ? "unit-identity-help" : undefined}>{UNIT_TYPE_OPTIONS.map((type) => <option key={type}>{type}</option>)}</select></label>
+        <label>Imóvel<span className="portfolio-input-control"><select name="unitProperty" defaultValue={unit?.property ?? propertyOptions[0]?.name} required disabled={unit?.occupied} aria-describedby={unit?.occupied ? "unit-identity-help" : undefined}>{propertyOptions.map((option) => <option key={option.id}>{option.name}</option>)}</select><Building2 aria-hidden="true" /></span></label>
+        <label>Tipo de unidade<span className="portfolio-input-control"><select name="unitType" defaultValue={initialUnitType} required disabled={unit?.occupied} aria-describedby={unit?.occupied ? "unit-identity-help" : undefined}>{UNIT_TYPE_OPTIONS.map((type) => <option key={type}>{type}</option>)}</select><DoorOpen aria-hidden="true" /></span></label>
         {unit?.occupied && <><input type="hidden" name="unitProperty" value={unit.property} /><input type="hidden" name="unitType" value={initialUnitType} /></>}
-        <label>Código / número<input name="unitCode" placeholder="Ex.: 101, A, 04" defaultValue={initialUnitCode} required readOnly={unit?.occupied} aria-describedby={unit?.occupied ? "unit-identity-help" : undefined} /></label>
-        <label>Bloco / torre / setor (opcional)<input name="unitBlock" defaultValue={unit?.block ?? ""} /></label><label>Pavimento (opcional)<input name="unitFloor" defaultValue={unit?.floor ?? ""} /></label>
+        <label>Código / número<span className="portfolio-input-control"><input name="unitCode" placeholder="Ex.: 101, A, 04" defaultValue={initialUnitCode} required readOnly={unit?.occupied} aria-describedby={unit?.occupied ? "unit-identity-help" : undefined} /><KeyRound aria-hidden="true" /></span></label>
+        <label>Bloco / torre / setor (opcional)<span className="portfolio-input-control"><input name="unitBlock" placeholder="Ex.: Torre A" defaultValue={unit?.block ?? ""} /><Building2 aria-hidden="true" /></span></label>
+        <label>Pavimento (opcional)<span className="portfolio-input-control"><input name="unitFloor" placeholder="Ex.: 3º andar" defaultValue={unit?.floor ?? ""} /><ChevronsUpDown aria-hidden="true" /></span></label>
       </EntityFormSection>
-      <EntityFormSection index="02" title="Características cadastrais" description="A área privativa é obrigatória. Os demais campos são opcionais."><label>Área privativa<span className="input-with-suffix"><input name="unitArea" type="number" inputMode="decimal" min="0.01" step="0.01" defaultValue={unit?.area ?? ""} required /><span className="input-suffix" aria-hidden="true">m²</span></span></label><label>Área total (opcional)<span className="input-with-suffix"><input name="unitTotalArea" type="number" inputMode="decimal" min="0.01" step="0.01" defaultValue={unit?.totalArea ?? ""} /><span className="input-suffix" aria-hidden="true">m²</span></span></label><label>Inscrição imobiliária própria<input name="unitMunicipalRegistration" defaultValue={unit?.municipalRegistration ?? ""} /></label><label className="full-field">Observações<textarea name="unitNotes" rows={3} defaultValue={unit?.notes ?? ""} /></label></EntityFormSection>
+      <EntityFormSection index="02" title="Características cadastrais" description="A área privativa é obrigatória. Os demais campos são opcionais." className="unit-step unit-step-2" hidden={unitStep !== 2} hideHeader><label>Área privativa<span className="input-with-suffix"><input name="unitArea" type="number" inputMode="decimal" min="0.01" step="0.01" defaultValue={unit?.area ?? ""} required /><span className="input-suffix" aria-hidden="true">m²</span></span></label><label>Área total (opcional)<span className="input-with-suffix"><input name="unitTotalArea" type="number" inputMode="decimal" min="0.01" step="0.01" defaultValue={unit?.totalArea ?? ""} /><span className="input-suffix" aria-hidden="true">m²</span></span></label><label className="full-field">Inscrição imobiliária própria<span className="portfolio-input-control"><input name="unitMunicipalRegistration" placeholder="Ex.: 123.456.789" defaultValue={unit?.municipalRegistration ?? ""} /><FileSignature aria-hidden="true" /></span></label><label className="full-field">Observações<span className="portfolio-input-control"><textarea name="unitNotes" rows={3} defaultValue={unit?.notes ?? ""} /><ClipboardList aria-hidden="true" /></span></label></EntityFormSection>
+      <div className="full-field unit-step unit-step-2" hidden={unitStep !== 2}><DocumentManager title="Documentos da unidade" description="Fotos, plantas, vistorias e manutenções específicas desta unidade." documents={documents} onChange={setDocuments} onRemove={handleDocumentRemoval} /></div>
+      {unitStep === 3 && <section className="portfolio-review-screen full-field" aria-labelledby="unit-review-title"><header><p className="eyebrow">Validação dos dados</p><h3 id="unit-review-title">Confira sua unidade antes de criar</h3><p>Revise as informações e volte a qualquer etapa para corrigir o que for necessário.</p></header><div className="portfolio-review-grid"><div><div><span>Vínculo</span><strong>{unitReviewValue(unitReview.unitProperty)}</strong><small>{unitReviewValue(unitReview.unitType)}</small></div><button type="button" className="portfolio-review-edit" onClick={() => setUnitStep(1)}><PencilLine aria-hidden="true" />Editar</button></div><div><div><span>Identificação</span><strong>{unitReviewValue(unitReview.unitCode)}</strong><small>Bloco/torre/setor: {unitReviewValue(unitReview.unitBlock)}</small><small>Pavimento: {unitReviewValue(unitReview.unitFloor)}</small></div><button type="button" className="portfolio-review-edit" onClick={() => setUnitStep(1)}><PencilLine aria-hidden="true" />Editar</button></div><div><div><span>Características</span><strong>{unitReview.unitArea?.trim() ? `${unitReview.unitArea} m²` : "Não informada"}</strong><small>Área total: {unitReview.unitTotalArea?.trim() ? `${unitReview.unitTotalArea} m²` : "Não informada"}</small><small>Inscrição: {unitReviewValue(unitReview.unitMunicipalRegistration, "Não informada")}</small><small>Observações: {unitReviewValue(unitReview.unitNotes, "Não informadas")}</small></div><button type="button" className="portfolio-review-edit" onClick={() => setUnitStep(2)}><PencilLine aria-hidden="true" />Editar</button></div></div></section>}
     </>}
     {kind === "tenant" && <>
-      <EntityFormSection index="01" title="Identificação do locatário" description="Informe tipo, nome e CPF/CNPJ. Os campos opcionais estão identificados."><label>Tipo de pessoa<select name="tenantType" value={tenantType} onChange={(event) => { const nextType = event.target.value as Tenant["type"]; setTenantType(nextType); setTenantDocument(maskTenantDocument(tenantDocument, nextType)); setTenantDocumentError(""); }} required><option value="PJ">Pessoa jurídica</option><option value="PF">Pessoa física</option></select></label><label>{tenantType === "PJ" ? "Razão social" : "Nome completo"}<input name="tenantName" defaultValue={tenant?.name ?? ""} required /></label>{tenantType === "PJ" && <label>Nome fantasia (opcional)<input name="tenantTradeName" defaultValue={tenant?.tradeName ?? ""} /></label>}<label>{tenantType === "PJ" ? "CNPJ" : "CPF"}<input name="tenantDocument" inputMode="numeric" aria-label={tenantType === "PJ" ? "CNPJ" : "CPF"} aria-describedby="tenant-document-help" maxLength={tenantType === "PJ" ? 18 : 14} value={tenantDocument} onChange={(event) => { const masked = maskTenantDocument(event.target.value, tenantType); setTenantDocument(masked); setTenantDocumentError(""); }} onBlur={() => tenantDocument && setTenantDocumentError(getTenantDocumentError(tenantDocument, tenantType))} aria-invalid={tenantDocumentError ? "true" : undefined} required /><small id="tenant-document-help" className={tenantDocumentError ? "field-error" : "field-help"}>{tenantDocumentError || "O documento será validado e verificado contra duplicidades."}</small></label></EntityFormSection>
-      <EntityFormSection index="02" title="Contato" description="É necessário informar ao menos um canal para comunicação e cobrança.">{tenantType === "PJ" && <label>Pessoa de contato<input name="tenantContactName" defaultValue={tenant?.contactName ?? ""} /></label>}<label>Telefone / WhatsApp<input name="tenantPhone" type="tel" placeholder="(31) 99999-9999" defaultValue={tenant?.phone ?? ""} /></label><label>E-mail<input name="tenantEmail" type="email" placeholder="financeiro@empresa.com.br" defaultValue={tenant?.email ?? ""} /></label><label>Canal preferencial<select name="tenantPreferredChannel" defaultValue={tenant?.preferredChannel ?? "E-mail"}><option>E-mail</option><option>WhatsApp</option><option>Telefone</option><option>Correspondência</option></select></label></EntityFormSection>
-      <EntityFormSection index="03" title="Imobiliária responsável" description="Vínculo opcional com a empresa que administra este relacionamento."><label className="full-field">Imobiliária<select name="tenantResponsibleAgency" aria-label="Imobiliária" aria-describedby="tenant-agency-help" defaultValue={tenant?.responsibleAgencyId ?? ""}><option value="">Sem imobiliária responsável</option>{agencyOptions.map((agency) => <option value={agency.id} key={agency.id}>{agency.tradeName || agency.name} · {agency.creci}</option>)}</select><small id="tenant-agency-help" className="field-help">Novas imobiliárias podem ser cadastradas diretamente na aba de locatários.</small></label></EntityFormSection>
-      <EntityFormSection index="04" title="Endereço de cobrança" description="Campos opcionais. Preencha quando precisar de correspondência ou comunicação formal.">{tenant?.billingAddress && <p className="form-help full-field">Endereço atual: {tenant.billingAddress}. Deixe os campos de endereço vazios para mantê-lo ou preencha o novo endereço completo para substituí-lo.</p>}<label>CEP<input name="tenantBillingCep" inputMode="numeric" placeholder="00000-000" /></label><label>Logradouro<input name="tenantBillingStreet" /></label><label>Número<input name="tenantBillingNumber" /></label><label>Complemento<input name="tenantBillingComplement" /></label><label>Bairro<input name="tenantBillingDistrict" /></label><label>Cidade<input name="tenantBillingCity" /></label><label>UF<input name="tenantBillingState" maxLength={2} /></label>{tenantType === "PJ" && <label>Inscrição municipal<input name="tenantMunicipalRegistration" defaultValue={tenant?.municipalRegistration ?? ""} /></label>}<label className="full-field">Observações internas<textarea name="tenantNotes" rows={3} defaultValue={tenant?.notes ?? ""} /></label></EntityFormSection>
+      <EntityFormSection index="01" title="Identificação do locatário" description="Informe tipo, nome e CPF/CNPJ." className="tenant-step tenant-step-1" hidden={tenantStep !== 1} hideHeader><label>Tipo de pessoa<span className="portfolio-input-control"><select name="tenantType" value={tenantType} onChange={(event) => { const nextType = event.target.value as Tenant["type"]; setTenantType(nextType); setTenantDocument(maskTenantDocument(tenantDocument, nextType)); setTenantDocumentError(""); }} required><option value="PJ">Pessoa jurídica</option><option value="PF">Pessoa física</option></select><UsersRound aria-hidden="true" /></span></label><label>{tenantType === "PJ" ? "Razão social" : "Nome completo"}<span className="portfolio-input-control"><input name="tenantName" placeholder={tenantType === "PJ" ? "Ex.: Comércio Aurora Ltda" : "Ex.: Maria Aparecida Souza"} defaultValue={tenant?.name ?? ""} required /><UsersRound aria-hidden="true" /></span></label>{tenantType === "PJ" && <label>Nome fantasia (opcional)<span className="portfolio-input-control"><input name="tenantTradeName" placeholder="Ex.: Aurora Café" defaultValue={tenant?.tradeName ?? ""} /><BriefcaseBusiness aria-hidden="true" /></span></label>}<label className="full-field">{tenantType === "PJ" ? "CNPJ" : "CPF"}<span className="portfolio-input-control"><input name="tenantDocument" inputMode="numeric" aria-label={tenantType === "PJ" ? "CNPJ" : "CPF"} aria-describedby="tenant-document-help" maxLength={tenantType === "PJ" ? 18 : 14} value={tenantDocument} onChange={(event) => { const masked = maskTenantDocument(event.target.value, tenantType); setTenantDocument(masked); setTenantDocumentError(""); }} onBlur={() => tenantDocument && setTenantDocumentError(getTenantDocumentError(tenantDocument, tenantType))} aria-invalid={tenantDocumentError ? "true" : undefined} required /><FileSignature aria-hidden="true" /></span><small id="tenant-document-help" className={tenantDocumentError ? "field-error" : "field-help"}>{tenantDocumentError || "O documento será validado e verificado contra duplicidades."}</small></label></EntityFormSection>
+      <EntityFormSection index="02" title="Contato e administração" description="É necessário informar ao menos um canal para comunicação e cobrança." className="tenant-step tenant-step-2" hidden={tenantStep !== 2} hideHeader>{tenantType === "PJ" && <label>Pessoa de contato<span className="portfolio-input-control"><input name="tenantContactName" placeholder="Ex.: Financeiro" defaultValue={tenant?.contactName ?? ""} /><UsersRound aria-hidden="true" /></span></label>}<label>Telefone / WhatsApp<span className="portfolio-input-control"><input name="tenantPhone" type="tel" placeholder="(31) 99999-9999" defaultValue={tenant?.phone ?? ""} /><Phone aria-hidden="true" /></span></label><label>E-mail<span className="portfolio-input-control"><input name="tenantEmail" type="email" placeholder="financeiro@empresa.com.br" defaultValue={tenant?.email ?? ""} /><AtSign aria-hidden="true" /></span></label><label>Canal preferencial<span className="portfolio-input-control"><select name="tenantPreferredChannel" defaultValue={tenant?.preferredChannel ?? "E-mail"}><option>E-mail</option><option>WhatsApp</option><option>Telefone</option><option>Correspondência</option></select><Handshake aria-hidden="true" /></span></label><label className="full-field">Imobiliária responsável (opcional)<span className="portfolio-input-control"><select name="tenantResponsibleAgency" aria-label="Imobiliária" aria-describedby="tenant-agency-help" defaultValue={tenant?.responsibleAgencyId ?? ""}><option value="">Sem imobiliária responsável</option>{agencyOptions.map((agency) => <option value={agency.id} key={agency.id}>{agency.tradeName || agency.name} · {agency.creci}</option>)}</select><Building2 aria-hidden="true" /></span><small id="tenant-agency-help" className="field-help">Novas imobiliárias podem ser cadastradas diretamente na aba de locatários.</small></label></EntityFormSection>
+      <EntityFormSection index="03" title="Endereço de cobrança" description="Campos opcionais. Preencha quando precisar de correspondência ou comunicação formal." className="tenant-step tenant-step-3" hidden={tenantStep !== 3} hideHeader>{tenant?.billingAddress && <p className="form-help full-field">Endereço atual: {tenant.billingAddress}. Deixe os campos de endereço vazios para mantê-lo ou preencha o novo endereço completo para substituí-lo.</p>}<label>CEP<span className="portfolio-input-control"><input name="tenantBillingCep" inputMode="numeric" placeholder="00000-000" /><MapPin aria-hidden="true" /></span></label><label>Logradouro<span className="portfolio-input-control"><input name="tenantBillingStreet" placeholder="Rua, avenida ou rodovia" /><MapPin aria-hidden="true" /></span></label><label>Número<span className="portfolio-input-control"><input name="tenantBillingNumber" placeholder="Número ou S/N" /><KeyRound aria-hidden="true" /></span></label><label>Complemento<span className="portfolio-input-control"><input name="tenantBillingComplement" placeholder="Sala, andar ou referência" /><DoorOpen aria-hidden="true" /></span></label><label>Bairro<span className="portfolio-input-control"><input name="tenantBillingDistrict" placeholder="Ex.: Savassi" /><MapPin aria-hidden="true" /></span></label><label>Cidade<span className="portfolio-input-control"><input name="tenantBillingCity" placeholder="Ex.: Belo Horizonte" /><MapPin aria-hidden="true" /></span></label><label>UF<span className="portfolio-input-control"><input name="tenantBillingState" maxLength={2} placeholder="MG" /><Landmark aria-hidden="true" /></span></label>{tenantType === "PJ" && <label>Inscrição municipal<span className="portfolio-input-control"><input name="tenantMunicipalRegistration" placeholder="Ex.: 123.456.789" defaultValue={tenant?.municipalRegistration ?? ""} /><FileSignature aria-hidden="true" /></span></label>}<label className="full-field">Observações internas<span className="portfolio-input-control"><textarea name="tenantNotes" rows={3} defaultValue={tenant?.notes ?? ""} /><ClipboardList aria-hidden="true" /></span></label></EntityFormSection>
+      <div className="full-field tenant-step tenant-step-3" hidden={tenantStep !== 3}><DocumentManager title="Documentos do locatário" description="Anexe somente documentos necessários ao relacionamento e ao contrato." documents={documents} onChange={setDocuments} onRemove={handleDocumentRemoval} /></div>
+      {tenantStep === 4 && <section className="portfolio-review-screen full-field" aria-labelledby="tenant-review-title"><header><p className="eyebrow">Validação dos dados</p><h3 id="tenant-review-title">Confira o locatário antes de criar</h3><p>Revise as informações e volte a qualquer etapa para corrigir o que for necessário.</p></header><div className="portfolio-review-grid"><div><div><span>Identificação</span><strong>{tenantReviewValue(tenantReview.tenantName)}</strong><small>{tenantReviewLabel} · {tenantReviewValue(tenantReview.tenantDocument)}</small>{tenantReview.tenantTradeName?.trim() ? <small>Nome fantasia: {tenantReview.tenantTradeName}</small> : null}</div><button type="button" className="portfolio-review-edit" onClick={() => setTenantStep(1)}><PencilLine aria-hidden="true" />Editar</button></div><div><div><span>Contato</span><strong>{tenantReviewValue(tenantReview.tenantPhone, "Sem telefone")}</strong><small>E-mail: {tenantReviewValue(tenantReview.tenantEmail, "Não informado")}</small><small>Canal preferencial: {tenantReviewValue(tenantReview.tenantPreferredChannel)}</small><small>Imobiliária: {tenantReviewAgency ? (tenantReviewAgency.tradeName || tenantReviewAgency.name) : "Sem imobiliária responsável"}</small></div><button type="button" className="portfolio-review-edit" onClick={() => setTenantStep(2)}><PencilLine aria-hidden="true" />Editar</button></div><div><div><span>Endereço de cobrança</span><strong>{tenantReviewBillingAddress || "Não informado"}</strong><small>Observações: {tenantReviewValue(tenantReview.tenantNotes, tenant?.notes || "Não informadas")}</small></div><button type="button" className="portfolio-review-edit" onClick={() => setTenantStep(3)}><PencilLine aria-hidden="true" />Editar</button></div></div></section>}
     </>}
     {supportsDocumentTopics && <div className="full-field property-step property-step-3" hidden={propertyStep !== 3}><CategorizedDocumentManager documents={categorizedDocuments} onChange={setCategorizedDocuments} onRemove={handleDocumentRemoval} /></div>}
-    {(kind === "tenant" || kind === "unit") && <DocumentManager title={kind === "unit" ? "Documentos da unidade" : "Documentos do locatário"} description={kind === "unit" ? "Fotos, plantas, vistorias e manutenções específicas desta unidade." : "Anexe somente documentos necessários ao relacionamento e ao contrato."} documents={documents} onChange={setDocuments} onRemove={handleDocumentRemoval} />}
     {kind === "expense" && <>
-      <EntityFormSection index="01" title="Origem e classificação" description="Vincule a obrigação a um fornecedor e a uma classificação consistente."><label>Fornecedor / beneficiário<input name="expenseSupplier" list="expense-supplier-options" placeholder="Busque ou informe o fornecedor" required /><datalist id="expense-supplier-options">{Array.from(new Set(expenses.map((expense) => expense.supplier))).map((supplier) => <option value={supplier} key={supplier} />)}</datalist></label><label>Categoria<select name="expenseCategory" required>{EXPENSE_CATEGORY_OPTIONS.map((category) => <option key={category}>{category}</option>)}</select></label><label className="full-field">Descrição<input name="expenseDescription" placeholder="Origem ou finalidade da despesa" required /></label><label>Alocação<select name="expenseAllocationType" value={expenseAllocationType} onChange={(event) => setExpenseAllocationType(event.target.value)}><option>Geral da operação</option><option>Carteira</option><option>Imóvel</option><option>Unidade</option><option>Contrato</option></select></label>{expenseAllocationOptions.length > 0 && <label>Registro vinculado<select name="expenseAllocationId" required><option value="" disabled>Selecione</option>{expenseAllocationOptions.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}</select></label>}</EntityFormSection>
-      <EntityFormSection index="02" title="Condições financeiras" description="Competência e vencimento são controles diferentes."><label>Valor<input name="expenseAmount" type="number" inputMode="decimal" min="0.01" step="0.01" required /></label><label>Competência<input name="expenseCompetence" type="month" defaultValue="2026-08" required /></label><label>Data de vencimento<input name="expenseDueDate" type="date" required /></label><label>Previsão de pagamento<input name="expensePlannedDate" type="date" /></label><label>Tipo de lançamento<select name="expenseEntryType" value={expenseEntryType} onChange={(event) => setExpenseEntryType(event.target.value)}><option>Única</option><option>Parcelada</option><option>Recorrente</option></select></label>{expenseEntryType !== "Única" && <label>{expenseEntryType === "Parcelada" ? "Quantidade de parcelas" : "Periodicidade"}<input name="expenseRecurrence" type={expenseEntryType === "Parcelada" ? "number" : "text"} min={expenseEntryType === "Parcelada" ? 2 : undefined} placeholder={expenseEntryType === "Parcelada" ? "Ex.: 6" : "Ex.: Mensal"} required /></label>}</EntityFormSection>
-      <EntityFormSection index="03" title="Documento e pagamento" description="Guarde referências para auditoria e revele a baixa somente quando necessário."><label>Tipo de documento<select name="expenseDocumentType"><option value="">Não informado</option>{DOCUMENT_TYPE_OPTIONS.map((type) => <option key={type}>{type}</option>)}</select></label><label>Número do documento<input name="expenseDocumentNumber" /></label><label>Data de emissão<input name="expenseIssueDate" type="date" /></label><FileField label="Anexo" optional hint="Nota, guia, boleto ou contrato relacionado." accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" value={expenseAttachmentName ? [expenseAttachmentName] : []} onChange={(names) => setExpenseAttachmentName(names[0] ?? "")} /><label className="full-field check-inline"><input name="expenseAlreadyPaid" type="checkbox" checked={expenseAlreadyPaid} onChange={(event) => setExpenseAlreadyPaid(event.target.checked)} />Esta despesa já foi paga</label>{expenseAlreadyPaid && <><label>Data do pagamento<input name="expensePaidDate" type="date" defaultValue={DEMO_DATE_ISO} required /></label><label>Forma de pagamento<select name="expensePaymentMethod" required>{PAYMENT_METHOD_OPTIONS.map((method) => <option key={method}>{method}</option>)}</select></label><label>Conta financeira<select name="expenseFinancialAccount" required>{FINANCIAL_ACCOUNT_OPTIONS.map((account) => <option key={account}>{account}</option>)}</select></label></>}<label className="full-field">Observações<textarea name="expenseNotes" rows={3} /></label><p className="form-help full-field">O status será calculado pela data de vencimento e pelas baixas registradas.</p></EntityFormSection>
+      <EntityFormSection index="01" title="Origem e classificação" description="Vincule a obrigação a um fornecedor e a uma classificação consistente." className="expense-step expense-step-1" hidden={expenseStep !== 1} hideHeader>
+        <label>Fornecedor / beneficiário<span className="portfolio-input-control"><input name="expenseSupplier" list="expense-supplier-options" placeholder="Busque ou informe o fornecedor" required /><BriefcaseBusiness aria-hidden="true" /></span><datalist id="expense-supplier-options">{supplierOptions.map((supplier) => <option value={supplier} key={supplier} />)}</datalist></label>
+        <label>Categoria<span className="portfolio-input-control"><select name="expenseCategory" required>{EXPENSE_CATEGORY_OPTIONS.map((category) => <option key={category}>{category}</option>)}</select><SlidersHorizontal aria-hidden="true" /></span></label>
+        <label className="full-field">Descrição<span className="portfolio-input-control"><input name="expenseDescription" placeholder="Origem ou finalidade da despesa" required /><ReceiptText aria-hidden="true" /></span></label>
+        <label>Alocação<span className="portfolio-input-control"><select name="expenseAllocationType" value={expenseAllocationType} onChange={(event) => setExpenseAllocationType(event.target.value)}><option>Geral da operação</option><option>Carteira</option><option>Imóvel</option><option>Unidade</option><option>Contrato</option></select><Landmark aria-hidden="true" /></span></label>
+        {expenseAllocationOptions.length > 0 && <label>Registro vinculado<span className="portfolio-input-control"><select name="expenseAllocationId" required><option value="" disabled>Selecione</option>{expenseAllocationOptions.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}</select><Building2 aria-hidden="true" /></span></label>}
+      </EntityFormSection>
+      <EntityFormSection index="02" title="Condições financeiras" description="Competência e vencimento são controles diferentes." className="expense-step expense-step-2" hidden={expenseStep !== 2} hideHeader>
+        <label>Valor<span className="input-with-suffix"><input name="expenseAmount" type="number" inputMode="decimal" min="0.01" step="0.01" required /><span className="input-suffix" aria-hidden="true">R$</span></span></label>
+        <label>Competência<input name="expenseCompetence" type="month" defaultValue={currentMonthInputValue()} required /></label>
+        <label>Data de vencimento<input name="expenseDueDate" type="date" required /></label>
+        <label>Previsão de pagamento (opcional)<input name="expensePlannedDate" type="date" /></label>
+        <label>Tipo de lançamento<span className="portfolio-input-control"><select name="expenseEntryType" value={expenseEntryType} onChange={(event) => setExpenseEntryType(event.target.value)}><option>Única</option><option>Parcelada</option><option>Recorrente</option></select><RotateCcw aria-hidden="true" /></span></label>
+        {expenseEntryType !== "Única" && <label>{expenseEntryType === "Parcelada" ? "Quantidade de parcelas" : "Periodicidade"}<input name="expenseRecurrence" type={expenseEntryType === "Parcelada" ? "number" : "text"} min={expenseEntryType === "Parcelada" ? 2 : undefined} placeholder={expenseEntryType === "Parcelada" ? "Ex.: 6" : "Ex.: Mensal"} required /></label>}
+      </EntityFormSection>
+      <EntityFormSection index="03" title="Documento e pagamento" description="Guarde referências para auditoria e revele a baixa somente quando necessário." className="expense-step expense-step-3" hidden={expenseStep !== 3} hideHeader>
+        <label>Tipo de documento<span className="portfolio-input-control"><select name="expenseDocumentType"><option value="">Não informado</option>{DOCUMENT_TYPE_OPTIONS.map((type) => <option key={type}>{type}</option>)}</select><FileSignature aria-hidden="true" /></span></label>
+        <label>Número do documento<span className="portfolio-input-control"><input name="expenseDocumentNumber" placeholder="Ex.: NF-e 4521" /><KeyRound aria-hidden="true" /></span></label>
+        <label>Data de emissão<input name="expenseIssueDate" type="date" /></label>
+        <FileField label="Anexo" optional hint="Nota, guia, boleto ou contrato relacionado." accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" value={expenseAttachmentName ? [expenseAttachmentName] : []} onChange={(names) => setExpenseAttachmentName(names[0] ?? "")} /><input type="hidden" name="expenseAttachmentName" value={expenseAttachmentName} />
+        <label className="full-field check-inline"><input name="expenseAlreadyPaid" type="checkbox" checked={expenseAlreadyPaid} onChange={(event) => setExpenseAlreadyPaid(event.target.checked)} />Esta despesa já foi paga</label>
+        {expenseAlreadyPaid && <><label>Data do pagamento<input name="expensePaidDate" type="date" defaultValue={DEMO_DATE_ISO} required /></label><label>Forma de pagamento<span className="portfolio-input-control"><select name="expensePaymentMethod" required>{PAYMENT_METHOD_OPTIONS.map((method) => <option key={method}>{method}</option>)}</select><WalletCards aria-hidden="true" /></span></label><label>Conta financeira<span className="portfolio-input-control"><select name="expenseFinancialAccount" required>{FINANCIAL_ACCOUNT_OPTIONS.map((account) => <option key={account}>{account}</option>)}</select><Landmark aria-hidden="true" /></span></label></>}
+        <label className="full-field">Observações<span className="portfolio-input-control"><textarea name="expenseNotes" rows={3} /><ClipboardList aria-hidden="true" /></span></label>
+        <p className="form-help full-field">O status será calculado pela data de vencimento e pelas baixas registradas.</p>
+      </EntityFormSection>
+      {expenseStep === 4 && <section className="portfolio-review-screen full-field" aria-labelledby="expense-review-title"><header><p className="eyebrow">Validação dos dados</p><h3 id="expense-review-title">Confira a despesa antes de criar</h3><p>Revise as informações e volte a qualquer etapa para corrigir o que for necessário.</p></header><div className="portfolio-review-grid"><div><div><span>Origem e classificação</span><strong>{expenseReviewValue(expenseReview.expenseSupplier)}</strong><small>{expenseReviewValue(expenseReview.expenseCategory)} · {expenseReviewValue(expenseReview.expenseAllocationType)}</small><small>{expenseReviewValue(expenseReview.expenseDescription)}</small></div><button type="button" className="portfolio-review-edit" onClick={() => setExpenseStep(1)}><PencilLine aria-hidden="true" />Editar</button></div><div><div><span>Condições financeiras</span><strong>{expenseReview.expenseAmount?.trim() ? brl.format(Number(expenseReview.expenseAmount)) : "Não informado"}</strong><small>Competência {expenseReviewValue(expenseReview.expenseCompetence)}</small><small>Vencimento {expenseReviewValue(expenseReview.expenseDueDate)} · {expenseReviewValue(expenseReview.expenseEntryType)}</small></div><button type="button" className="portfolio-review-edit" onClick={() => setExpenseStep(2)}><PencilLine aria-hidden="true" />Editar</button></div><div><div><span>Documento e pagamento</span><strong>{expenseAlreadyPaid ? "Já paga" : "Em aberto"}</strong><small>Documento: {expenseReviewValue(expenseReview.expenseDocumentType, "Não informado")}</small><small>Anexo: {expenseAttachmentName || "Não anexado"}</small></div><button type="button" className="portfolio-review-edit" onClick={() => setExpenseStep(3)}><PencilLine aria-hidden="true" />Editar</button></div></div></section>}
     </>}
     {kind === "contract" && <>
-      <section className="contract-form-section full-field" aria-labelledby="contract-links-title">
-        <header className="contract-section-heading"><span>01</span><div><h3 id="contract-links-title">Vínculos</h3><p>Selecione carteira, imóvel, ao menos uma unidade disponível e locatário.</p></div></header>
-        <div className="contract-section-grid">
-          <label>Carteira<select name="contractPortfolio" value={contractPortfolio} onChange={(event) => { setContractPortfolio(event.target.value); setContractProperty(""); setSelectedUnits([]); setFormError(""); }} required>{portfolioOptions.map((option) => <option key={option.id} value={option.name}>{option.name}</option>)}</select></label>
-          <label>Imóvel<select name="contractProperty" value={contractProperty} onChange={(event) => { setContractProperty(event.target.value); setSelectedUnits([]); setFormError(""); }} required><option value="" disabled>Selecione o imóvel</option>{contractProperties.map((option) => <option key={option.id} value={option.name}>{option.name}</option>)}</select></label>
-          <fieldset className="full-field check-field" aria-describedby="contract-units-help"><legend>Unidades vinculadas</legend>{contractUnits.map((option) => <label key={option.id}><input type="checkbox" name="contractUnits" value={option.id} checked={selectedUnits.includes(option.id)} onChange={() => toggleUnit(option.id)} />{option.name}</label>)}<p className="selection-hint" id="contract-units-help">{!contractProperty ? "Selecione um imóvel para ver suas unidades disponíveis." : contractUnits.length === 0 ? "Nenhuma unidade disponível ou elegível para este imóvel." : `${contractUnits.length} unidade${contractUnits.length === 1 ? " disponível" : "s disponíveis"} para o imóvel selecionado.`}</p></fieldset>
-          <label>Locatário<select name="contractTenant" defaultValue="" required><option value="" disabled>Selecione o locatário</option>{tenantOptions.map((option) => <option key={option.id} value={option.id}>{option.name} · {option.document}</option>)}</select></label>
-          <label>Finalidade<select name="contractPurpose" defaultValue="Comercial"><option>Comercial</option><option>Residencial</option><option>Industrial</option><option>Mista</option><option>Outra</option></select></label>
-        </div>
-      </section>
-      <section className="contract-form-section full-field" aria-labelledby="contract-terms-title">
-        <header className="contract-section-heading"><span>02</span><div><h3 id="contract-terms-title">Vigência</h3><p>Início e fim são obrigatórios. O término deve ser posterior ao início.</p></div></header>
-        <div className="contract-section-grid">
-          <label>Início da vigência<input name="contractStart" type="date" value={contractStart} onChange={(event) => setContractStart(event.target.value)} required /></label>
-          <label>Fim da vigência<input name="contractEnd" type="date" min={contractStart || undefined} required /></label>
-          <label>Data de ocupação (opcional)<input name="contractOccupancyDate" type="date" /></label>
-          <label>Data de assinatura (opcional)<input name="contractSignatureDate" type="date" /></label>
-          <label className="full-field">Primeira cobrança<select name="contractFirstChargeRule" defaultValue="Proporcional desde a ocupação"><option>Proporcional desde a ocupação</option><option>Mês integral da vigência</option><option>Competência seguinte</option><option>Definida manualmente</option></select></label>
-        </div>
-      </section>
-      <EntityFormSection index="03" title="Condições financeiras" description="Centralize as regras usadas na geração e comunicação das cobranças.">
-        <label>Aluguel base mensal (R$)<input name="contractRent" type="number" inputMode="decimal" min="0.01" step="0.01" value={contractRent} onChange={(event) => setContractRent(event.target.value)} required /></label>
+      <EntityFormSection index="01" title="Vínculos" description="Selecione carteira, imóvel, ao menos uma unidade disponível e locatário." className="contract-step contract-step-1" hidden={contractStep !== 1} hideHeader>
+        <label>Carteira<span className="portfolio-input-control"><select name="contractPortfolio" value={contractPortfolio} onChange={(event) => { setContractPortfolio(event.target.value); setContractProperty(""); setSelectedUnits([]); setFormError(""); }} required>{portfolioOptions.map((option) => <option key={option.id} value={option.name}>{option.name}</option>)}</select><BriefcaseBusiness aria-hidden="true" /></span></label>
+        <label>Imóvel<span className="portfolio-input-control"><select name="contractProperty" value={contractProperty} onChange={(event) => { setContractProperty(event.target.value); setSelectedUnits([]); setFormError(""); }} required><option value="" disabled>Selecione o imóvel</option>{contractProperties.map((option) => <option key={option.id} value={option.name}>{option.name}</option>)}</select><Building2 aria-hidden="true" /></span></label>
+        <fieldset className="full-field check-field" aria-describedby="contract-units-help"><legend>Unidades vinculadas</legend>{contractUnits.map((option) => <label key={option.id}><input type="checkbox" name="contractUnits" value={option.id} checked={selectedUnits.includes(option.id)} onChange={() => toggleUnit(option.id)} />{option.name}</label>)}<p className="selection-hint" id="contract-units-help">{!contractProperty ? "Selecione um imóvel para ver suas unidades disponíveis." : contractUnits.length === 0 ? "Nenhuma unidade disponível ou elegível para este imóvel." : `${contractUnits.length} unidade${contractUnits.length === 1 ? " disponível" : "s disponíveis"} para o imóvel selecionado.`}</p></fieldset>
+        <label>Locatário<span className="portfolio-input-control"><select name="contractTenant" defaultValue="" required><option value="" disabled>Selecione o locatário</option>{tenantOptions.map((option) => <option key={option.id} value={option.id}>{option.name} · {option.document}</option>)}</select><UsersRound aria-hidden="true" /></span></label>
+        <label>Finalidade<span className="portfolio-input-control"><select name="contractPurpose" defaultValue="Comercial"><option>Comercial</option><option>Residencial</option><option>Industrial</option><option>Mista</option><option>Outra</option></select><Handshake aria-hidden="true" /></span></label>
+      </EntityFormSection>
+      <EntityFormSection index="02" title="Vigência e valores" description="Início e fim são obrigatórios. O término deve ser posterior ao início." className="contract-step contract-step-2" hidden={contractStep !== 2} hideHeader>
+        <label>Início da vigência<input name="contractStart" type="date" value={contractStart} onChange={(event) => setContractStart(event.target.value)} required /></label>
+        <label>Fim da vigência<input name="contractEnd" type="date" min={contractStart || undefined} required /></label>
+        <label>Data de ocupação (opcional)<input name="contractOccupancyDate" type="date" /></label>
+        <label>Data de assinatura (opcional)<input name="contractSignatureDate" type="date" /></label>
+        <label className="full-field">Primeira cobrança<span className="portfolio-input-control"><select name="contractFirstChargeRule" defaultValue="Proporcional desde a ocupação"><option>Proporcional desde a ocupação</option><option>Mês integral da vigência</option><option>Competência seguinte</option><option>Definida manualmente</option></select><ReceiptText aria-hidden="true" /></span></label>
+        <label>Aluguel base mensal<span className="input-with-suffix"><input name="contractRent" type="number" inputMode="decimal" min="0.01" step="0.01" value={contractRent} onChange={(event) => setContractRent(event.target.value)} required /><span className="input-suffix" aria-hidden="true">R$</span></span></label>
         <label>Dia de vencimento<input name="contractDueDay" type="number" min="1" max="31" defaultValue={10} required /></label>
-        <label>Referência do pagamento<select name="contractPaymentReference" defaultValue="Mês corrente"><option>Mês corrente</option><option>Mês vencido</option><option>Mês antecipado</option></select></label>
-        <label>Forma preferencial<select name="contractPaymentMethod" defaultValue="Boleto"><option>Boleto</option><option>Pix</option><option>Transferência</option><option>Débito automático</option><option>Outra</option></select></label>
-        <label className="full-field">Canal de envio<select name="contractDeliveryChannel" defaultValue="E-mail"><option>E-mail</option><option>WhatsApp</option><option>Portal</option><option>Correspondência</option></select></label>
+        <label>Referência do pagamento<span className="portfolio-input-control"><select name="contractPaymentReference" defaultValue="Mês corrente"><option>Mês corrente</option><option>Mês vencido</option><option>Mês antecipado</option></select><RotateCcw aria-hidden="true" /></span></label>
+        <label>Forma preferencial<span className="portfolio-input-control"><select name="contractPaymentMethod" defaultValue="Boleto"><option>Boleto</option><option>Pix</option><option>Transferência</option><option>Débito automático</option><option>Outra</option></select><WalletCards aria-hidden="true" /></span></label>
+        <label className="full-field">Canal de envio<span className="portfolio-input-control"><select name="contractDeliveryChannel" defaultValue="E-mail"><option>E-mail</option><option>WhatsApp</option><option>Portal</option><option>Correspondência</option></select><SlidersHorizontal aria-hidden="true" /></span></label>
       </EntityFormSection>
-      <EntityFormSection index="04" title="Reajuste e encargos" description="Regras objetivas evitam cálculos manuais e divergências futuras.">
-        <label>Índice de reajuste<select name="contractAdjustmentIndex" defaultValue="IPCA"><option>IPCA</option><option>IGP-M</option><option>INPC</option><option>Índice contratual</option><option>Sem reajuste</option></select></label>
-        <label>Periodicidade (meses)<input name="contractAdjustmentPeriod" type="number" min="1" max="60" defaultValue={12} required /></label>
-        <label>Mês-base<select name="contractAdjustmentMonth" defaultValue="Janeiro">{["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"].map((month) => <option key={month}>{month}</option>)}</select></label>
-        <label>Multa por atraso (%)<input name="contractLateFee" type="number" min="0" step="0.01" defaultValue={2} /></label>
-        <label>Juros ao mês (%)<input name="contractMonthlyInterest" type="number" min="0" step="0.01" defaultValue={1} /></label>
-      </EntityFormSection>
-      <section className="contract-form-section contract-items-section full-field" aria-labelledby="contract-items-title">
-        <header className="contract-section-heading"><span>05</span><div><h3 id="contract-items-title">Composição financeira</h3><p>Defina responsabilidade, cálculo, vencimento e comprovação de cada item.</p></div></header>
-        <div className="repeatable-block"><div className="section-title"><h3>Itens previstos</h3><button type="button" className="text-button" onClick={addContractRule}>+ Adicionar item</button></div>{contractRules.map((item, index) => <fieldset className="contract-rule-row" key={index}><legend>Item {index + 1}</legend>
+      <EntityFormSection index="03" title="Reajuste e composição" description="Regras objetivas evitam cálculos manuais e divergências futuras." className="contract-step contract-step-3" hidden={contractStep !== 3} hideHeader>
+        <label>Índice de reajuste<span className="portfolio-input-control"><select name="contractAdjustmentIndex" value={contractAdjustmentIndex} onChange={(event) => setContractAdjustmentIndex(event.target.value)}><option>IPCA</option><option>IGP-M</option><option>INPC</option><option>Índice contratual</option><option>Sem reajuste</option></select><ArrowUpDown aria-hidden="true" /></span></label>
+        <label>Periodicidade (meses)<input name="contractAdjustmentPeriod" type="number" min="1" max="60" defaultValue={12} required={contractAdjustmentIndex !== "Sem reajuste"} disabled={contractAdjustmentIndex === "Sem reajuste"} /></label>
+        <label>Mês-base<span className="portfolio-input-control"><select name="contractAdjustmentMonth" defaultValue="Janeiro" disabled={contractAdjustmentIndex === "Sem reajuste"}>{["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"].map((month) => <option key={month}>{month}</option>)}</select><CalendarClock aria-hidden="true" /></span></label>
+        <label>Multa por atraso<span className="input-with-suffix"><input name="contractLateFee" type="number" min="0" step="0.01" defaultValue={2} /><span className="input-suffix" aria-hidden="true">%</span></span></label>
+        <label>Juros ao mês<span className="input-with-suffix"><input name="contractMonthlyInterest" type="number" min="0" step="0.01" defaultValue={1} /><span className="input-suffix" aria-hidden="true">%</span></span></label>
+        <div className="repeatable-block full-field"><div className="section-title"><h3>Itens previstos</h3><button type="button" className="text-button" onClick={addContractRule}>+ Adicionar item</button></div>{contractRules.map((item, index) => <fieldset className="contract-rule-row" key={index}><legend>Item {index + 1}</legend>
           <label>Categoria<input value={item.name} onChange={(event) => setContractRules((items) => items.map((value, position) => position === index ? { ...value, name: event.target.value } : value))} required /></label>
           <label>Responsável<select value={item.responsibility} onChange={(event) => setContractRules((items) => items.map((value, position) => position === index ? { ...value, responsibility: event.target.value } : value))}><option>Locatário</option><option>Locador</option><option>Compartilhado</option></select></label>
           <label>Cálculo<select value={item.calculation} onChange={(event) => setContractRules((items) => items.map((value, position) => position === index ? { ...value, calculation: event.target.value } : value))}><option>Valor fixo</option><option>Valor variável</option><option>Percentual</option><option>Conforme documento</option></select></label>
-          <label>{item.calculation === "Percentual" ? "Percentual (%)" : "Valor (R$)"}<input type="number" min="0" step="0.01" value={item.name === "Aluguel" ? contractRent : item.calculation === "Valor variável" || item.calculation === "Conforme documento" ? "" : item.amount} placeholder="Na cobrança" onChange={(event) => setContractRules((items) => items.map((value, position) => position === index ? { ...value, amount: Number(event.target.value) } : value))} disabled={item.name === "Aluguel" || item.calculation === "Valor variável" || item.calculation === "Conforme documento"} />{item.name === "Aluguel" && <small className="field-help">Usa o aluguel base mensal informado acima.</small>}</label>
+          <label>{item.calculation === "Percentual" ? "Percentual (%)" : "Valor (R$)"}<input type="number" min="0" step="0.01" value={item.name === "Aluguel" ? contractRent : item.calculation === "Valor variável" || item.calculation === "Conforme documento" ? "" : item.amount} placeholder="Na cobrança" onChange={(event) => setContractRules((items) => items.map((value, position) => position === index ? { ...value, amount: Number(event.target.value) } : value))} disabled={item.name === "Aluguel" || item.calculation === "Valor variável" || item.calculation === "Conforme documento"} />{item.name === "Aluguel" && <small className="field-help">Usa o aluguel base mensal informado na etapa anterior.</small>}</label>
           <label>Vencimento<select value={item.dueRule} onChange={(event) => setContractRules((items) => items.map((value, position) => position === index ? { ...value, dueRule: event.target.value } : value))}><option>Mesmo dia do aluguel</option><option>Conforme documento</option><option>Último dia útil</option><option>Definido na cobrança</option></select></label>
           <label>Recorrência<select value={item.recurrence} onChange={(event) => setContractRules((items) => items.map((value, position) => position === index ? { ...value, recurrence: event.target.value } : value))}><option>Mensal</option><option>Anual</option><option>Única</option><option>Eventual</option></select></label>
           <label className="check-inline"><input type="checkbox" checked={item.proofRequired} onChange={(event) => setContractRules((items) => items.map((value, position) => position === index ? { ...value, proofRequired: event.target.checked } : value))} />Exigir comprovante</label>
           <button type="button" className="remove-button" aria-label={`Remover item ${index + 1}: ${item.name}`} onClick={() => setContractRules((items) => items.filter((_, position) => position !== index))} disabled={contractRules.length === 1}>Remover item</button>
         </fieldset>)}</div>
-        <p className="form-help">Salvar o contrato define as regras, mas não cria cobranças automaticamente.</p>
-      </section>
-      <EntityFormSection index="06" title="Garantia" description="Solicite detalhes apenas quando houver uma modalidade de garantia.">
-        <label>Modalidade<select name="contractGuaranteeType" value={contractGuaranteeType} onChange={(event) => setContractGuaranteeType(event.target.value)}><option>Sem garantia</option><option>Caução</option><option>Fiador</option><option>Seguro-fiança</option><option>Título de capitalização</option><option>Outra</option></select></label>
-        {contractGuaranteeType !== "Sem garantia" && <label className="full-field">Detalhes da garantia<textarea name="contractGuaranteeDetails" rows={3} placeholder="Valor, garantidor, validade ou referência da apólice" required /></label>}
+        <p className="form-help full-field">Salvar o contrato define as regras, mas não cria cobranças automaticamente.</p>
       </EntityFormSection>
-      <EntityFormSection index="07" title="Documento e observações" description="Campos opcionais. O arquivo selecionado registra apenas seu nome nesta demonstração.">
+      <EntityFormSection index="04" title="Garantia e documento" description="Detalhe a garantia quando houver e anexe o instrumento contratual." className="contract-step contract-step-4" hidden={contractStep !== 4} hideHeader>
+        <label>Modalidade de garantia<span className="portfolio-input-control"><select name="contractGuaranteeType" value={contractGuaranteeType} onChange={(event) => setContractGuaranteeType(event.target.value)}><option>Sem garantia</option><option>Caução</option><option>Fiador</option><option>Seguro-fiança</option><option>Título de capitalização</option><option>Outra</option></select><Landmark aria-hidden="true" /></span></label>
+        {contractGuaranteeType !== "Sem garantia" && <label className="full-field">Detalhes da garantia<span className="portfolio-input-control"><textarea name="contractGuaranteeDetails" rows={3} placeholder="Valor, garantidor, validade ou referência da apólice" required /><ClipboardList aria-hidden="true" /></span></label>}
         <FileField className="full-field" label="Contrato assinado" optional hint="PDF ou imagem do instrumento contratual." accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" value={contractDocumentName ? [contractDocumentName] : []} onChange={(names) => setContractDocumentName(names[0] ?? "")} />
-        <label className="full-field">Observações internas<textarea name="contractNotes" rows={3} /></label>
+        <label className="full-field">Observações internas<span className="portfolio-input-control"><textarea name="contractNotes" rows={3} /><ClipboardList aria-hidden="true" /></span></label>
       </EntityFormSection>
+      {contractStep === 5 && <section className="portfolio-review-screen full-field" aria-labelledby="contract-review-title"><header><p className="eyebrow">Validação dos dados</p><h3 id="contract-review-title">Confira o contrato antes de criar</h3><p>Revise as informações e volte a qualquer etapa para corrigir o que for necessário.</p></header><div className="portfolio-review-grid"><div><div><span>Vínculos</span><strong>{contractReviewTenant ? contractReviewTenant.name : "Locatário não selecionado"}</strong><small>{contractReviewValue(contractReview.contractPortfolio)} · {contractReviewValue(contractReview.contractProperty)}</small><small>{selectedUnits.length} unidade{selectedUnits.length === 1 ? "" : "s"}: {contractReviewUnitNames || "nenhuma"}</small><small>Finalidade: {contractReviewValue(contractReview.contractPurpose)}</small></div><button type="button" className="portfolio-review-edit" onClick={() => setContractStep(1)}><PencilLine aria-hidden="true" />Editar</button></div><div><div><span>Vigência e valores</span><strong>{contractReviewValue(contractReview.contractStart, "—")} → {contractReviewValue(contractReview.contractEnd, "—")}</strong><small>Aluguel base: {contractReview.contractRent?.trim() ? brl.format(Number(contractReview.contractRent)) : "Não informado"}</small><small>Vencimento dia {contractReviewValue(contractReview.contractDueDay)} · {contractReviewValue(contractReview.contractPaymentReference)}</small><small>Forma: {contractReviewValue(contractReview.contractPaymentMethod)}</small></div><button type="button" className="portfolio-review-edit" onClick={() => setContractStep(2)}><PencilLine aria-hidden="true" />Editar</button></div><div><div><span>Reajuste e composição</span><strong>{contractReview.contractAdjustmentIndex === "Sem reajuste" ? "Sem reajuste" : `${contractReviewValue(contractReview.contractAdjustmentIndex)} · a cada ${contractReviewValue(contractReview.contractAdjustmentPeriod, "—")} meses`}</strong><small>Multa {contractReviewValue(contractReview.contractLateFee, "0")}% · Juros {contractReviewValue(contractReview.contractMonthlyInterest, "0")}%/mês</small><small>{contractRules.length} {contractRules.length === 1 ? "item" : "itens"} na composição financeira</small></div><button type="button" className="portfolio-review-edit" onClick={() => setContractStep(3)}><PencilLine aria-hidden="true" />Editar</button></div><div><div><span>Garantia e documento</span><strong>{contractGuaranteeType}</strong><small>Contrato assinado: {contractDocumentName || "não anexado"}</small><small>Observações: {contractReviewValue(contractReview.contractNotes, "Não informadas")}</small></div><button type="button" className="portfolio-review-edit" onClick={() => setContractStep(4)}><PencilLine aria-hidden="true" />Editar</button></div></div></section>}
     </>}
     {kind === "charge" && <>
-      <EntityFormSection index="01" title="Origem e competência" description="Selecione o contrato e classifique corretamente o lançamento." className="charge-origin-section">
+      <EntityFormSection index="01" title="Origem e competência" description="Selecione o contrato e classifique corretamente o lançamento." className="charge-origin-section charge-step charge-step-1" hidden={chargeStep !== 1} hideHeader>
       {chargeSourceContract && <div className="edit-record-banner full-field"><span>Contrato de origem fixado</span><strong>{chargeSourceContract.id}</strong></div>}
-      <label>Contrato
-        <select name="chargeContract" value={chargeContractId} onChange={(event) => changeChargeContract(event.target.value)} disabled={Boolean(chargeSourceContract)} aria-describedby={chargeSourceContract ? "charge-contract-help" : undefined} required>
-          <option value="" disabled>Selecione o contrato</option>{contractOptions.map((contract) => <option key={contract.id} value={contract.id}>{contract.id} · {contract.tenant}</option>)}
-        </select>
-        {chargeSourceContract && <><input type="hidden" name="chargeContract" value={chargeSourceContract.id} /><small id="charge-contract-help" className="field-help">Vínculo preservado a partir do contrato selecionado.</small></>}
-      </label>
+      <label className="full-field">Contrato<span className="portfolio-input-control"><select name="chargeContract" value={chargeContractId} onChange={(event) => changeChargeContract(event.target.value)} disabled={Boolean(chargeSourceContract)} aria-describedby={chargeSourceContract ? "charge-contract-help" : undefined} required><option value="" disabled>Selecione o contrato</option>{contractOptions.map((contract) => <option key={contract.id} value={contract.id}>{contract.id} · {contract.tenant}</option>)}</select><FileSignature aria-hidden="true" /></span>{chargeSourceContract && <><input type="hidden" name="chargeContract" value={chargeSourceContract.id} /><small id="charge-contract-help" className="field-help">Vínculo preservado a partir do contrato selecionado.</small></>}</label>
       <label>Competência<input name="chargeCompetence" type="month" required value={chargeCompetence} onChange={(event) => changeChargeCompetence(event.target.value)} /></label>
-      <label>Tipo de lançamento<select name="chargeInclusionType" value={chargeInclusionType} onChange={(event) => setChargeInclusionType(event.target.value)}><option>Normal</option><option>Reemissão</option><option>Extraordinário</option><option>Ajuste</option></select></label>
-      <label>Forma de pagamento<select name="chargePaymentMethod" defaultValue={selectedChargeContract?.paymentMethod ?? "Boleto"}>{PAYMENT_METHOD_OPTIONS.map((method) => <option key={method}>{method}</option>)}</select></label>
-      {chargeInclusionType !== "Normal" && <label className="full-field">Motivo da exceção / observações<textarea name="chargeNotes" rows={3} placeholder="Explique por que este lançamento não segue o fluxo normal" required /></label>}
+      <label>Tipo de lançamento<span className="portfolio-input-control"><select name="chargeInclusionType" value={chargeInclusionType} onChange={(event) => setChargeInclusionType(event.target.value)}><option>Normal</option><option>Reemissão</option><option>Extraordinário</option><option>Ajuste</option></select><SlidersHorizontal aria-hidden="true" /></span></label>
+      <label>Forma de pagamento<span className="portfolio-input-control"><select name="chargePaymentMethod" defaultValue={selectedChargeContract?.paymentMethod ?? "Boleto"}>{PAYMENT_METHOD_OPTIONS.map((method) => <option key={method}>{method}</option>)}</select><WalletCards aria-hidden="true" /></span></label>
+      {chargeInclusionType !== "Normal" && <label className="full-field">Motivo da exceção / observações<span className="portfolio-input-control"><textarea name="chargeNotes" rows={3} placeholder="Explique por que este lançamento não segue o fluxo normal" required /><ClipboardList aria-hidden="true" /></span></label>}
       </EntityFormSection>
-      <section className="entity-form-section charge-items-form-section full-field"><header><span>02</span><div><h3>Composição da cobrança</h3><p>Confira categoria, referência, vencimento, valor e documento de suporte.</p></div></header><div className="charge-builder">
-        <div className="section-title"><h3>Itens da cobrança</h3><button type="button" className="text-button" onClick={addChargeItem}>+ Adicionar item</button></div>
-        {chargeItems.map((item, index) => <div className="charge-builder-row" key={index}>
-          <span className="item-index">{String(index + 1).padStart(2, "0")}</span>
-          <label>Categoria<input value={item.name} onChange={(event) => { setChargeItems((items) => items.map((value, position) => position === index ? { ...value, name: event.target.value } : value)); setChargeItemsDirty(true); }} aria-invalid={!item.name.trim() ? "true" : undefined} required /></label>
-          <label className="charge-item-reference">Referência<input value={item.reference ?? ""} placeholder="Ex.: Parcela 08/12" onChange={(event) => { setChargeItems((items) => items.map((value, position) => position === index ? { ...value, reference: event.target.value } : value)); setChargeItemsDirty(true); }} /></label>
-          <label>Vencimento<input type="date" value={item.due} onChange={(event) => { setChargeItems((items) => items.map((value, position) => position === index ? { ...value, due: event.target.value } : value)); setChargeItemsDirty(true); }} aria-invalid={!/^\d{4}-\d{2}-\d{2}$/.test(item.due) ? "true" : undefined} required /></label>
-          <label>Valor<input type="number" min="0.01" step="0.01" value={item.amount} onChange={(event) => { setChargeItems((items) => items.map((value, position) => position === index ? { ...value, amount: Number(event.target.value) } : value)); setChargeItemsDirty(true); }} aria-invalid={!Number.isFinite(item.amount) || item.amount <= 0 ? "true" : undefined} required /></label>
-          <FileField className="charge-item-proof" label="Documento de suporte" optional hint="Para itens variáveis." accept=".pdf,.jpg,.jpeg,.png" value={item.supportDocumentName ? [item.supportDocumentName] : []} onChange={(names) => { const supportDocumentName = names[0] ?? ""; setChargeItems((items) => items.map((value, position) => position === index ? { ...value, supportDocumentName } : value)); setChargeItemsDirty(true); }} />
-          <button type="button" className="remove-button" onClick={() => { setChargeItems((items) => items.filter((_, position) => position !== index)); setChargeItemsDirty(true); }}>Remover</button>
-        </div>)}
-        <div className="builder-total"><span>Total previsto</span><strong>{brl.format(chargeItems.reduce((sum, item) => sum + item.amount, 0))}</strong></div>
-      </div><p className="form-help">Os vencimentos podem ficar fora do mês de competência quando a regra contratual exigir, como no pagamento em mês vencido.</p></section>
+      <EntityFormSection index="02" title="Composição da cobrança" description="Confira categoria, referência, vencimento, valor e documento de suporte." className="charge-step charge-step-2" hidden={chargeStep !== 2} hideHeader>
+        <div className="charge-builder full-field">
+          <div className="section-title"><h3>Itens da cobrança</h3><button type="button" className="text-button" onClick={addChargeItem}>+ Adicionar item</button></div>
+          {chargeItems.map((item, index) => <div className="charge-builder-row" key={index}>
+            <span className="item-index">{String(index + 1).padStart(2, "0")}</span>
+            <label>Categoria<input value={item.name} onChange={(event) => { setChargeItems((items) => items.map((value, position) => position === index ? { ...value, name: event.target.value } : value)); setChargeItemsDirty(true); }} aria-invalid={!item.name.trim() ? "true" : undefined} required /></label>
+            <label className="charge-item-reference">Referência<input value={item.reference ?? ""} placeholder="Ex.: Parcela 08/12" onChange={(event) => { setChargeItems((items) => items.map((value, position) => position === index ? { ...value, reference: event.target.value } : value)); setChargeItemsDirty(true); }} /></label>
+            <label>Vencimento<input type="date" value={item.due} onChange={(event) => { setChargeItems((items) => items.map((value, position) => position === index ? { ...value, due: event.target.value } : value)); setChargeItemsDirty(true); }} aria-invalid={!/^\d{4}-\d{2}-\d{2}$/.test(item.due) ? "true" : undefined} required /></label>
+            <label>Valor<input type="number" min="0.01" step="0.01" value={item.amount} onChange={(event) => { setChargeItems((items) => items.map((value, position) => position === index ? { ...value, amount: Number(event.target.value) } : value)); setChargeItemsDirty(true); }} aria-invalid={!Number.isFinite(item.amount) || item.amount <= 0 ? "true" : undefined} required /></label>
+            <FileField className="charge-item-proof" label="Documento de suporte" optional hint="Para itens variáveis." accept=".pdf,.jpg,.jpeg,.png" value={item.supportDocumentName ? [item.supportDocumentName] : []} onChange={(names) => { const supportDocumentName = names[0] ?? ""; setChargeItems((items) => items.map((value, position) => position === index ? { ...value, supportDocumentName } : value)); setChargeItemsDirty(true); }} />
+            <button type="button" className="remove-button" onClick={() => { setChargeItems((items) => items.filter((_, position) => position !== index)); setChargeItemsDirty(true); }}>Remover</button>
+          </div>)}
+          <div className="builder-total"><span>Total previsto</span><strong>{brl.format(chargeReviewTotal)}</strong></div>
+        </div>
+        <p className="form-help full-field">Os vencimentos podem ficar fora do mês de competência quando a regra contratual exigir, como no pagamento em mês vencido.</p>
+      </EntityFormSection>
+      {chargeStep === 3 && <section className="portfolio-review-screen full-field" aria-labelledby="charge-review-title"><header><p className="eyebrow">Validação dos dados</p><h3 id="charge-review-title">Confira a cobrança antes de incluir</h3><p>Revise as informações e volte a qualquer etapa para corrigir o que for necessário.</p></header><div className="portfolio-review-grid"><div><div><span>Contrato e competência</span><strong>{selectedChargeContract ? `${selectedChargeContract.id} · ${selectedChargeContract.tenant}` : "Contrato não selecionado"}</strong><small>Competência {chargeCompetenceLabel || "—"}</small><small>{chargeInclusionType} · {chargeReviewValue(chargeReview.chargePaymentMethod)}</small>{chargeInclusionType !== "Normal" && <small>Motivo: {chargeReviewValue(chargeReview.chargeNotes, "Não informado")}</small>}</div><button type="button" className="portfolio-review-edit" onClick={() => setChargeStep(1)}><PencilLine aria-hidden="true" />Editar</button></div><div><div><span>Composição</span><strong>{brl.format(chargeReviewTotal)}</strong><small>{chargeItems.length} {chargeItems.length === 1 ? "item" : "itens"}</small>{chargeItems.map((item, index) => <small key={index}>{item.name || "Item sem descrição"} · {brl.format(Number.isFinite(item.amount) ? item.amount : 0)} · vence {item.due || "—"}</small>)}</div><button type="button" className="portfolio-review-edit" onClick={() => setChargeStep(2)}><PencilLine aria-hidden="true" />Editar</button></div></div></section>}
     </>}
-  </div></div>{(kind === "portfolio" || kind === "property") ? <footer className="entity-form-footer portfolio-wizard-footer"><button type="button" className="secondary-button button-with-icon" onClick={wizardStep === 1 ? requestClose : () => kind === "portfolio" ? setPortfolioStep((step) => Math.max(1, step - 1)) : setPropertyStep((step) => Math.max(1, step - 1))} disabled={saving}>{wizardStep === 1 ? "Cancelar" : <><ArrowRight aria-hidden="true" style={{ transform: "rotate(180deg)" }} />Voltar</>}</button><button className="primary-button button-with-icon" disabled={saving} aria-busy={saving}>{saving ? <><span className="spinner button-spinner" aria-hidden="true" />Salvando…</> : wizardStep === wizardFinalStep ? <><CircleCheck aria-hidden="true" />{config[2]}</> : <>Continuar<ArrowRight aria-hidden="true" /></>}</button></footer> : <ModalFooter onClose={requestClose} action={config[2]} pending={saving} disabled={kind === "charge" && Boolean(chargeBusinessError)} disabledReason={chargeBusinessError} />}</form>
+  </div></div>{isWizard ? <footer className="entity-form-footer portfolio-wizard-footer"><button type="button" className="secondary-button button-with-icon" onClick={wizardStep === 1 ? requestClose : () => setWizardStep((step) => Math.max(1, step - 1))} disabled={saving}>{wizardStep === 1 ? "Cancelar" : <><ArrowRight aria-hidden="true" style={{ transform: "rotate(180deg)" }} />Voltar</>}</button><button className="primary-button button-with-icon" disabled={saving || (kind === "charge" && wizardStep === wizardFinalStep && Boolean(chargeBusinessError))} aria-busy={saving} title={kind === "charge" && wizardStep === wizardFinalStep && chargeBusinessError ? chargeBusinessError : undefined}>{saving ? <><span className="spinner button-spinner" aria-hidden="true" />Salvando…</> : wizardStep === wizardFinalStep ? <><CircleCheck aria-hidden="true" />{config[2]}</> : <>Continuar<ArrowRight aria-hidden="true" /></>}</button></footer> : <ModalFooter onClose={requestClose} action={config[2]} pending={saving} />}</form>
     {confirmPrompt && <ConfirmDialog title={confirmPrompt.title} message={confirmPrompt.message} confirmLabel={confirmPrompt.confirmLabel} cancelLabel={confirmPrompt.cancelLabel ?? "Cancelar"} tone={confirmPrompt.tone ?? "default"} onConfirm={() => { confirmPrompt.onConfirm(); setConfirmPrompt(null); }} onCancel={() => setConfirmPrompt(null)} />}
     {discardDialog}
   </div>;

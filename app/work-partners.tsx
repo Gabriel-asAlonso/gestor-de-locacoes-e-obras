@@ -32,7 +32,7 @@ import {
   shareStatus,
 } from "./work-partners-model";
 
-const DEMO_DATE_ISO = "2026-08-24";
+const DEMO_DATE_ISO = new Date().toISOString().slice(0, 10);
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 
 function formatDate(value: string) {
@@ -47,27 +47,17 @@ function ContributionStatusBadge({ status }: { status: "Pendente" | "Parcialment
   return <span className={`work-contribution-status work-contribution-${slug}`}><i aria-hidden="true" />{status}</span>;
 }
 
-export type PartnerPaymentEvent = {
-  contributionId: string;
-  contributionDescription: string;
-  partnerName: string;
-  paymentId: string;
-  amount: number;
-  dateIso: string;
-};
-
-type PartnerEvent = { title: string; description: string };
-
-export function WorkPartnersPanel({ partners, contributions, openContributionRequest, onContributionRequestConsumed, onPartnersChange, onContributionsChange, onPayment, onNotify, onEvent }: {
+export function WorkPartnersPanel({ partners, contributions, openContributionRequest, onContributionRequestConsumed, onAddPartner, onEditParticipation, onRemovePartner, onCreateContribution, onRegisterPayment, onNotify }: {
   partners: WorkPartner[];
   contributions: WorkContribution[];
   openContributionRequest: number;
   onContributionRequestConsumed: () => void;
-  onPartnersChange: (partners: WorkPartner[]) => void;
-  onContributionsChange: (contributions: WorkContribution[]) => void;
-  onPayment: (event: PartnerPaymentEvent) => void;
+  onAddPartner: (name: string, participationPercent: number) => Promise<void>;
+  onEditParticipation: (partnerId: string, participationPercent: number) => Promise<void>;
+  onRemovePartner: (partnerId: string) => Promise<void>;
+  onCreateContribution: (data: { description: string; amount: number; dateIso: string }) => Promise<void>;
+  onRegisterPayment: (data: { aporteId: string; cotaId: string; amount: number; dateIso: string; note?: string }) => Promise<void>;
   onNotify: (message: string, reference: string) => void;
-  onEvent: (event: PartnerEvent) => void;
 }) {
   const [editingPartner, setEditingPartner] = useState<WorkPartner | null | undefined>(undefined);
   const [confirmPrompt, setConfirmPrompt] = useState<ConfirmPrompt | null>(null);
@@ -90,13 +80,14 @@ export function WorkPartnersPanel({ partners, contributions, openContributionReq
     });
   }, [distributionComplete, onContributionRequestConsumed, openContributionRequest]);
 
-  const savePartner = (partner: WorkPartner) => {
+  const savePartner = async (partner: WorkPartner) => {
     const existing = partners.some((item) => item.id === partner.id);
-    const nextPartners = existing ? partners.map((item) => item.id === partner.id ? partner : item) : [...partners, partner];
-    onPartnersChange(nextPartners);
-    onNotify(existing ? "Participação do sócio atualizada." : "Sócio vinculado à obra.", partner.id);
-    onEvent({ title: existing ? "Participação societária atualizada" : "Sócio adicionado à obra", description: `${partner.name} · ${partner.participationPercent}% nos novos aportes.` });
-    setEditingPartner(undefined);
+    try {
+      if (existing) await onEditParticipation(partner.id, partner.participationPercent);
+      else await onAddPartner(partner.name, partner.participationPercent);
+      onNotify(existing ? "Participação do sócio atualizada." : "Sócio vinculado à obra.", partner.name);
+      setEditingPartner(undefined);
+    } catch (error) { onNotify(error instanceof Error ? error.message : "Não foi possível salvar o sócio.", "erro"); }
   };
 
   const removePartner = (partner: WorkPartner) => {
@@ -107,40 +98,29 @@ export function WorkPartnersPanel({ partners, contributions, openContributionReq
       cancelLabel: "Voltar",
       tone: "danger",
       onConfirm: () => {
-        onPartnersChange(partners.filter((item) => item.id !== partner.id));
-        onNotify("Sócio removido da distribuição atual. O histórico foi preservado.", partner.id);
-        onEvent({ title: "Sócio removido da distribuição atual", description: `${partner.name} não participará de novos aportes até ser vinculado novamente.` });
+        void onRemovePartner(partner.id)
+          .then(() => onNotify("Sócio removido da distribuição atual. O histórico foi preservado.", partner.name))
+          .catch((error) => onNotify(error instanceof Error ? error.message : "Não foi possível remover o sócio.", "erro"));
       },
     });
   };
 
-  const saveContribution = (data: { amount: number; dateIso: string; description: string }) => {
-    const contribution: WorkContribution = {
-      id: nextPartnerRecordId("APT", contributions.map((item) => item.id)),
-      amount: data.amount,
-      dateIso: data.dateIso,
-      description: data.description,
-      shares: createContributionShares(partners, data.amount),
-    };
-    onContributionsChange([contribution, ...contributions]);
-    onNotify("Aporte solicitado e distribuído entre os sócios.", contribution.id);
-    onEvent({ title: "Novo aporte solicitado", description: `${contribution.description} · ${brl.format(contribution.amount)} distribuídos conforme a participação vigente.` });
-    setCreatingContribution(false);
-    setSelectedContribution(contribution);
+  const saveContribution = async (data: { amount: number; dateIso: string; description: string }) => {
+    try {
+      await onCreateContribution({ description: data.description, amount: data.amount, dateIso: data.dateIso });
+      onNotify("Aporte solicitado e distribuído entre os sócios.", data.description);
+      setCreatingContribution(false);
+    } catch (error) { onNotify(error instanceof Error ? error.message : "Não foi possível solicitar o aporte.", "erro"); }
   };
 
-  const savePayment = (data: { amount: number; dateIso: string; note?: string }) => {
+  const savePayment = async (data: { amount: number; dateIso: string; note?: string }) => {
     if (!paymentTarget) return;
-    const paymentId = nextPartnerRecordId("PAG-APT", contributions.flatMap((contribution) => contribution.shares.flatMap((share) => share.payments.map((payment) => payment.id))));
-    const payment = { id: paymentId, amount: data.amount, dateIso: data.dateIso, note: data.note };
-    const updatedContribution: WorkContribution = {
-      ...paymentTarget.contribution,
-      shares: paymentTarget.contribution.shares.map((share) => share.partnerId === paymentTarget.share.partnerId ? { ...share, payments: [...share.payments, payment] } : share),
-    };
-    onContributionsChange(contributions.map((contribution) => contribution.id === updatedContribution.id ? updatedContribution : contribution));
-    onPayment({ contributionId: updatedContribution.id, contributionDescription: updatedContribution.description, partnerName: paymentTarget.share.partnerName, paymentId, amount: data.amount, dateIso: data.dateIso });
-    setPaymentTarget(null);
-    setSelectedContribution(updatedContribution);
+    if (!paymentTarget.contribution.databaseId || !paymentTarget.share.cotaId) { onNotify("Aporte sem referência para registrar o pagamento.", "erro"); return; }
+    try {
+      await onRegisterPayment({ aporteId: paymentTarget.contribution.databaseId, cotaId: paymentTarget.share.cotaId, amount: data.amount, dateIso: data.dateIso, note: data.note });
+      onNotify("Pagamento do sócio registrado.", paymentTarget.share.partnerName);
+      setPaymentTarget(null);
+    } catch (error) { onNotify(error instanceof Error ? error.message : "Não foi possível registrar o pagamento.", "erro"); }
   };
 
   return <>
@@ -164,7 +144,7 @@ export function WorkPartnersPanel({ partners, contributions, openContributionReq
       <section className="work-partner-list" aria-labelledby="work-partner-list-title">
         <header><div><p className="eyebrow">Distribuição vigente</p><h3 id="work-partner-list-title">Sócios</h3></div><span>Alterações valem somente para novos aportes</span></header>
         {partnerSummaries.length ? <div>{partnerSummaries.map(({ partner, invested, pending }) => <article key={partner.id} className={pending > 0 ? "has-pending" : ""}>
-          <header><span className="partner-avatar">{partner.name.split(" ").slice(0, 2).map((part) => part[0]).join("")}</span><div><small>{partner.id}</small><strong>{partner.name}</strong><em>{pending > 0 ? "Com pagamento pendente" : "Em dia"}</em></div><span className="partner-percentage" style={{ "--partner-percent": `${partner.participationPercent * 3.6}deg` } as CSSProperties}><b>{partner.participationPercent}%</b></span></header>
+          <header><span className="partner-avatar">{partner.name.split(" ").slice(0, 2).map((part) => part[0]).join("")}</span><div><small>{partner.code ?? partner.id}</small><strong>{partner.name}</strong><em>{pending > 0 ? "Com pagamento pendente" : "Em dia"}</em></div><span className="partner-percentage" style={{ "--partner-percent": `${partner.participationPercent * 3.6}deg` } as CSSProperties}><b>{partner.participationPercent}%</b></span></header>
           <dl><div><dt>Total investido</dt><dd>{brl.format(invested)}</dd></div><div><dt>Pendente</dt><dd className={pending > 0 ? "negative" : ""}>{brl.format(pending)}</dd></div></dl>
           <footer><button type="button" onClick={() => setEditingPartner(partner)}><PencilLine aria-hidden="true" />Editar participação</button></footer>
         </article>)}</div> : <div className="work-partners-empty"><UsersRound aria-hidden="true" /><strong>Nenhum sócio vinculado</strong><p>Adicione os participantes e distribua 100% antes de solicitar o primeiro aporte.</p><button type="button" className="primary-button button-with-icon" onClick={() => setEditingPartner(null)}><Plus aria-hidden="true" />Adicionar sócio</button></div>}

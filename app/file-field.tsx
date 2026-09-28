@@ -1,7 +1,7 @@
 "use client";
 
 import type { ChangeEvent } from "react";
-import { useId } from "react";
+import { useId, useRef } from "react";
 import { ArrowDownToLine, Paperclip, X } from "lucide-react";
 
 type FileFieldProps = {
@@ -11,6 +11,8 @@ type FileFieldProps = {
   multiple?: boolean;
   value: string[];
   onChange: (names: string[]) => void;
+  /** Recebe os arquivos reais para persistência; opcional para formulários que usam apenas nomes. */
+  onFilesChange?: (files: File[]) => void;
   optional?: boolean;
   disabled?: boolean;
   className?: string;
@@ -21,19 +23,34 @@ type FileFieldProps = {
 /**
  * Campo de anexo localizado. Substitui o `<input type="file">` nativo
  * ("Choose Files / No file chosen") por uma área em português com lista
- * de arquivos escolhidos. Nesta demonstração só os nomes são mantidos.
+ * de arquivos escolhidos. Com `onFilesChange`, também preserva os objetos File
+ * para que o formulário possa enviar os bytes reais à API.
  */
-export function FileField({ label, hint, accept, multiple = false, value, onChange, optional = false, disabled = false, className = "", name }: FileFieldProps) {
+export function FileField({ label, hint, accept, multiple = false, value, onChange, onFilesChange, optional = false, disabled = false, className = "", name }: FileFieldProps) {
   const hintId = useId();
+  const selectedFiles = useRef<File[]>([]);
 
   const handleInput = (event: ChangeEvent<HTMLInputElement>) => {
-    const names = Array.from(event.target.files ?? []).map((file) => file.name).filter(Boolean);
+    const picked = Array.from(event.target.files ?? []);
+    const names = picked.map((file) => file.name).filter(Boolean);
     event.target.value = "";
     if (!names.length) return;
+    if (onFilesChange) {
+      selectedFiles.current = multiple
+        ? [...selectedFiles.current.filter((file) => !picked.some((candidate) => candidate.name === file.name)), ...picked]
+        : picked.slice(0, 1);
+      onFilesChange(selectedFiles.current);
+    }
     onChange(multiple ? Array.from(new Set([...value, ...names])) : names.slice(0, 1));
   };
 
-  const removeName = (target: string) => onChange(value.filter((entry) => entry !== target));
+  const removeName = (target: string) => {
+    if (onFilesChange) {
+      selectedFiles.current = selectedFiles.current.filter((file) => file.name !== target);
+      onFilesChange(selectedFiles.current);
+    }
+    onChange(value.filter((entry) => entry !== target));
+  };
 
   const cta = value.length
     ? (multiple ? "Adicionar outro arquivo" : "Trocar arquivo")

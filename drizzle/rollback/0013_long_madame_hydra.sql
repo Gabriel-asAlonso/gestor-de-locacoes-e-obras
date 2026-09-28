@@ -1,0 +1,11 @@
+ALTER TABLE despesas DROP COLUMN conta_descricao_prevista;
+ALTER TABLE despesas DROP COLUMN anexo_nome;
+ALTER TABLE despesas DROP COLUMN data_emissao;
+ALTER TABLE despesas DROP COLUMN numero_documento;
+ALTER TABLE despesas DROP COLUMN tipo_documento;
+ALTER TABLE despesas DROP COLUMN recorrencia;
+ALTER TABLE despesas DROP COLUMN tipo_lancamento;
+ALTER TABLE despesas DROP COLUMN alocacao_referencia;
+ALTER TABLE despesas DROP COLUMN alocacao_tipo;
+ALTER TABLE despesas DROP COLUMN previsao_pagamento;
+ALTER TABLE despesas DROP COLUMN competencia;
